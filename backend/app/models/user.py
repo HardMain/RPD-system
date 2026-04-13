@@ -1,0 +1,262 @@
+from sqlalchemy import (
+    Column, Integer, String, Text, Boolean, DateTime, ForeignKey, SmallInteger,
+)
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+
+from app.core.database import Base
+
+
+class Role(Base):
+    __tablename__ = "roles"
+    id_role = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(50), nullable=False, unique=True)
+    users = relationship("User", back_populates="role")
+
+
+class Department(Base):
+    __tablename__ = "departments"
+    id_department = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(150), nullable=False)
+    faculty = Column(String(150))
+    users = relationship("User", back_populates="department")
+
+
+class User(Base):
+    __tablename__ = "users"
+    id_user = Column(Integer, primary_key=True, autoincrement=True)
+    id_role = Column(Integer, ForeignKey("roles.id_role"), nullable=False)
+    id_department = Column(Integer, ForeignKey("departments.id_department"), nullable=False)
+    ldap_uid = Column(String(100), nullable=False, unique=True)
+    full_name = Column(String(200), nullable=False)
+    email = Column(String(150))
+    password_hash = Column(String(200))
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    role = relationship("Role", back_populates="users")
+    department = relationship("Department", back_populates="users")
+
+
+class Direction(Base):
+    __tablename__ = "directions"
+    id_direction = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(20), nullable=False)
+    name = Column(String(200), nullable=False)
+    profile = Column(String(200))
+    degree_level = Column(String(50))
+    disciplines = relationship("Discipline", back_populates="direction")
+    competencies = relationship("Competency", back_populates="direction")
+
+
+class Discipline(Base):
+    __tablename__ = "disciplines"
+    id_discipline = Column(Integer, primary_key=True, autoincrement=True)
+    id_direction = Column(Integer, ForeignKey("directions.id_direction"), nullable=False)
+    code = Column(String(20))
+    name = Column(String(200), nullable=False)
+    semester = Column(String(20))
+    total_hours = Column(Integer)
+    lecture_hours = Column(Integer)
+    practice_hours = Column(Integer)
+    lab_hours = Column(Integer)
+    self_study_hours = Column(Integer)
+    control_form = Column(String(50))
+
+    direction = relationship("Direction", back_populates="disciplines")
+    rpds = relationship("Rpd", back_populates="discipline")
+    discipline_competencies = relationship("DisciplineCompetency", back_populates="discipline")
+
+
+class Competency(Base):
+    __tablename__ = "competencies"
+    id_competency = Column(Integer, primary_key=True, autoincrement=True)
+    id_direction = Column(Integer, ForeignKey("directions.id_direction"), nullable=False)
+    code = Column(String(20), nullable=False)
+    name = Column(Text, nullable=False)
+    direction = relationship("Direction", back_populates="competencies")
+    indicators = relationship("CompetencyIndicator", back_populates="competency")
+    discipline_competencies = relationship("DisciplineCompetency", back_populates="competency")
+
+
+class CompetencyIndicator(Base):
+    __tablename__ = "competency_indicators"
+    id_indicator = Column(Integer, primary_key=True, autoincrement=True)
+    id_competency = Column(Integer, ForeignKey("competencies.id_competency"), nullable=False)
+    code = Column(String(20), nullable=False)
+    description = Column(Text, nullable=False)
+    competency = relationship("Competency", back_populates="indicators")
+
+
+class DisciplineCompetency(Base):
+    __tablename__ = "discipline_competencies"
+    id_discipline_competency = Column(Integer, primary_key=True, autoincrement=True)
+    id_discipline = Column(Integer, ForeignKey("disciplines.id_discipline"), nullable=False)
+    id_competency = Column(Integer, ForeignKey("competencies.id_competency"), nullable=False)
+    discipline = relationship("Discipline", back_populates="discipline_competencies")
+    competency = relationship("Competency", back_populates="discipline_competencies")
+
+
+class Rpd(Base):
+    __tablename__ = "rpd"
+    id_rpd = Column(Integer, primary_key=True, autoincrement=True)
+    id_discipline = Column(Integer, ForeignKey("disciplines.id_discipline"), nullable=False)
+    id_author = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+    academic_year = Column(String(9), nullable=False)
+    status = Column(String(30), nullable=False, default="Черновик")
+    goals_text = Column(Text)
+    tasks_text = Column(Text)
+    objects_text = Column(Text)
+    requirements_text = Column(Text)
+    educational_tech = Column(Text)
+    methodical_recommendations = Column(Text)
+    based_on_rpd_id = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    discipline = relationship("Discipline", back_populates="rpds")
+    author = relationship("User", foreign_keys=[id_author])
+    developers = relationship("RpdDeveloper", back_populates="rpd", cascade="all, delete-orphan")
+    sections = relationship("RpdSection", back_populates="rpd", cascade="all, delete-orphan",
+                            order_by="RpdSection.section_number")
+    literature = relationship("RpdLiterature", back_populates="rpd", cascade="all, delete-orphan")
+    software = relationship("RpdSoftware", back_populates="rpd", cascade="all, delete-orphan")
+    material_tech = relationship("RpdMaterialTech", back_populates="rpd", cascade="all, delete-orphan")
+    learning_outcomes = relationship("RpdLearningOutcome", back_populates="rpd", cascade="all, delete-orphan")
+    uploaded_documents = relationship("UploadedDocument", back_populates="rpd", cascade="all, delete-orphan")
+    llm_logs = relationship("LlmGenerationLog", back_populates="rpd", cascade="all, delete-orphan")
+    approvals = relationship("ApprovalStage", back_populates="rpd", cascade="all, delete-orphan",
+                             order_by="ApprovalStage.created_at.desc()")
+
+
+class RpdDeveloper(Base):
+    __tablename__ = "rpd_developers"
+    id_rpd_developer = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    id_user = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+
+    rpd = relationship("Rpd", back_populates="developers")
+    user = relationship("User")
+
+
+class RpdSection(Base):
+    __tablename__ = "rpd_sections"
+    id_section = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    section_number = Column(SmallInteger, nullable=False)
+    title = Column(String(300), nullable=False)
+    brief_content = Column(Text)
+    lecture_hours = Column(Integer, default=0)
+    practice_hours = Column(Integer, default=0)
+    lab_hours = Column(Integer, default=0)
+    self_study_hours = Column(Integer, default=0)
+
+    rpd = relationship("Rpd", back_populates="sections")
+    topics = relationship("RpdTopic", back_populates="section", cascade="all, delete-orphan")
+
+
+class RpdTopic(Base):
+    __tablename__ = "rpd_topics"
+    id_topic = Column(Integer, primary_key=True, autoincrement=True)
+    id_section = Column(Integer, ForeignKey("rpd_sections.id_section"), nullable=False)
+    topic_type = Column(String(30), nullable=False)
+    title = Column(String(500), nullable=False)
+    hours = Column(Integer)
+    description = Column(Text)
+    section = relationship("RpdSection", back_populates="topics")
+
+
+class RpdLearningOutcome(Base):
+    __tablename__ = "rpd_learning_outcomes"
+    id_outcome = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    id_indicator = Column(Integer, ForeignKey("competency_indicators.id_indicator"), nullable=False)
+    outcome_text = Column(Text)
+    assessment_tool = Column(String(200))
+    rpd = relationship("Rpd", back_populates="learning_outcomes")
+    indicator = relationship("CompetencyIndicator")
+
+
+class RpdLiterature(Base):
+    __tablename__ = "rpd_literature"
+    id_literature = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    source_type = Column(String(30), nullable=False)
+    title = Column(Text, nullable=False)
+    authors = Column(String(500))
+    year = Column(Integer)
+    publisher = Column(String(200))
+    url = Column(String(500))
+    copies_count = Column(Integer)
+    rpd = relationship("Rpd", back_populates="literature")
+
+
+class RpdSoftware(Base):
+    __tablename__ = "rpd_software"
+    id_software = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    name = Column(String(300), nullable=False)
+    license_type = Column(String(100))
+    purpose = Column(String(200))
+    rpd = relationship("Rpd", back_populates="software")
+
+
+class RpdMaterialTech(Base):
+    __tablename__ = "rpd_material_tech"
+    id_material_tech = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    room_type = Column(String(100), nullable=False)
+    equipment = Column(Text)
+    rpd = relationship("Rpd", back_populates="material_tech")
+
+
+class UploadedDocument(Base):
+    __tablename__ = "uploaded_documents"
+    id_document = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    id_user = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+    filename = Column(String(300), nullable=False)
+    file_path = Column(String(500), nullable=False)
+    file_type = Column(String(10), nullable=False)
+    file_size = Column(Integer)
+    uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
+    rpd = relationship("Rpd", back_populates="uploaded_documents")
+    uploader = relationship("User")
+
+
+class LlmGenerationLog(Base):
+    __tablename__ = "llm_generation_log"
+    id_log = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    section_name = Column(String(100), nullable=False)
+    prompt_hash = Column(String(64))
+    model_name = Column(String(100))
+    tokens_used = Column(Integer)
+    generation_time_ms = Column(Integer)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    rpd = relationship("Rpd", back_populates="llm_logs")
+
+
+class ApprovalStage(Base):
+    __tablename__ = "approval_stages"
+    id_approval = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    id_reviewer = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+    stage = Column(String(30), nullable=False)
+    status = Column(String(30), nullable=False)
+    comment = Column(Text)
+    reviewed_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    rpd = relationship("Rpd", back_populates="approvals")
+    reviewer = relationship("User")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    id_notification = Column(Integer, primary_key=True, autoincrement=True)
+    id_user = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+    id_rpd = Column(Integer, nullable=True)
+    message = Column(Text, nullable=False)
+    is_read = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    user = relationship("User")
