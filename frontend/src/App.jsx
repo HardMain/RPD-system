@@ -121,32 +121,35 @@ function CreateRpdModal({ onClose, onCreated }) {
 }
 
 /* ═══ RPD LIST ═══ */
-function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf }) {
-  const [sel, setSel] = useState(null);
+function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userRole }) {
+  const canCreate = ["Зав. кафедрой", "Сотрудник УМУ", "Администратор"].includes(userRole);
   return <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", flexShrink: 0, background: T.surface, borderBottom: "1px solid " + T.border }}>
+      {canCreate ? <Btn small onClick={onCreate}><PlusIcon /> Создать РПД</Btn> : <div />}
+      <span style={{ fontSize: 12, color: T.textMuted }}>{rpds.length} РПД</span>
+    </div>
     <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
         <thead><tr style={{ background: T.surface }}>{["Направление", "Дисциплина", "Год", "Часы", "Семестр", "Статус", ""].map((h, i) => <th key={i} style={hdr}>{h}</th>)}</tr></thead>
         <tbody>{rpds.map(r => {
           const canEdit = r.status === "Черновик" || r.status === "На доработке";
-          return <tr key={r.id_rpd} onClick={() => setSel(r.id_rpd)} onDoubleClick={() => onOpen(r)} style={{ background: sel === r.id_rpd ? T.selectedRow : T.surface, cursor: "pointer" }}>
+          return <tr key={r.id_rpd} onDoubleClick={() => onOpen(r)} style={{ background: T.surface, cursor: "pointer" }}>
             <td style={tcell}>{r.direction_code}</td>
             <td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td>
             <td style={{ ...tcell, textAlign: "center" }}>{r.academic_year}</td>
             <td style={{ ...tcell, textAlign: "center" }}>{r.total_hours || "-"}</td>
             <td style={{ ...tcell, textAlign: "center" }}>{r.semester || "-"}</td>
             <td style={tcell}><Badge status={r.status} /></td>
-            <td style={{ ...tcell, textAlign: "center" }}>{canEdit && <button onClick={e => { e.stopPropagation(); onEdit(r); }} style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "3px 10px", border: "1px solid " + T.accent, borderRadius: 4, background: T.accentLight, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.accent, fontFamily: F }}><SparkleIcon /> Редакт.</button>}</td>
+            <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap" }}>
+              <div style={{ display: "inline-flex", gap: 4 }}>
+                <button onClick={e => { e.stopPropagation(); onOpen(r); }} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 9px", border: "1px solid " + T.border, borderRadius: 4, background: T.surface, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.text, fontFamily: F }}>Просмотр</button>
+                {canEdit && <button onClick={e => { e.stopPropagation(); onEdit(r); }} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 9px", border: "1px solid " + T.accent, borderRadius: 4, background: T.accentLight, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.accent, fontFamily: F }}><SparkleIcon /> Редакт.</button>}
+                <button onClick={e => { e.stopPropagation(); onExportPdf(r.id_rpd); }} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 9px", border: "1px solid " + T.border, borderRadius: 4, background: T.surface, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.text, fontFamily: F }}><DownloadIcon /></button>
+              </div>
+            </td>
           </tr>;
         })}</tbody>
       </table>
-    </div>
-    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", flexShrink: 0, background: T.surface, borderTop: "1px solid " + T.border }}>
-      <Btn small onClick={onCreate}><PlusIcon /> Создать</Btn>
-      <Btn small onClick={() => { const r = rpds.find(x => x.id_rpd === sel); if (r) onOpen(r); }}>Просмотр</Btn>
-      <Btn small onClick={() => { const r = rpds.find(x => x.id_rpd === sel); if (r) onExportPdf(r.id_rpd); }}><DownloadIcon /> PDF</Btn>
-      <div style={{ flex: 1 }} />
-      <span style={{ fontSize: 12, color: T.textMuted }}>{rpds.length} РПД</span>
     </div>
   </div>;
 }
@@ -175,7 +178,7 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
-  const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState("");
+  const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
   const [activeSec, setActiveSec] = useState("title"); const [saving, setSaving] = useState(false);
   const scrollRef = useRef(null);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
@@ -215,7 +218,25 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
     setSaving(false);
   }
 
-  async function handleSendApproval() { await handleSave(); try { await api.sendForApproval(rpdId); setModal("sent"); await load(); } catch { setModal("error"); } }
+  function getValidationErrors() {
+    const e = [];
+    if (!editTexts.goals?.trim()) e.push({ secKey: "goals", label: "Цели дисциплины" });
+    if (!editTexts.tasks?.trim()) e.push({ secKey: "goals", label: "Задачи дисциплины" });
+    if (!editTexts.objects?.trim()) e.push({ secKey: "general", label: "Изучаемые объекты" });
+    if (!editTexts.requirements?.trim()) e.push({ secKey: "general", label: "Входные требования" });
+    if (!editTexts.educational_tech?.trim()) e.push({ secKey: "edutech", label: "Образовательные технологии" });
+    if (!editTexts.methodical_recommendations?.trim()) e.push({ secKey: "edutech", label: "Методические рекомендации" });
+    if (!rpd.sections?.length) e.push({ secKey: "content", label: "Содержание (нет ни одного раздела)" });
+    if (!rpd.literature?.length) e.push({ secKey: "literature", label: "Литература (нет ни одного источника)" });
+    return e;
+  }
+  async function handleSendApproval() {
+    const errors = getValidationErrors();
+    if (errors.length > 0) { setValidationErrors(errors); setModal("validation"); return; }
+    setValidationErrors([]);
+    await handleSave();
+    try { await api.sendForApproval(rpdId); setModal("sent"); await load(); } catch { setModal("error"); }
+  }
   async function handleReview(action) { try { await api.reviewRpd(rpdId, { action, comment: rejectComment }); setModal(action === "approve" ? "approved" : null); setRejectComment(""); await load(); } catch { } }
 
   if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}><Spinner size={40} /></div>;
@@ -356,13 +377,21 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
   return <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
       {/* SIDEBAR */}
-      <div style={{ width: 140, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SEC_KEYS.map(k => <button key={k} onClick={() => goTo(k)} style={{ display: "block", width: "100%", padding: "8px 12px", border: "none", borderLeft: activeSec === k ? "3px solid " + T.accent : "3px solid transparent", background: activeSec === k ? T.accentLight : "transparent", textAlign: "left", cursor: "pointer", fontSize: 11, fontFamily: F, fontWeight: activeSec === k ? 700 : 400, color: activeSec === k ? T.accent : T.text }}>{SEC_LABELS[k]}</button>)}</div>
+      <div style={{ width: 148, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+        {isEdit && canEdit && <div style={{ padding: "5px 10px", background: T.orangeLight, borderBottom: "1px solid " + T.orange, fontSize: 10, fontWeight: 700, color: T.orange, textAlign: "center", letterSpacing: .3 }}>✏ РЕДАКТИРОВАНИЕ</div>}
+        {(!isEdit || !canEdit) && !isHead && <div style={{ padding: "5px 10px", background: T.blueLight, borderBottom: "1px solid " + T.blue, fontSize: 10, fontWeight: 700, color: T.blue, textAlign: "center", letterSpacing: .3 }}>👁 ПРОСМОТР</div>}
+        {isHead && rpd.status === "На согласовании" && <div style={{ padding: "5px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
+        <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SEC_KEYS.map(k => {
+          const hasErr = validationErrors.length > 0 && validationErrors.some(e => e.secKey === k);
+          return <button key={k} onClick={() => goTo(k)} style={{ display: "flex", width: "100%", padding: "8px 12px", border: "none", borderLeft: hasErr ? "3px solid " + T.red : activeSec === k ? "3px solid " + T.accent : "3px solid transparent", background: activeSec === k ? T.accentLight : "transparent", cursor: "pointer", fontSize: 11, fontFamily: F, fontWeight: activeSec === k ? 700 : 400, color: hasErr ? T.red : activeSec === k ? T.accent : T.text, justifyContent: "space-between", alignItems: "center", boxSizing: "border-box" }}>{SEC_LABELS[k]}{hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}</button>;
+        })}</div>
         <div style={{ borderTop: "1px solid " + T.borderLight, padding: "8px 12px", fontSize: 11, color: T.textMuted, flexShrink: 0 }}><Badge status={rpd.status} /></div>
       </div>
       {/* DOCUMENT */}
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "24px 32px", background: T.bg }}>
-        <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
+        {isEdit && canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.orangeLight, border: "1px solid " + T.orange, color: T.orange, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>✏ Режим редактирования — изменения сохраняются кнопкой «Сохранить»</div>}
+        {(!isEdit || !canEdit) && !isHead && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 Режим просмотра — редактирование недоступно</div>}
+        <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + (isEdit && canEdit ? T.orange : T.borderLight), borderRadius: 4, boxShadow: isEdit && canEdit ? "0 2px 16px rgba(217,115,32,.12)" : "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
           {/* ТИТУЛЬНИК */}
           <div ref={refs.title} style={{ marginBottom: 32, textAlign: "center", paddingTop: 20, paddingBottom: 20 }}>
             <div style={{ fontSize: 11, marginBottom: 12, color: T.textMuted }}>Министерство науки и высшего образования Российской Федерации</div>
@@ -472,6 +501,22 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
     {modal === "error" && <Modal onClose={() => setModal(null)} width={440}><div style={{ padding: 24, textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 700, color: T.orange, marginBottom: 16 }}>Ошибка при отправке</div><div style={{ fontSize: 13, color: T.textMuted, marginBottom: 16 }}>Проверьте заполненность разделов</div><Btn primary onClick={() => setModal(null)}>Ок</Btn></div></Modal>}
     {modal === "approved" && <Modal onClose={() => setModal(null)} width={400}><div style={{ padding: 24, textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 700, color: T.green, marginBottom: 16 }}>РПД согласована</div><Btn primary onClick={() => { setModal(null); onBack(); }}>Ок</Btn></div></Modal>}
     {modal === "reject" && <Modal onClose={() => setModal(null)} width={440}><div style={{ padding: 24 }}><div style={{ fontSize: 16, fontWeight: 700, color: T.orange, marginBottom: 16, textAlign: "center" }}>Возврат на доработку</div><textarea value={rejectComment} onChange={e => setRejectComment(e.target.value)} style={{ width: "100%", height: 120, border: "1px solid " + T.border, borderRadius: 6, padding: 12, fontSize: 13, fontFamily: F, resize: "vertical", outline: "none", boxSizing: "border-box" }} placeholder="Укажите причину..." /><div style={{ textAlign: "center", marginTop: 16 }}><Btn primary onClick={() => { handleReview("reject"); setModal(null); }}>Отправить</Btn></div></div></Modal>}
+    {modal === "validation" && <Modal onClose={() => setModal(null)} width={460}>
+      <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 20 }}>⚠️</span>
+        <div><div style={{ fontSize: 15, fontWeight: 700, color: T.orange }}>Нельзя отправить на согласование</div><div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>Заполните все обязательные разделы</div></div>
+      </div>
+      <div style={{ padding: "12px 16px" }}>
+        {validationErrors.map((e, i) => <div key={i} onClick={() => { goTo(e.secKey); setModal(null); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 5, marginBottom: 4, background: T.bg, border: "1px solid " + T.borderLight, cursor: "pointer" }}
+          onMouseEnter={ev => ev.currentTarget.style.borderColor = T.accent}
+          onMouseLeave={ev => ev.currentTarget.style.borderColor = T.borderLight}>
+          <span style={{ width: 18, height: 18, borderRadius: 9, background: T.red, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, flexShrink: 0 }}>✕</span>
+          <span style={{ fontSize: 13, flex: 1 }}>{e.label}</span>
+          <span style={{ fontSize: 11, color: T.accent }}>перейти →</span>
+        </div>)}
+      </div>
+      <div style={{ padding: "10px 20px", borderTop: "1px solid " + T.borderLight, textAlign: "center" }}><Btn primary onClick={() => setModal(null)}>Закрыть</Btn></div>
+    </Modal>}
   </div>;
 }
 
@@ -490,7 +535,7 @@ function SystemInfoPage() {
 export default function App() {
   const [user, setUser] = useState(null); const [checking, setChecking] = useState(true);
   const [activeTab, setActiveTab] = useState("my");
-  const [rpds, setRpds] = useState([]); const [openRpd, setOpenRpd] = useState(null);
+  const [rpds, setRpds] = useState([]); const [openRpds, setOpenRpds] = useState([]); const [activeRpdId, setActiveRpdId] = useState(null);
   const [showNotif, setShowNotif] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -499,13 +544,21 @@ export default function App() {
   const loadRpds = useCallback(async () => { try { const r = await api.getRpds(); setRpds(r.data); } catch { } }, []);
   useEffect(() => { if (user) { loadRpds(); api.getUnreadCount().then(r => setUnreadCount(r.data.count)).catch(() => { }); } }, [user, loadRpds]);
 
-  function openRpdFn(rpd, editMode) { setOpenRpd({ ...rpd, editMode }); setActiveTab("edit"); }
+  function openRpdFn(rpd, editMode) {
+    setOpenRpds(prev => { const ex = prev.find(r => r.id_rpd === rpd.id_rpd); if (ex) return prev.map(r => r.id_rpd === rpd.id_rpd ? { ...r, editMode } : r); return [...prev, { ...rpd, editMode }]; });
+    setActiveRpdId(rpd.id_rpd); setActiveTab("edit");
+  }
+  function closeRpdTab(rpdId) {
+    const next = openRpds.filter(r => r.id_rpd !== rpdId);
+    setOpenRpds(next); loadRpds();
+    if (activeRpdId === rpdId) { if (next.length > 0) { setActiveRpdId(next[next.length - 1].id_rpd); } else { setActiveRpdId(null); setActiveTab("my"); } }
+  }
 
   async function handleExportPdf(rpdId) {
     try { const r = await api.exportPdf(rpdId); const url = window.URL.createObjectURL(r.data); const a = document.createElement("a"); a.href = url; a.download = `RPD_${rpdId}.pdf`; a.click(); window.URL.revokeObjectURL(url); } catch { alert("Ошибка экспорта PDF"); }
   }
 
-  const handleLogout = () => { localStorage.removeItem("token"); setUser(null); setOpenRpd(null); };
+  const handleLogout = () => { localStorage.removeItem("token"); setUser(null); setOpenRpds([]); setActiveRpdId(null); };
 
   if (checking) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}><Spinner size={40} /></div>;
   if (!user) return <LoginPage onLogin={u => setUser(u)} />;
@@ -534,13 +587,17 @@ export default function App() {
           <button onClick={handleLogout} style={{ border: "none", background: "none", color: T.headerText, cursor: "pointer", fontSize: 12, opacity: .7 }}>Выйти</button>
         </div>
       </div>
-      {activeTab !== "edit" && <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "0 12px", paddingTop: 6, background: T.bg, borderBottom: "1px solid " + T.border }}>
-        {navTabs.map(t => <TabBtn key={t.id} label={t.label} active={activeTab === t.id} onClick={() => { setActiveTab(t.id); setOpenRpd(null); }} />)}
+      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "0 12px", paddingTop: 6, background: T.bg, borderBottom: "1px solid " + T.border }}>
+        {navTabs.map(t => <TabBtn key={t.id} label={t.label} active={activeTab === t.id} onClick={() => setActiveTab(t.id)} />)}
+      </div>
+      {openRpds.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "4px 12px 0", background: T.bg, borderBottom: "1px solid " + T.border, overflowX: "auto" }}>
+        <span style={{ fontSize: 11, color: T.textMuted, marginRight: 4, flexShrink: 0 }}>Открытые РПД:</span>
+        {openRpds.map(r => { const isA = activeTab === "edit" && activeRpdId === r.id_rpd; return <div key={r.id_rpd} onClick={() => { setActiveRpdId(r.id_rpd); setActiveTab("edit"); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: "5px 5px 0 0", background: isA ? T.surface : T.tabInactive, border: "1px solid " + (isA ? T.accent : T.border), borderBottom: isA ? "2px solid " + T.accent : "1px solid transparent", cursor: "pointer", fontSize: 11, fontWeight: isA ? 700 : 400, color: isA ? T.accent : T.text, flexShrink: 0 }}><span style={{ fontSize: 10, opacity: 0.6 }}>[{r.editMode ? "E" : "V"}]</span><span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.direction_code} {r.discipline_name} {r.academic_year}</span><span onClick={e => { e.stopPropagation(); closeRpdTab(r.id_rpd); }} style={{ cursor: "pointer", marginLeft: 4, opacity: 0.5, fontSize: 13, lineHeight: 1, flexShrink: 0 }}>✕</span></div>; })}
       </div>}
     </div>
 
     {/* Pages */}
-    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={r => openRpdFn(r, false)} onEdit={r => openRpdFn(r, true)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} />}
+    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={r => openRpdFn(r, false)} onEdit={r => openRpdFn(r, true)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} userRole={role} />}
     {activeTab === "approval" && <ApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, true)} />}
     {activeTab === "onApproval" && <div style={{ flex: 1, overflow: "auto", padding: 16, background: T.bg }}>{rpds.filter(r => r.status === "На согласовании").map(r => <div key={r.id_rpd} onClick={() => openRpdFn(r, false)} style={{ padding: "12px 16px", background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}><div><div style={{ fontWeight: 600, fontSize: 13 }}>{r.discipline_name}</div><div style={{ fontSize: 11, color: T.textMuted }}>{r.direction_code} — {r.academic_year}</div></div><Badge status={r.status} /></div>)}{rpds.filter(r => r.status === "На согласовании").length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textMuted }}>Нет РПД на согласовании</div>}</div>}
     {activeTab === "archive" && <div style={{ flex: 1, overflow: "auto", padding: 16, background: T.bg }}>
@@ -548,7 +605,7 @@ export default function App() {
         <tbody>{rpds.filter(r => r.status === "Согласовано").map(r => <tr key={r.id_rpd} onClick={() => openRpdFn(r, false)} style={{ background: T.surface, cursor: "pointer" }}><td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td><td style={tcell}>{r.academic_year}</td><td style={tcell}>{r.author_name}</td><td style={tcell}><Badge status={r.status} /></td></tr>)}</tbody></table>
     </div>}
     {activeTab === "system" && <SystemInfoPage />}
-    {activeTab === "edit" && openRpd && <RpdEditor rpdId={openRpd.id_rpd} editMode={openRpd.editMode} userRole={role} onBack={() => { setOpenRpd(null); setActiveTab("my"); loadRpds(); }} onExportPdf={handleExportPdf} />}
+    {activeTab === "edit" && (() => { const r = openRpds.find(x => x.id_rpd === activeRpdId); return r ? <RpdEditor key={r.id_rpd} rpdId={r.id_rpd} editMode={r.editMode} userRole={role} onBack={() => closeRpdTab(r.id_rpd)} onExportPdf={handleExportPdf} /> : null; })()}
 
     <NotifPanel show={showNotif} onClose={() => { setShowNotif(false); api.getUnreadCount().then(r => setUnreadCount(r.data.count)).catch(() => { }); }} />
     {showCreate && <CreateRpdModal onClose={() => setShowCreate(false)} onCreated={(r) => { setShowCreate(false); loadRpds(); openRpdFn(r, true); }} />}

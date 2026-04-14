@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(m\\) for m in d[0]['Mounts']]\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d[0]['Mounts'], indent=2\\)\\)\")",
+      "Bash(docker exec:*)",
+      "Bash(docker-compose:*)",
+      "Bash(xargs grep:*)",
+      "Bash(python3 -c ':*)",
+      "Bash(python3 -c \"import PyPDF2; print\\('ok'\\)\")",
+      "Bash(python -c \"import PyPDF2; print\\('ok'\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python3 -c \"import fitz; print\\('fitz ok'\\)\")",
+      "Bash(python -c \"import fitz; print\\('fitz ok'\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(python:*)",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"username\\\\\":\\\\\"ivanov\\\\\",\\\\\"password\\\\\":\\\\\"password\\\\\"}\")",
+      "Bash(curl -s -X POST http://localhost:8000/api/auth/login -H \"Content-Type: application/json\" -d \"{\\\\\"ldap_uid\\\\\":\\\\\"ivanov\\\\\",\\\\\"password\\\\\":\\\\\"password\\\\\"}\")",
+      "Bash(curl -s -X POST \"http://localhost:8000/api/auth/login\" -d \"username=ivanov&password=password\")"
+    ]
+  }
+}
