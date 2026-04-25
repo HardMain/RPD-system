@@ -122,6 +122,7 @@ class Rpd(Base):
     literature = relationship("RpdLiterature", back_populates="rpd", cascade="all, delete-orphan")
     software = relationship("RpdSoftware", back_populates="rpd", cascade="all, delete-orphan")
     material_tech = relationship("RpdMaterialTech", back_populates="rpd", cascade="all, delete-orphan")
+    databases = relationship("RpdDatabase", back_populates="rpd", cascade="all, delete-orphan")
     learning_outcomes = relationship("RpdLearningOutcome", back_populates="rpd", cascade="all, delete-orphan")
     uploaded_documents = relationship("UploadedDocument", back_populates="rpd", cascade="all, delete-orphan")
     llm_logs = relationship("LlmGenerationLog", back_populates="rpd", cascade="all, delete-orphan")
@@ -207,7 +208,17 @@ class RpdMaterialTech(Base):
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
     room_type = Column(String(100), nullable=False)
     equipment = Column(Text)
+    quantity = Column(Integer)
     rpd = relationship("Rpd", back_populates="material_tech")
+
+
+class RpdDatabase(Base):
+    __tablename__ = "rpd_databases"
+    id_database = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    name = Column(Text, nullable=False)
+    url = Column(String(500))
+    rpd = relationship("Rpd", back_populates="databases")
 
 
 class UploadedDocument(Base):

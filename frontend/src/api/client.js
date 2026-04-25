@@ -63,6 +63,11 @@ export const addMaterialTech = (rpdId, data) => api.post(`/rpd/${rpdId}/material
 export const updateMaterialTech = (mtId, data) => api.put(`/rpd/material-tech/${mtId}`, data);
 export const deleteMaterialTech = (mtId) => api.delete(`/rpd/material-tech/${mtId}`);
 
+// Databases (БД и ИСС)
+export const addDatabase = (rpdId, data) => api.post(`/rpd/${rpdId}/databases`, data);
+export const updateDatabase = (dbId, data) => api.put(`/rpd/databases/${dbId}`, data);
+export const deleteDatabase = (dbId) => api.delete(`/rpd/databases/${dbId}`);
+
 // Learning Outcomes
 export const addOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes`, data);
 export const updateOutcome = (outcomeId, data) => api.put(`/rpd/outcomes/${outcomeId}`, data);
@@ -92,6 +97,8 @@ export const deleteDocument = (docId) => api.delete(`/upload/${docId}`);
 // Export
 export const exportPdf = (rpdId) =>
   api.get(`/export/${rpdId}/pdf`, { responseType: 'blob' });
+export const fetchPdfInline = (rpdId) =>
+  api.get(`/export/${rpdId}/pdf-inline`, { responseType: 'blob' });
 
 // Directions & Disciplines
 export const getDirections = () => api.get('/rpd/directions');

@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import * as api from "./api/client.js";
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/TextLayer.css";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
+
+// Используем bundled-воркер (Vite сам собирает его как Web Worker с правильным MIME)
+pdfjs.GlobalWorkerOptions.workerPort = new PdfJsWorker();
 
 /* ═══ THEME ═══ */
 const T = {
@@ -54,6 +61,9 @@ function PlusIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fil
 function DownloadIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>; }
 function SparkleIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>; }
 function TrashIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>; }
+
+/* PDF toolbar button */
+const pdfToolBtn = (disabled) => ({ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 26, height: 24, padding: 0, border: "1px solid " + T.border, borderRadius: 4, background: disabled ? T.borderLight : T.surface, color: disabled ? T.textLight : T.text, cursor: disabled ? "default" : "pointer", fontSize: 12, fontWeight: 600, fontFamily: F });
 
 /* Table cell styles */
 const td = { padding: 8, border: "1px solid " + T.borderLight, fontSize: 12 };
@@ -171,8 +181,41 @@ function ApprovalPage({ rpds, onOpen }) {
 }
 
 /* ═══ RPD EDITOR ═══ */
-const SEC_KEYS = ["title", "general", "goals", "results", "content", "topics", "edutech", "literature", "software", "mtech", "docs"];
-const SEC_LABELS = { title: "Титульник", general: "Общие", goals: "Цели и задачи", results: "Результаты", content: "Содержание", topics: "Тематики", edutech: "Орг.-пед.", literature: "Литература", software: "ПО", mtech: "МТО", docs: "Документы" };
+/* Структура подразделов 1:1 с шаблоном rpd_template.docx.
+   READ_ONLY — заполняются автоматически: title из БУП, "3" из БУП (часы), "8" из ФОС. */
+const SEC_KEYS = [
+  "title",
+  "1.1", "1.2", "1.3",
+  "2",
+  "3",
+  "4", "4.1", "4.2",
+  "5.1", "5.2",
+  "6.1", "6.2", "6.3", "6.4",
+  "7",
+  "8",
+  "docs",
+];
+const SEC_LABELS = {
+  title: "Титульник",
+  "1.1": "1.1 Цели и задачи",
+  "1.2": "1.2 Изучаемые объекты",
+  "1.3": "1.3 Входные требования",
+  "2":   "2. Результаты обучения",
+  "3":   "3. Объём и виды работ",
+  "4":   "4. Содержание",
+  "4.1": "4.1 Тематика лаб. работ",
+  "4.2": "4.2 Тематика практ. занятий",
+  "5.1": "5.1 Обр. технологии",
+  "5.2": "5.2 Методические указания",
+  "6.1": "6.1 Печатная литература",
+  "6.2": "6.2 Электронная литература",
+  "6.3": "6.3 ПО",
+  "6.4": "6.4 БД и ИСС",
+  "7":   "7. МТО",
+  "8":   "8. ФОС",
+  docs:  "Документы (LLM)",
+};
+const READ_ONLY_KEYS = new Set(["title", "3", "8"]);
 
 function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
@@ -180,6 +223,13 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
   const [activeSec, setActiveSec] = useState("title"); const [saving, setSaving] = useState(false);
+  const [pdfData, setPdfData] = useState(null); const [pdfLoading, setPdfLoading] = useState(false); const [pdfError, setPdfError] = useState(null);
+  const [pdfReloadKey, setPdfReloadKey] = useState(0);
+  const [pdfNumPages, setPdfNumPages] = useState(0);
+  const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
+  const [pdfScale, setPdfScale] = useState(1.1);
+  const pdfScrollRef = useRef(null);
+  const pdfPageRefs = useRef({});
   const scrollRef = useRef(null);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
   const isEdit = editMode; const isHead = userRole === "Зав. кафедрой";
@@ -193,14 +243,74 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
   }, [rpdId]);
   useEffect(() => { load(); }, [load]);
 
-  // Scroll spy
+  // PDF preview for view mode
+  const showPdf = !isEdit;
   useEffect(() => {
+    if (!showPdf) { setPdfData(null); setPdfNumPages(0); setPdfCurrentPage(1); return; }
+    let cancelled = false; let createdUrl = null;
+    setPdfLoading(true); setPdfError(null); setPdfData(null); setPdfNumPages(0); setPdfCurrentPage(1);
+    pdfPageRefs.current = {};
+    api.fetchPdfInline(rpdId).then(r => {
+      if (cancelled) return;
+      createdUrl = window.URL.createObjectURL(r.data);
+      setPdfData(createdUrl);
+    }).catch(() => { if (!cancelled) setPdfError("Не удалось сформировать PDF"); })
+      .finally(() => { if (!cancelled) setPdfLoading(false); });
+    return () => { cancelled = true; if (createdUrl) window.URL.revokeObjectURL(createdUrl); };
+  }, [rpdId, showPdf, pdfReloadKey]);
+
+  // Track current page by observing which PDF page is centered in the scroll container
+  useEffect(() => {
+    if (!showPdf || !pdfNumPages) return;
+    const root = pdfScrollRef.current; if (!root) return;
+    const obs = new IntersectionObserver((entries) => {
+      const visible = entries.filter(e => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (visible) {
+        const n = Number(visible.target.getAttribute("data-page"));
+        if (n) setPdfCurrentPage(n);
+      }
+    }, { root, threshold: [0.3, 0.6] });
+    Object.values(pdfPageRefs.current).forEach(el => { if (el) obs.observe(el); });
+    return () => obs.disconnect();
+  }, [showPdf, pdfNumPages, pdfScale]);
+
+  // Scroll spy (only in edit mode)
+  useEffect(() => {
+    if (showPdf) return;
     const c = scrollRef.current; if (!c) return; let raf = 0;
     function handler() { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { const top = c.getBoundingClientRect().top + 90; let found = SEC_KEYS[0]; for (const k of SEC_KEYS) { const el = refs[k].current; if (el && el.getBoundingClientRect().top <= top) found = k; } setActiveSec(p => p === found ? p : found); }); }
     c.addEventListener("scroll", handler, { passive: true }); return () => { c.removeEventListener("scroll", handler); cancelAnimationFrame(raf); };
-  }, [loading]);
+  }, [loading, showPdf]);
 
-  function goTo(key) { const el = refs[key].current; const c = scrollRef.current; if (!el || !c) return; c.scrollTo({ top: c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12, behavior: "smooth" }); }
+  function scrollToPdfPage(n) {
+    const el = pdfPageRefs.current[n]; const c = pdfScrollRef.current;
+    if (!el || !c) return;
+    c.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
+    setPdfCurrentPage(n);
+  }
+
+  function goTo(key) {
+    if (showPdf) {
+      // Грубая навигация по страницам PDF (зависит от вёрстки шаблона)
+      const PAGE_MAP = {
+        title: 1,
+        "1.1": 2, "1.2": 2, "1.3": 2,
+        "2": 3,
+        "3": 4,
+        "4": 4, "4.1": 6, "4.2": 6,
+        "5.1": 7, "5.2": 7,
+        "6.1": 8, "6.2": 8, "6.3": 9, "6.4": 9,
+        "7": 9,
+        "8": 10,
+        docs: 1,
+      };
+      const page = Math.min(PAGE_MAP[key] || 1, pdfNumPages || 1);
+      scrollToPdfPage(page);
+      setActiveSec(key);
+      return;
+    }
+    const el = refs[key]?.current; const c = scrollRef.current; if (!el || !c) return; c.scrollTo({ top: c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12, behavior: "smooth" });
+  }
 
   async function autoFill(key) {
     setGenerating(key);
@@ -220,14 +330,14 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
 
   function getValidationErrors() {
     const e = [];
-    if (!editTexts.goals?.trim()) e.push({ secKey: "goals", label: "Цели дисциплины" });
-    if (!editTexts.tasks?.trim()) e.push({ secKey: "goals", label: "Задачи дисциплины" });
-    if (!editTexts.objects?.trim()) e.push({ secKey: "general", label: "Изучаемые объекты" });
-    if (!editTexts.requirements?.trim()) e.push({ secKey: "general", label: "Входные требования" });
-    if (!editTexts.educational_tech?.trim()) e.push({ secKey: "edutech", label: "Образовательные технологии" });
-    if (!editTexts.methodical_recommendations?.trim()) e.push({ secKey: "edutech", label: "Методические рекомендации" });
-    if (!rpd.sections?.length) e.push({ secKey: "content", label: "Содержание (нет ни одного раздела)" });
-    if (!rpd.literature?.length) e.push({ secKey: "literature", label: "Литература (нет ни одного источника)" });
+    if (!editTexts.goals?.trim()) e.push({ secKey: "1.1", label: "1.1 Цели дисциплины" });
+    if (!editTexts.tasks?.trim()) e.push({ secKey: "1.1", label: "1.1 Задачи дисциплины" });
+    if (!editTexts.objects?.trim()) e.push({ secKey: "1.2", label: "1.2 Изучаемые объекты" });
+    if (!editTexts.requirements?.trim()) e.push({ secKey: "1.3", label: "1.3 Входные требования" });
+    if (!editTexts.educational_tech?.trim()) e.push({ secKey: "5.1", label: "5.1 Образовательные технологии" });
+    if (!editTexts.methodical_recommendations?.trim()) e.push({ secKey: "5.2", label: "5.2 Методические указания" });
+    if (!rpd.sections?.length) e.push({ secKey: "4", label: "4. Содержание (нет ни одного раздела)" });
+    if (!rpd.literature?.length) e.push({ secKey: "6.1", label: "6.1 Литература (нет ни одного источника)" });
     return e;
   }
   async function handleSendApproval() {
@@ -292,26 +402,41 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
     </div>;
   }
 
-  function LiteratureEditor() {
+  function LiteratureEditor({ kind }) {
+    // kind: "printed" — без url; "electronic" — с url
+    const isElectronic = kind === "electronic";
+    const filterFn = (l) => isElectronic ? !!l.url : !l.url;
+    const items = (rpd.literature || []).filter(filterFn);
     const [showAdd, setShowAdd] = useState(false);
-    const [form, setForm] = useState({ source_type: "Основная", title: "", authors: "", year: 2024, publisher: "" });
-    const addLit = async () => { try { await api.addLiterature(rpdId, form); setShowAdd(false); setForm({ source_type: "Основная", title: "", authors: "", year: 2024, publisher: "" }); await load(); } catch { } };
+    const initialForm = { source_type: isElectronic ? "Дополнительная" : "Основная", title: "", authors: "", year: 2024, publisher: "", url: "", copies_count: "" };
+    const [form, setForm] = useState(initialForm);
+    const addLit = async () => {
+      const payload = { ...form, year: form.year ? +form.year : null, copies_count: form.copies_count ? +form.copies_count : null };
+      if (!isElectronic) payload.url = null;
+      try { await api.addLiterature(rpdId, payload); setShowAdd(false); setForm(initialForm); await load(); } catch { }
+    };
     const delLit = async (id) => { await api.deleteLiterature(id); await load(); };
     return <div>
-      {rpd.literature?.length > 0 ? <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6 }}>{rpd.literature.map((l, i) => <div key={l.id_literature} style={{ padding: "10px 14px", borderBottom: i < rpd.literature.length - 1 ? "1px solid " + T.borderLight : "none", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-        <div><div style={{ fontSize: 13, fontWeight: 600 }}>{l.title}</div><div style={{ fontSize: 11, color: T.textMuted }}>{l.authors}{l.year ? ", " + l.year : ""}{l.publisher ? " — " + l.publisher : ""}</div></div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}><Badge status={l.source_type === "Основная" ? "На согласовании" : "Черновик"} />{isEdit && canEdit && <button onClick={() => delLit(l.id_literature)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button>}</div>
-      </div>)}</div> : <div style={{ padding: 16, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Литература не добавлена</div>}
+      {items.length > 0 ? <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6 }}>{items.map((l, i) => <div key={l.id_literature} style={{ padding: "10px 14px", borderBottom: i < items.length - 1 ? "1px solid " + T.borderLight : "none", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{l.title}</div>
+          <div style={{ fontSize: 11, color: T.textMuted }}>{l.authors}{l.year ? ", " + l.year : ""}{l.publisher ? " — " + l.publisher : ""}{l.copies_count ? " (экз. " + l.copies_count + ")" : ""}</div>
+          {l.url && <a href={l.url} target="_blank" rel="noreferrer" style={{ fontSize: 11, color: T.blue, wordBreak: "break-all" }}>{l.url}</a>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}><Badge status={l.source_type === "Основная" ? "На согласовании" : "Черновик"} />{isEdit && canEdit && <button onClick={() => delLit(l.id_literature)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button>}</div>
+      </div>)}</div> : <div style={{ padding: 16, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>{isElectronic ? "Электронная" : "Печатная"} литература не добавлена</div>}
       {isEdit && canEdit && <div style={{ marginTop: 12 }}>
-        {!showAdd ? <div style={{ display: "flex", gap: 8 }}><Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить</Btn><Btn small primary onClick={() => autoFill("literature")} disabled={!!generating}><SparkleIcon /> Автоподбор</Btn></div>
+        {!showAdd ? <div style={{ display: "flex", gap: 8 }}><Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить</Btn>{!isElectronic && <Btn small primary onClick={() => autoFill("literature")} disabled={!!generating}><SparkleIcon /> Автоподбор</Btn>}</div>
           : <div style={{ padding: 16, border: "1px solid " + T.accent, borderRadius: 8, background: T.accentLight + "33" }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <select value={form.source_type} onChange={e => setForm(p => ({ ...p, source_type: e.target.value }))} style={{ padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13 }}><option>Основная</option><option>Дополнительная</option></select>
-              <input placeholder="Год" type="number" value={form.year} onChange={e => setForm(p => ({ ...p, year: +e.target.value }))} style={{ width: 70, padding: "6px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, textAlign: "center" }} />
+              <input placeholder="Год" type="number" value={form.year} onChange={e => setForm(p => ({ ...p, year: +e.target.value }))} style={{ width: 80, padding: "6px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, textAlign: "center" }} />
+              {!isElectronic && <input placeholder="Кол-во экз." type="number" value={form.copies_count} onChange={e => setForm(p => ({ ...p, copies_count: e.target.value }))} style={{ width: 110, padding: "6px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, textAlign: "center" }} />}
             </div>
             <input placeholder="Авторы" value={form.authors} onChange={e => setForm(p => ({ ...p, authors: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
             <input placeholder="Название" value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
             <input placeholder="Издательство" value={form.publisher} onChange={e => setForm(p => ({ ...p, publisher: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
+            {isElectronic && <input placeholder="URL электронного ресурса" value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />}
             <div style={{ display: "flex", gap: 8 }}><Btn small primary onClick={addLit}>Добавить</Btn><Btn small onClick={() => setShowAdd(false)}>Отмена</Btn></div>
           </div>}
       </div>}
@@ -340,21 +465,102 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
     </div>;
   }
 
+  function OutcomesEditor() {
+    const [comps, setComps] = useState([]);
+    const [showAdd, setShowAdd] = useState(false);
+    const [form, setForm] = useState({ id_indicator: "", outcome_text: "", assessment_tool: "" });
+    useEffect(() => { if (rpd?.id_discipline) api.getCompetenciesByDiscipline(rpd.id_discipline).then(r => setComps(r.data)).catch(() => { }); }, []);
+    const used = new Set((rpd.learning_outcomes || []).map(o => o.id_indicator));
+    const add = async () => { if (!form.id_indicator) return; try { await api.addOutcome(rpdId, { id_indicator: +form.id_indicator, outcome_text: form.outcome_text, assessment_tool: form.assessment_tool }); setShowAdd(false); setForm({ id_indicator: "", outcome_text: "", assessment_tool: "" }); await load(); } catch { } };
+    const del = async (id) => { try { await api.deleteOutcome(id); await load(); } catch { } };
+    return <div>
+      {rpd.learning_outcomes?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead><tr>{["Компетенция", "Индикатор", "Результат", "Средство оценки", isEdit && canEdit ? "" : null].filter(x => x !== null).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{rpd.learning_outcomes.map(o => <tr key={o.id_outcome}><td style={td}>{o.competency_code}</td><td style={td}>{o.indicator_code}</td><td style={td}>{o.outcome_text}</td><td style={td}>{o.assessment_tool}</td>{isEdit && canEdit && <td style={{ ...td, textAlign: "center" }}><button onClick={() => del(o.id_outcome)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button></td>}</tr>)}</tbody>
+      </table> : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Результаты обучения не добавлены</div>}
+      {isEdit && canEdit && <div style={{ marginTop: 8 }}>
+        {!showAdd ? <Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить результат</Btn>
+          : <div style={{ padding: 12, border: "1px solid " + T.accent, borderRadius: 8, background: T.accentLight + "33" }}>
+            <select value={form.id_indicator} onChange={e => setForm(p => ({ ...p, id_indicator: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, fontFamily: F }}>
+              <option value="">— Выбрать индикатор —</option>
+              {comps.map(c => c.indicators?.filter(i => !used.has(i.id_indicator)).map(i => <option key={i.id_indicator} value={i.id_indicator}>{c.code} / {i.code} — {i.description}</option>))}
+            </select>
+            <textarea placeholder="Планируемый результат обучения (знать/уметь/владеть)" value={form.outcome_text} onChange={e => setForm(p => ({ ...p, outcome_text: e.target.value }))} style={{ width: "100%", minHeight: 60, padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, marginBottom: 8, resize: "vertical", boxSizing: "border-box" }} />
+            <input placeholder="Средство оценки (Экзамен / Защита лабораторной работы / …)" value={form.assessment_tool} onChange={e => setForm(p => ({ ...p, assessment_tool: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 8 }}><Btn small primary onClick={add}>Добавить</Btn><Btn small onClick={() => setShowAdd(false)}>Отмена</Btn></div>
+          </div>}
+      </div>}
+    </div>;
+  }
+
+  function TopicsEditor({ kind }) {
+    // kind: "lab" | "practice"
+    const [addingFor, setAddingFor] = useState(null);
+    const [form, setForm] = useState({ title: "", hours: "" });
+    const add = async (sectionId) => { if (!form.title.trim()) return; try { await api.addTopic(sectionId, { topic_type: kind, title: form.title, hours: form.hours ? +form.hours : null }); setAddingFor(null); setForm({ title: "", hours: "" }); await load(); } catch { } };
+    const del = async (id) => { try { await api.deleteTopic(id); await load(); } catch { } };
+    if (!rpd.sections?.length) return <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Сначала добавьте разделы дисциплины (раздел 4)</div>;
+    return <div>{rpd.sections.map(s => {
+      const topics = (s.topics || []).filter(t => t.topic_type === kind);
+      return <div key={s.id_section} style={{ marginBottom: 16, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12 }}>
+        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Раздел {s.section_number}. {s.title}</div>
+        {topics.length > 0 ? topics.map(t => <div key={t.id_topic} style={{ display: "flex", alignItems: "center", padding: "6px 12px", marginLeft: 16, borderLeft: "2px solid " + T.accent, marginBottom: 4, fontSize: 12 }}>
+          <span style={{ flex: 1 }}>{t.title} {t.hours ? `(${t.hours} ч.)` : ""}</span>
+          {isEdit && canEdit && <button onClick={() => del(t.id_topic)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button>}
+        </div>) : <div style={{ fontSize: 11, color: T.textMuted, marginLeft: 16, marginBottom: 8 }}>Тем нет</div>}
+        {isEdit && canEdit && (addingFor === s.id_section
+          ? <div style={{ marginTop: 8, marginLeft: 16, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              <input placeholder={kind === "lab" ? "Название лабораторной работы" : "Название практического занятия"} value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} style={{ flex: 1, minWidth: 200, padding: "5px 8px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 12 }} />
+              <input type="number" min="0" placeholder="ч." value={form.hours} onChange={e => setForm(p => ({ ...p, hours: e.target.value }))} style={{ width: 50, padding: "5px 6px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 12, textAlign: "center" }} />
+              <Btn small primary onClick={() => add(s.id_section)}>OK</Btn>
+              <Btn small onClick={() => { setAddingFor(null); setForm({ title: "", hours: "" }); }}>✕</Btn>
+            </div>
+          : <Btn small onClick={() => { setAddingFor(s.id_section); setForm({ title: "", hours: "" }); }} style={{ marginLeft: 16 }}><PlusIcon /> Добавить тему</Btn>)}
+      </div>;
+    })}</div>;
+  }
+
+  function DatabasesEditor() {
+    const [showAdd, setShowAdd] = useState(false);
+    const [form, setForm] = useState({ name: "", url: "" });
+    const add = async () => { if (!form.name.trim()) return; try { await api.addDatabase(rpdId, form); setShowAdd(false); setForm({ name: "", url: "" }); await load(); } catch { } };
+    const del = async (id) => { try { await api.deleteDatabase(id); await load(); } catch { } };
+    return <div>
+      {rpd.databases?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead><tr>{["Наименование", "Ссылка", isEdit && canEdit ? "" : null].filter(x => x !== null).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{rpd.databases.map(d => <tr key={d.id_database}>
+          <td style={td}>{d.name}</td>
+          <td style={{ ...td, fontSize: 11, color: T.blue, wordBreak: "break-all" }}>{d.url || "—"}</td>
+          {isEdit && canEdit && <td style={{ ...td, textAlign: "center" }}><button onClick={() => del(d.id_database)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button></td>}
+        </tr>)}</tbody>
+      </table> : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>БД не добавлены — в шаблон будет вставлен стандартный перечень ПНИПУ</div>}
+      {isEdit && canEdit && <div style={{ marginTop: 8 }}>
+        {!showAdd ? <Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить</Btn>
+          : <div style={{ padding: 12, border: "1px solid " + T.accent, borderRadius: 8, background: T.accentLight + "33" }}>
+            <input placeholder="Наименование (например, eLIBRARY.RU)" value={form.name} onChange={e => setForm(p => ({ ...p, name: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
+            <input placeholder="Ссылка / «локальная сеть»" value={form.url} onChange={e => setForm(p => ({ ...p, url: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
+            <div style={{ display: "flex", gap: 8 }}><Btn small primary onClick={add}>Добавить</Btn><Btn small onClick={() => setShowAdd(false)}>Отмена</Btn></div>
+          </div>}
+      </div>}
+    </div>;
+  }
+
   function MtechEditor() {
     const [showAdd, setShowAdd] = useState(false);
-    const [form, setForm] = useState({ room_type: "", equipment: "" });
-    const add = async () => { try { await api.addMaterialTech(rpdId, form); setShowAdd(false); setForm({ room_type: "", equipment: "" }); await load(); } catch { } };
+    const [form, setForm] = useState({ room_type: "", equipment: "", quantity: "" });
+    const add = async () => { try { await api.addMaterialTech(rpdId, { ...form, quantity: form.quantity ? +form.quantity : null }); setShowAdd(false); setForm({ room_type: "", equipment: "", quantity: "" }); await load(); } catch { } };
     const del = async (id) => { await api.deleteMaterialTech(id); await load(); };
     return <div>
       {rpd.material_tech?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead><tr>{["Тип помещения", "Оборудование", isEdit && canEdit ? "" : null].filter(Boolean).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
-        <tbody>{rpd.material_tech.map(m => <tr key={m.id_material_tech}><td style={td}>{m.room_type}</td><td style={td}>{m.equipment}</td>{isEdit && canEdit && <td style={{ ...td, textAlign: "center" }}><button onClick={() => del(m.id_material_tech)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button></td>}</tr>)}</tbody>
+        <thead><tr>{["Тип помещения", "Оборудование", "Кол-во", isEdit && canEdit ? "" : null].filter(Boolean).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
+        <tbody>{rpd.material_tech.map(m => <tr key={m.id_material_tech}><td style={td}>{m.room_type}</td><td style={td}>{m.equipment}</td><td style={{ ...td, textAlign: "center" }}>{m.quantity ?? "—"}</td>{isEdit && canEdit && <td style={{ ...td, textAlign: "center" }}><button onClick={() => del(m.id_material_tech)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button></td>}</tr>)}</tbody>
       </table> : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>МТО не добавлено</div>}
       {isEdit && canEdit && <div style={{ marginTop: 8 }}>
         {!showAdd ? <Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить</Btn>
           : <div style={{ padding: 12, border: "1px solid " + T.accent, borderRadius: 8, background: T.accentLight + "33", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
             <input placeholder="Тип помещения" value={form.room_type} onChange={e => setForm(p => ({ ...p, room_type: e.target.value }))} style={{ width: 200, padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13 }} />
             <input placeholder="Оборудование" value={form.equipment} onChange={e => setForm(p => ({ ...p, equipment: e.target.value }))} style={{ flex: 1, minWidth: 200, padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13 }} />
+            <input type="number" min="0" placeholder="Кол-во" value={form.quantity} onChange={e => setForm(p => ({ ...p, quantity: e.target.value }))} style={{ width: 70, padding: "6px 8px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, textAlign: "center" }} />
             <Btn small primary onClick={add}>Добавить</Btn><Btn small onClick={() => setShowAdd(false)}>✕</Btn>
           </div>}
       </div>}
@@ -388,9 +594,48 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
         <div style={{ borderTop: "1px solid " + T.borderLight, padding: "8px 12px", fontSize: 11, color: T.textMuted, flexShrink: 0 }}><Badge status={rpd.status} /></div>
       </div>
       {/* DOCUMENT */}
+      {showPdf ? (
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", background: T.pdfBg, overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", background: T.surface, borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
+            <span style={{ fontSize: 12, color: T.blue, fontWeight: 700 }}>👁 Просмотр PDF</span>
+            <div style={{ width: 1, height: 18, background: T.borderLight }} />
+            {/* Page navigation */}
+            <button onClick={() => scrollToPdfPage(Math.max(1, pdfCurrentPage - 1))} disabled={!pdfNumPages || pdfCurrentPage <= 1} style={pdfToolBtn(pdfCurrentPage <= 1 || !pdfNumPages)} title="Предыдущая страница">◀</button>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: T.text }}>
+              <input type="number" min={1} max={pdfNumPages || 1} value={pdfCurrentPage}
+                onChange={e => { const v = Math.max(1, Math.min(pdfNumPages || 1, +e.target.value || 1)); scrollToPdfPage(v); }}
+                style={{ width: 44, padding: "3px 6px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 12, textAlign: "center", fontFamily: F }} />
+              <span style={{ color: T.textMuted }}>/ {pdfNumPages || "—"}</span>
+            </div>
+            <button onClick={() => scrollToPdfPage(Math.min(pdfNumPages || 1, pdfCurrentPage + 1))} disabled={!pdfNumPages || pdfCurrentPage >= pdfNumPages} style={pdfToolBtn(!pdfNumPages || pdfCurrentPage >= pdfNumPages)} title="Следующая страница">▶</button>
+            <div style={{ width: 1, height: 18, background: T.borderLight }} />
+            {/* Zoom */}
+            <button onClick={() => setPdfScale(s => Math.max(0.5, +(s - 0.1).toFixed(2)))} style={pdfToolBtn(false)} title="Уменьшить">−</button>
+            <span style={{ fontSize: 12, color: T.text, minWidth: 38, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{Math.round(pdfScale * 100)}%</span>
+            <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} style={pdfToolBtn(false)} title="Увеличить">+</button>
+            <button onClick={() => setPdfScale(1.1)} style={{ ...pdfToolBtn(false), fontSize: 11, padding: "3px 8px" }} title="Сбросить масштаб">1:1</button>
+            <div style={{ flex: 1 }} />
+            <Btn small onClick={() => setPdfReloadKey(k => k + 1)} disabled={pdfLoading}>↻ Обновить</Btn>
+            <Btn small onClick={() => onExportPdf(rpdId)}><DownloadIcon /> Скачать</Btn>
+          </div>
+          <div ref={pdfScrollRef} style={{ flex: 1, position: "relative", overflow: "auto", background: T.pdfBg, padding: "16px 0" }}>
+            {pdfLoading && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12, zIndex: 2, pointerEvents: "none" }}><Spinner size={36} /><div style={{ fontSize: 13 }}>Формируется PDF из шаблона...</div></div>}
+            {pdfError && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12 }}><div style={{ fontSize: 14, color: "#ffb4b4" }}>{pdfError}</div><Btn small onClick={() => setPdfReloadKey(k => k + 1)}>Повторить</Btn></div>}
+            {pdfData && (
+              <Document file={pdfData} onLoadSuccess={({ numPages }) => setPdfNumPages(numPages)} onLoadError={(e) => { console.error("PDF load error:", e); setPdfError("Не удалось открыть PDF: " + (e?.message || "неизвестная ошибка")); }} loading="">
+                {Array.from({ length: pdfNumPages }, (_, i) => i + 1).map(n => (
+                  <div key={n} data-page={n} ref={el => { pdfPageRefs.current[n] = el; }} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+                    <Page pageNumber={n} scale={pdfScale} renderAnnotationLayer={false} renderTextLayer={false} loading="" />
+                  </div>
+                ))}
+              </Document>
+            )}
+          </div>
+        </div>
+      ) : (
       <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "24px 32px", background: T.bg }}>
         {isEdit && canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.orangeLight, border: "1px solid " + T.orange, color: T.orange, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>✏ Режим редактирования — изменения сохраняются кнопкой «Сохранить»</div>}
-        {(!isEdit || !canEdit) && !isHead && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 Режим просмотра — редактирование недоступно</div>}
+        {isEdit && !canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 РПД нельзя редактировать в текущем статусе</div>}
         <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + (isEdit && canEdit ? T.orange : T.borderLight), borderRadius: 4, boxShadow: isEdit && canEdit ? "0 2px 16px rgba(217,115,32,.12)" : "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
           {/* ТИТУЛЬНИК */}
           <div ref={refs.title} style={{ marginBottom: 32, textAlign: "center", paddingTop: 20, paddingBottom: 20 }}>
@@ -406,33 +651,51 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
             </div>
           </div>
           <HR />
-          {/* ОБЩИЕ */}
-          <div ref={refs.general} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>1. Общие положения</div>
-            <div style={{ fontSize: 13, marginBottom: 20, display: "flex", gap: 16, flexWrap: "wrap" }}>
-              <span>Всего: <b>{rpd.total_hours || 0}</b> ч.</span><span>Лек: <b>{rpd.lecture_hours || 0}</b></span><span>Пр: <b>{rpd.practice_hours || 0}</b></span><span>Лаб: <b>{rpd.lab_hours || 0}</b></span><span>СРС: <b>{rpd.self_study_hours || 0}</b></span>
-            </div>
-            <EditableBlock skey="objects" label="1.2. Изучаемые объекты" fieldKey="objects" />
-            <div style={{ marginTop: 20 }}><EditableBlock skey="requirements" label="1.3. Входные требования" fieldKey="requirements" /></div>
+          {/* 1. Общие положения */}
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>1. Общие положения</div>
+          {/* 1.1 Цели и задачи */}
+          <div ref={refs["1.1"]} style={{ marginBottom: 32 }}>
+            <EditableBlock skey="goals" label="1.1. Цели дисциплины" fieldKey="goals" />
+            <div style={{ marginTop: 20 }}><EditableBlock skey="tasks" label="Задачи дисциплины" fieldKey="tasks" /></div>
           </div>
           <HR />
-          {/* ЦЕЛИ */}
-          <div ref={refs.goals} style={{ marginBottom: 32 }}>
-            <EditableBlock skey="goals" label="2. Цели дисциплины" fieldKey="goals" />
-            <div style={{ marginTop: 20 }}><EditableBlock skey="tasks" label="2.1. Задачи дисциплины" fieldKey="tasks" /></div>
+          {/* 1.2 Изучаемые объекты */}
+          <div ref={refs["1.2"]} style={{ marginBottom: 32 }}>
+            <EditableBlock skey="objects" label="1.2. Изучаемые объекты дисциплины" fieldKey="objects" />
           </div>
           <HR />
-          {/* РЕЗУЛЬТАТЫ */}
-          <div ref={refs.results} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>3. Планируемые результаты обучения</div>
-            {rpd.learning_outcomes?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead><tr><th style={th}>Компетенция</th><th style={th}>Индикатор</th><th style={th}>Результаты обучения</th><th style={th}>Средство оценки</th></tr></thead>
-              <tbody>{rpd.learning_outcomes.map(lo => <tr key={lo.id_outcome}><td style={td}>{lo.competency_code}</td><td style={td}>{lo.indicator_code}</td><td style={td}>{lo.outcome_text}</td><td style={td}>{lo.assessment_tool}</td></tr>)}</tbody>
-            </table> : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Результаты обучения не добавлены</div>}
+          {/* 1.3 Входные требования */}
+          <div ref={refs["1.3"]} style={{ marginBottom: 32 }}>
+            <EditableBlock skey="requirements" label="1.3. Входные требования" fieldKey="requirements" />
           </div>
           <HR />
-          {/* СОДЕРЖАНИЕ */}
-          <div ref={refs.content} style={{ marginBottom: 32 }}>
+          {/* 2. Результаты обучения */}
+          <div ref={refs["2"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>2. Планируемые результаты обучения по дисциплине</div>
+            <OutcomesEditor />
+          </div>
+          <HR />
+          {/* 3. Объём и виды учебной работы — read-only из БУП */}
+          <div ref={refs["3"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>3. Объём и виды учебной работы</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Заполняется автоматически из БУП</div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr><th style={th}>Вид учебной работы</th><th style={th}>Всего часов</th></tr></thead>
+              <tbody>
+                <tr><td style={td}>Контактная аудиторная работа</td><td style={{ ...td, textAlign: "center" }}>{(rpd.lecture_hours || 0) + (rpd.practice_hours || 0) + (rpd.lab_hours || 0)}</td></tr>
+                <tr><td style={td}>— лекции (Л)</td><td style={{ ...td, textAlign: "center" }}>{rpd.lecture_hours || 0}</td></tr>
+                <tr><td style={td}>— лабораторные работы (ЛР)</td><td style={{ ...td, textAlign: "center" }}>{rpd.lab_hours || 0}</td></tr>
+                <tr><td style={td}>— практические занятия (ПЗ)</td><td style={{ ...td, textAlign: "center" }}>{rpd.practice_hours || 0}</td></tr>
+                <tr><td style={td}>Самостоятельная работа (СРС)</td><td style={{ ...td, textAlign: "center" }}>{rpd.self_study_hours || 0}</td></tr>
+                <tr><td style={{ ...td, fontWeight: 700 }}>Общая трудоёмкость</td><td style={{ ...td, textAlign: "center", fontWeight: 700 }}>{rpd.total_hours || 0}</td></tr>
+                <tr><td style={td}>Форма итогового контроля</td><td style={{ ...td, textAlign: "center" }}>{rpd.control_form || "—"}</td></tr>
+                <tr><td style={td}>Семестр(ы)</td><td style={{ ...td, textAlign: "center" }}>{rpd.semester || "—"}</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <HR />
+          {/* 4. Содержание */}
+          <div ref={refs["4"]} style={{ marginBottom: 32 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>4. Содержание дисциплины</div>
               {isEdit && canEdit && <Btn small primary onClick={() => autoFill("content")} disabled={!!generating}>{generating === "content" ? "Генерация..." : "Сгенерировать"}</Btn>}
@@ -440,40 +703,68 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
             <SectionEditor />
           </div>
           <HR />
-          {/* ТЕМАТИКИ */}
-          <div ref={refs.topics} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>5. Тематики занятий</div>
-            {rpd.sections?.some(s => s.topics?.length > 0) ? rpd.sections.filter(s => s.topics?.length > 0).map(s => <div key={s.id_section} style={{ marginBottom: 16 }}><div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Раздел {s.section_number}. {s.title}</div>{s.topics.map(t => <div key={t.id_topic} style={{ padding: "6px 12px", marginLeft: 16, borderLeft: "2px solid " + T.accent, marginBottom: 4, fontSize: 12 }}><b>{t.topic_type}:</b> {t.title} {t.hours ? `(${t.hours} ч.)` : ""}</div>)}</div>)
-              : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Тематики формируются из разделов</div>}
+          {/* 4.1 Тематика лабораторных работ */}
+          <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>4.1. Тематика примерных лабораторных работ</div>
+            <TopicsEditor kind="lab" />
           </div>
           <HR />
-          {/* ОРГ.-ПЕД. */}
-          <div ref={refs.edutech} style={{ marginBottom: 32 }}>
-            <EditableBlock skey="educational_tech" label="6. Образовательные технологии" fieldKey="educational_tech" />
-            <div style={{ marginTop: 20 }}><EditableBlock skey="methodical_recommendations" label="6.1. Методические рекомендации" fieldKey="methodical_recommendations" /></div>
+          {/* 4.2 Тематика практических занятий */}
+          <div ref={refs["4.2"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>4.2. Тематика практических занятий</div>
+            <TopicsEditor kind="practice" />
           </div>
           <HR />
-          {/* ЛИТЕРАТУРА */}
-          <div ref={refs.literature} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>7. Учебно-методическое обеспечение</div>
-            <LiteratureEditor />
+          {/* 5. Орг.-пед. условия */}
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>5. Организационно-педагогические условия</div>
+          <div ref={refs["5.1"]} style={{ marginBottom: 32 }}>
+            <EditableBlock skey="educational_tech" label="5.1. Образовательные технологии" fieldKey="educational_tech" />
           </div>
           <HR />
-          {/* ПО */}
-          <div ref={refs.software} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>8. Программное обеспечение</div>
+          <div ref={refs["5.2"]} style={{ marginBottom: 32 }}>
+            <EditableBlock skey="methodical_recommendations" label="5.2. Методические указания" fieldKey="methodical_recommendations" />
+          </div>
+          <HR />
+          {/* 6. Учебно-методическое обеспечение */}
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>6. Учебно-методическое и информационное обеспечение</div>
+          <div ref={refs["6.1"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.1. Печатная учебно-методическая литература</div>
+            <LiteratureEditor kind="printed" />
+          </div>
+          <HR />
+          <div ref={refs["6.2"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.2. Электронная учебно-методическая литература</div>
+            <LiteratureEditor kind="electronic" />
+          </div>
+          <HR />
+          <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.3. Лицензионное и свободно распространяемое программное обеспечение</div>
             <SoftwareEditor />
           </div>
           <HR />
-          {/* МТО */}
-          <div ref={refs.mtech} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>9. Материально-техническое обеспечение</div>
+          <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>6.4. Современные профессиональные базы данных и информационные справочные системы</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Если оставить пустым — в шаблон вставится стандартный перечень ПНИПУ</div>
+            <DatabasesEditor />
+          </div>
+          <HR />
+          {/* 7. МТО */}
+          <div ref={refs["7"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>7. Материально-техническое обеспечение образовательного процесса</div>
             <MtechEditor />
           </div>
           <HR />
-          {/* ДОКУМЕНТЫ */}
+          {/* 8. ФОС — read-only */}
+          <div ref={refs["8"]} style={{ marginBottom: 32 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>8. Фонд оценочных средств</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Заполняется автоматически из ФОС</div>
+            <div style={{ padding: 16, border: "1px solid " + T.borderLight, borderRadius: 6, background: T.bg, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Описан в отдельном документе (приложение к РПД)</div>
+          </div>
+          <HR />
+          {/* ДОКУМЕНТЫ для LLM */}
           <div ref={refs.docs} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>Загруженные документы (контекст для LLM)</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Загруженные документы (контекст для LLM)</div>
+            <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Не попадает в финальный РПД — используется только для автогенерации</div>
             <DocsUpload />
           </div>
           {/* ИСТОРИЯ */}
@@ -487,14 +778,15 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
         </div>
         <div style={{ height: 300 }} />
       </div>
+      )}
     </div>
     {/* Bottom bar */}
     <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 16px", flexShrink: 0, background: T.surface, borderTop: "1px solid " + T.border }}>
       <Btn small onClick={onBack}>← Назад</Btn>
-      <Btn small onClick={() => onExportPdf(rpdId)}><DownloadIcon /> PDF</Btn>
+      {!showPdf && <Btn small onClick={() => onExportPdf(rpdId)}><DownloadIcon /> PDF</Btn>}
       {isEdit && canEdit && !isHead && <><Btn small onClick={handleSave} disabled={saving}>{saving ? "Сохранение..." : "Сохранить"}</Btn><div style={{ flex: 1 }} /><Btn primary onClick={handleSendApproval}>Отправить на согласование</Btn></>}
       {isHead && rpd.status === "На согласовании" && <><div style={{ flex: 1 }} /><Btn primary onClick={() => handleReview("approve")}>Согласовать</Btn><Btn danger onClick={() => setModal("reject")}>На доработку</Btn></>}
-      {(!isEdit || !canEdit) && !isHead && <><div style={{ flex: 1 }} /><span style={{ fontSize: 12, color: T.textMuted }}>Режим просмотра</span></>}
+      {showPdf && !(isHead && rpd.status === "На согласовании") && <><div style={{ flex: 1 }} /><span style={{ fontSize: 12, color: T.textMuted }}>Режим просмотра</span></>}
     </div>
     {/* Modals */}
     {modal === "sent" && <Modal onClose={() => setModal(null)} width={400}><div style={{ padding: 24, textAlign: "center" }}><div style={{ fontSize: 16, fontWeight: 700, color: T.green, marginBottom: 16 }}>РПД отправлена на согласование</div><Btn primary onClick={() => setModal(null)}>Ок</Btn></div></Modal>}

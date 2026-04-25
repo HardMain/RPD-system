@@ -204,12 +204,28 @@ class SoftwareOut(BaseModel):
 class MaterialTechCreate(BaseModel):
     room_type: str
     equipment: str | None = None
+    quantity: int | None = None
 
 
 class MaterialTechOut(BaseModel):
     id_material_tech: int
     room_type: str
     equipment: str | None = None
+    quantity: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class DatabaseCreate(BaseModel):
+    name: str
+    url: str | None = None
+
+
+class DatabaseOut(BaseModel):
+    id_database: int
+    name: str
+    url: str | None = None
 
     class Config:
         from_attributes = True
@@ -297,6 +313,7 @@ class RpdDetailOut(BaseModel):
     literature: list[LiteratureOut] = []
     software: list[SoftwareOut] = []
     material_tech: list[MaterialTechOut] = []
+    databases: list[DatabaseOut] = []
     learning_outcomes: list[LearningOutcomeOut] = []
     developers: list[DeveloperOut] = []
     uploaded_documents: list[UploadedDocumentOut] = []

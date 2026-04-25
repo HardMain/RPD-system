@@ -8,7 +8,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.models.user import (
     User, Rpd, Discipline, Direction, RpdSection, RpdTopic,
-    RpdLiterature, RpdSoftware, RpdMaterialTech, RpdLearningOutcome,
+    RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification, ApprovalStage, CompetencyIndicator,
     UploadedDocument,
 )
@@ -18,6 +18,7 @@ from app.schemas import (
     LiteratureCreate, LiteratureUpdate, LiteratureOut,
     SoftwareCreate, SoftwareOut,
     MaterialTechCreate, MaterialTechOut,
+    DatabaseCreate, DatabaseOut,
     LearningOutcomeCreate, LearningOutcomeOut,
     DeveloperOut, ApprovalAction, ApprovalOut,
     DirectionOut, DisciplineOut, UploadedDocumentOut,
@@ -80,6 +81,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         literature=[LiteratureOut.model_validate(l) for l in r.literature],
         software=[SoftwareOut.model_validate(s) for s in r.software],
         material_tech=[MaterialTechOut.model_validate(m) for m in r.material_tech],
+        databases=[DatabaseOut.model_validate(d) for d in r.databases],
         learning_outcomes=outcomes,
         developers=devs,
         uploaded_documents=docs,
@@ -96,6 +98,7 @@ def _rpd_select_options():
         selectinload(Rpd.literature),
         selectinload(Rpd.software),
         selectinload(Rpd.material_tech),
+        selectinload(Rpd.databases),
         selectinload(Rpd.learning_outcomes).selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency),
         selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
         selectinload(Rpd.uploaded_documents),
@@ -469,6 +472,39 @@ async def delete_material_tech(mt_id: int, db: AsyncSession = Depends(get_db), u
     mt = result.scalar_one_or_none()
     if mt:
         await db.delete(mt)
+        await db.commit()
+
+
+# ── Databases (БД и ИСС) ──
+
+@router.post("/{rpd_id}/databases", response_model=DatabaseOut, status_code=201)
+async def add_database(rpd_id: int, data: DatabaseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    item = RpdDatabase(id_rpd=rpd_id, **data.model_dump())
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+@router.put("/databases/{db_id}", response_model=DatabaseOut)
+async def update_database(db_id: int, data: DatabaseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(select(RpdDatabase).where(RpdDatabase.id_database == db_id))
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404)
+    for k, v in data.model_dump().items():
+        setattr(item, k, v)
+    await db.commit()
+    await db.refresh(item)
+    return item
+
+
+@router.delete("/databases/{db_id}", status_code=204)
+async def delete_database(db_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(select(RpdDatabase).where(RpdDatabase.id_database == db_id))
+    item = result.scalar_one_or_none()
+    if item:
+        await db.delete(item)
         await db.commit()
 
 
