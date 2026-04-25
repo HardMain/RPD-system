@@ -216,8 +216,30 @@ const SEC_LABELS = {
   docs:  "Документы (LLM)",
 };
 const READ_ONLY_KEYS = new Set(["title", "3", "8"]);
+/* Грубая привязка разделов к страницам сгенерированного PDF (зависит от вёрстки шаблона) */
+const PDF_PAGE_MAP = {
+  title: 1,
+  "1.1": 2, "1.2": 2, "1.3": 2,
+  "2": 3,
+  "3": 4,
+  "4": 4, "4.1": 6, "4.2": 6,
+  "5.1": 7, "5.2": 7,
+  "6.1": 8, "6.2": 8, "6.3": 9, "6.4": 9,
+  "7": 9,
+  "8": 10,
+  docs: 1,
+};
+function sectionForPdfPage(page) {
+  let foundKey = "title", foundP = 0;
+  for (const k of SEC_KEYS) {
+    if (k === "docs") continue;
+    const p = PDF_PAGE_MAP[k];
+    if (p !== undefined && p <= page && p > foundP) { foundKey = k; foundP = p; }
+  }
+  return foundKey;
+}
 
-function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
+function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
@@ -228,8 +250,16 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1.1);
+  const [sidebarW, setSidebarW] = useState(160);
+  const [pageInputValue, setPageInputValue] = useState(1);
   const pdfScrollRef = useRef(null);
   const pdfPageRefs = useRef({});
+  const pdfScrollPosRef = useRef(0);
+  const editScrollPosRef = useRef(0);
+  const programmaticUntilRef = useRef(0);
+  const preferredActiveSecRef = useRef(null);
+  const pageInputFocusedRef = useRef(false);
+  const resizingRef = useRef(false);
   const scrollRef = useRef(null);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
   const isEdit = editMode; const isHead = userRole === "Зав. кафедрой";
@@ -274,6 +304,41 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
     return () => obs.disconnect();
   }, [showPdf, pdfNumPages, pdfScale]);
 
+  // Подсветка раздела сайдбара по текущей странице PDF (в режиме просмотра)
+  useEffect(() => {
+    if (!showPdf) return;
+    if (Date.now() < programmaticUntilRef.current) return;
+    const preferred = preferredActiveSecRef.current;
+    if (preferred && PDF_PAGE_MAP[preferred] === pdfCurrentPage) {
+      setActiveSec(p => p === preferred ? p : preferred);
+      return;
+    }
+    if (preferred && PDF_PAGE_MAP[preferred] !== pdfCurrentPage) preferredActiveSecRef.current = null;
+    const found = sectionForPdfPage(pdfCurrentPage);
+    setActiveSec(p => p === found ? p : found);
+  }, [pdfCurrentPage, showPdf]);
+
+  // Синхронизация значения поля ввода страницы с реальной текущей (если пользователь не печатает)
+  useEffect(() => {
+    if (pageInputFocusedRef.current) return;
+    setPageInputValue(pdfCurrentPage);
+  }, [pdfCurrentPage]);
+
+  // Восстановление позиции скролла при возврате на вкладку с этой РПД
+  useEffect(() => {
+    if (!isActive) return;
+    const id = requestAnimationFrame(() => {
+      if (showPdf) {
+        const c = pdfScrollRef.current;
+        if (c && pdfScrollPosRef.current && c.scrollTop !== pdfScrollPosRef.current) c.scrollTop = pdfScrollPosRef.current;
+      } else {
+        const c = scrollRef.current;
+        if (c && editScrollPosRef.current && c.scrollTop !== editScrollPosRef.current) c.scrollTop = editScrollPosRef.current;
+      }
+    });
+    return () => cancelAnimationFrame(id);
+  }, [isActive, showPdf, pdfData, loading]);
+
   // Scroll spy (only in edit mode)
   useEffect(() => {
     if (showPdf) return;
@@ -282,34 +347,46 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
     c.addEventListener("scroll", handler, { passive: true }); return () => { c.removeEventListener("scroll", handler); cancelAnimationFrame(raf); };
   }, [loading, showPdf]);
 
-  function scrollToPdfPage(n) {
+  function scrollToPdfPage(n, immediate = true) {
     const el = pdfPageRefs.current[n]; const c = pdfScrollRef.current;
     if (!el || !c) return;
     c.scrollTo({ top: el.offsetTop - 8, behavior: "smooth" });
-    setPdfCurrentPage(n);
+    if (immediate) setPdfCurrentPage(n);
   }
 
   function goTo(key) {
     if (showPdf) {
-      // Грубая навигация по страницам PDF (зависит от вёрстки шаблона)
-      const PAGE_MAP = {
-        title: 1,
-        "1.1": 2, "1.2": 2, "1.3": 2,
-        "2": 3,
-        "3": 4,
-        "4": 4, "4.1": 6, "4.2": 6,
-        "5.1": 7, "5.2": 7,
-        "6.1": 8, "6.2": 8, "6.3": 9, "6.4": 9,
-        "7": 9,
-        "8": 10,
-        docs: 1,
-      };
-      const page = Math.min(PAGE_MAP[key] || 1, pdfNumPages || 1);
-      scrollToPdfPage(page);
+      const page = Math.min(PDF_PAGE_MAP[key] || 1, pdfNumPages || 1);
+      preferredActiveSecRef.current = key;
+      programmaticUntilRef.current = Date.now() + 900;
       setActiveSec(key);
+      scrollToPdfPage(page, false);
       return;
     }
     const el = refs[key]?.current; const c = scrollRef.current; if (!el || !c) return; c.scrollTo({ top: c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12, behavior: "smooth" });
+  }
+
+  function startResize(e) {
+    e.preventDefault();
+    resizingRef.current = true;
+    const startX = e.clientX;
+    const startW = sidebarW;
+    function onMove(ev) {
+      if (!resizingRef.current) return;
+      const newW = Math.max(120, Math.min(420, startW + ev.clientX - startX));
+      setSidebarW(newW);
+    }
+    function onUp() {
+      resizingRef.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
   }
 
   async function autoFill(key) {
@@ -583,16 +660,24 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
   return <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
       {/* SIDEBAR */}
-      <div style={{ width: 148, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+      <div style={{ width: sidebarW, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
         {isEdit && canEdit && <div style={{ padding: "5px 10px", background: T.orangeLight, borderBottom: "1px solid " + T.orange, fontSize: 10, fontWeight: 700, color: T.orange, textAlign: "center", letterSpacing: .3 }}>✏ РЕДАКТИРОВАНИЕ</div>}
         {(!isEdit || !canEdit) && !isHead && <div style={{ padding: "5px 10px", background: T.blueLight, borderBottom: "1px solid " + T.blue, fontSize: 10, fontWeight: 700, color: T.blue, textAlign: "center", letterSpacing: .3 }}>👁 ПРОСМОТР</div>}
         {isHead && rpd.status === "На согласовании" && <div style={{ padding: "5px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
         <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SEC_KEYS.map(k => {
           const hasErr = validationErrors.length > 0 && validationErrors.some(e => e.secKey === k);
-          return <button key={k} onClick={() => goTo(k)} style={{ display: "flex", width: "100%", padding: "8px 12px", border: "none", borderLeft: hasErr ? "3px solid " + T.red : activeSec === k ? "3px solid " + T.accent : "3px solid transparent", background: activeSec === k ? T.accentLight : "transparent", cursor: "pointer", fontSize: 11, fontFamily: F, fontWeight: activeSec === k ? 700 : 400, color: hasErr ? T.red : activeSec === k ? T.accent : T.text, justifyContent: "space-between", alignItems: "center", boxSizing: "border-box" }}>{SEC_LABELS[k]}{hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}</button>;
+          return <button key={k} onClick={() => goTo(k)} style={{ display: "flex", width: "100%", padding: "8px 12px", border: "none", borderLeft: hasErr ? "3px solid " + T.red : activeSec === k ? "3px solid " + T.accent : "3px solid transparent", background: activeSec === k ? T.accentLight : "transparent", cursor: "pointer", fontSize: 11, fontFamily: F, fontWeight: activeSec === k ? 700 : 400, color: hasErr ? T.red : activeSec === k ? T.accent : T.text, alignItems: "center", gap: 6, boxSizing: "border-box", textAlign: "left" }}>
+            <span style={{ flex: 1, textAlign: "left", lineHeight: 1.3, wordBreak: "break-word" }}>{SEC_LABELS[k]}</span>
+            {hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
+          </button>;
         })}</div>
         <div style={{ borderTop: "1px solid " + T.borderLight, padding: "8px 12px", fontSize: 11, color: T.textMuted, flexShrink: 0 }}><Badge status={rpd.status} /></div>
       </div>
+      {/* RESIZER */}
+      <div onMouseDown={startResize} title="Потяните, чтобы изменить ширину панели"
+        onMouseEnter={e => e.currentTarget.style.background = T.accent}
+        onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = T.borderLight; }}
+        style={{ width: 5, cursor: "col-resize", background: T.borderLight, flexShrink: 0, transition: "background .15s" }} />
       {/* DOCUMENT */}
       {showPdf ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", background: T.pdfBg, overflow: "hidden" }}>
@@ -600,14 +685,28 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
             <span style={{ fontSize: 12, color: T.blue, fontWeight: 700 }}>👁 Просмотр PDF</span>
             <div style={{ width: 1, height: 18, background: T.borderLight }} />
             {/* Page navigation */}
-            <button onClick={() => scrollToPdfPage(Math.max(1, pdfCurrentPage - 1))} disabled={!pdfNumPages || pdfCurrentPage <= 1} style={pdfToolBtn(pdfCurrentPage <= 1 || !pdfNumPages)} title="Предыдущая страница">◀</button>
+            <button onClick={() => scrollToPdfPage(Math.max(1, pdfCurrentPage - 1), false)} disabled={!pdfNumPages || pdfCurrentPage <= 1} style={pdfToolBtn(pdfCurrentPage <= 1 || !pdfNumPages)} title="Предыдущая страница">◀</button>
             <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: T.text }}>
-              <input type="number" min={1} max={pdfNumPages || 1} value={pdfCurrentPage}
-                onChange={e => { const v = Math.max(1, Math.min(pdfNumPages || 1, +e.target.value || 1)); scrollToPdfPage(v); }}
+              <input type="number" min={1} max={pdfNumPages || 1} value={pageInputValue}
+                onFocus={e => { pageInputFocusedRef.current = true; e.target.select(); }}
+                onBlur={() => {
+                  pageInputFocusedRef.current = false;
+                  const v = Math.max(1, Math.min(pdfNumPages || 1, +pageInputValue || 1));
+                  setPageInputValue(v);
+                  if (v !== pdfCurrentPage) scrollToPdfPage(v, false);
+                }}
+                onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+                onChange={e => {
+                  setPageInputValue(e.target.value);
+                  const raw = +e.target.value;
+                  if (Number.isFinite(raw) && raw >= 1 && raw <= (pdfNumPages || 1) && raw !== pdfCurrentPage) {
+                    scrollToPdfPage(raw, false);
+                  }
+                }}
                 style={{ width: 44, padding: "3px 6px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 12, textAlign: "center", fontFamily: F }} />
               <span style={{ color: T.textMuted }}>/ {pdfNumPages || "—"}</span>
             </div>
-            <button onClick={() => scrollToPdfPage(Math.min(pdfNumPages || 1, pdfCurrentPage + 1))} disabled={!pdfNumPages || pdfCurrentPage >= pdfNumPages} style={pdfToolBtn(!pdfNumPages || pdfCurrentPage >= pdfNumPages)} title="Следующая страница">▶</button>
+            <button onClick={() => scrollToPdfPage(Math.min(pdfNumPages || 1, pdfCurrentPage + 1), false)} disabled={!pdfNumPages || pdfCurrentPage >= pdfNumPages} style={pdfToolBtn(!pdfNumPages || pdfCurrentPage >= pdfNumPages)} title="Следующая страница">▶</button>
             <div style={{ width: 1, height: 18, background: T.borderLight }} />
             {/* Zoom */}
             <button onClick={() => setPdfScale(s => Math.max(0.5, +(s - 0.1).toFixed(2)))} style={pdfToolBtn(false)} title="Уменьшить">−</button>
@@ -618,7 +717,7 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
             <Btn small onClick={() => setPdfReloadKey(k => k + 1)} disabled={pdfLoading}>↻ Обновить</Btn>
             <Btn small onClick={() => onExportPdf(rpdId)}><DownloadIcon /> Скачать</Btn>
           </div>
-          <div ref={pdfScrollRef} style={{ flex: 1, position: "relative", overflow: "auto", background: T.pdfBg, padding: "16px 0" }}>
+          <div ref={pdfScrollRef} onScroll={e => { pdfScrollPosRef.current = e.currentTarget.scrollTop; }} style={{ flex: 1, position: "relative", overflow: "auto", background: T.pdfBg, padding: "16px 0" }}>
             {pdfLoading && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12, zIndex: 2, pointerEvents: "none" }}><Spinner size={36} /><div style={{ fontSize: 13 }}>Формируется PDF из шаблона...</div></div>}
             {pdfError && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12 }}><div style={{ fontSize: 14, color: "#ffb4b4" }}>{pdfError}</div><Btn small onClick={() => setPdfReloadKey(k => k + 1)}>Повторить</Btn></div>}
             {pdfData && (
@@ -633,7 +732,7 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf }) {
           </div>
         </div>
       ) : (
-      <div ref={scrollRef} style={{ flex: 1, overflowY: "auto", padding: "24px 32px", background: T.bg }}>
+      <div ref={scrollRef} onScroll={e => { editScrollPosRef.current = e.currentTarget.scrollTop; }} style={{ flex: 1, overflowY: "auto", padding: "24px 32px", background: T.bg }}>
         {isEdit && canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.orangeLight, border: "1px solid " + T.orange, color: T.orange, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>✏ Режим редактирования — изменения сохраняются кнопкой «Сохранить»</div>}
         {isEdit && !canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 РПД нельзя редактировать в текущем статусе</div>}
         <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + (isEdit && canEdit ? T.orange : T.borderLight), borderRadius: 4, boxShadow: isEdit && canEdit ? "0 2px 16px rgba(217,115,32,.12)" : "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
@@ -897,7 +996,13 @@ export default function App() {
         <tbody>{rpds.filter(r => r.status === "Согласовано").map(r => <tr key={r.id_rpd} onClick={() => openRpdFn(r, false)} style={{ background: T.surface, cursor: "pointer" }}><td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td><td style={tcell}>{r.academic_year}</td><td style={tcell}>{r.author_name}</td><td style={tcell}><Badge status={r.status} /></td></tr>)}</tbody></table>
     </div>}
     {activeTab === "system" && <SystemInfoPage />}
-    {activeTab === "edit" && (() => { const r = openRpds.find(x => x.id_rpd === activeRpdId); return r ? <RpdEditor key={r.id_rpd} rpdId={r.id_rpd} editMode={r.editMode} userRole={role} onBack={() => closeRpdTab(r.id_rpd)} onExportPdf={handleExportPdf} /> : null; })()}
+    {/* Открытые редакторы РПД остаются смонтированными — это сохраняет состояние просмотра PDF (загруженный документ, скролл, текущую страницу) при переключении вкладок */}
+    {openRpds.map(r => {
+      const isActive = activeTab === "edit" && activeRpdId === r.id_rpd;
+      return <div key={r.id_rpd} style={{ display: isActive ? "flex" : "none", flex: 1, flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+        <RpdEditor rpdId={r.id_rpd} editMode={r.editMode} userRole={role} onBack={() => closeRpdTab(r.id_rpd)} onExportPdf={handleExportPdf} isActive={isActive} />
+      </div>;
+    })}
 
     <NotifPanel show={showNotif} onClose={() => { setShowNotif(false); api.getUnreadCount().then(r => setUnreadCount(r.data.count)).catch(() => { }); }} />
     {showCreate && <CreateRpdModal onClose={() => setShowCreate(false)} onCreated={(r) => { setShowCreate(false); loadRpds(); openRpdFn(r, true); }} />}
