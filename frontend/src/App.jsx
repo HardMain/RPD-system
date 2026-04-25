@@ -59,7 +59,7 @@ function BellIcon() { return <svg width="20" height="20" viewBox="0 0 24 24" fil
 function GearIcon() { return <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>; }
 function PlusIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>; }
 function DownloadIcon() { return <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>; }
-function SparkleIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.accent} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>; }
+function SparkleIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>; }
 function TrashIcon() { return <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2"><polyline points="3 6 5 6 21 6" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /></svg>; }
 
 /* PDF toolbar button */
@@ -140,9 +140,11 @@ function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userRole }) 
     </div>
     <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
-        <thead><tr style={{ background: T.surface }}>{["Направление", "Дисциплина", "Год", "Часы", "Семестр", "Статус", ""].map((h, i) => <th key={i} style={hdr}>{h}</th>)}</tr></thead>
+        <thead><tr style={{ background: T.surface }}>{["Направление", "Дисциплина", "Год", "Часы", "Семестр", "Статус", "", "", ""].map((h, i) => <th key={i} style={hdr}>{h}</th>)}</tr></thead>
         <tbody>{rpds.map(r => {
           const canEdit = r.status === "Черновик" || r.status === "На доработке";
+          const actCell = { ...tcell, textAlign: "center", width: 1, whiteSpace: "nowrap", padding: "10px 6px" };
+          const btnBase = { display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 3, padding: "3px 9px", borderRadius: 4, fontSize: 11, fontWeight: 600, fontFamily: F };
           return <tr key={r.id_rpd} onDoubleClick={() => onOpen(r)} style={{ background: T.surface, cursor: "pointer" }}>
             <td style={tcell}>{r.direction_code}</td>
             <td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td>
@@ -150,12 +152,14 @@ function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userRole }) 
             <td style={{ ...tcell, textAlign: "center" }}>{r.total_hours || "-"}</td>
             <td style={{ ...tcell, textAlign: "center" }}>{r.semester || "-"}</td>
             <td style={tcell}><Badge status={r.status} /></td>
-            <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap" }}>
-              <div style={{ display: "inline-flex", gap: 4 }}>
-                <button onClick={e => { e.stopPropagation(); onOpen(r); }} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 9px", border: "1px solid " + T.border, borderRadius: 4, background: T.surface, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.text, fontFamily: F }}>Просмотр</button>
-                {canEdit && <button onClick={e => { e.stopPropagation(); onEdit(r); }} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 9px", border: "1px solid " + T.accent, borderRadius: 4, background: T.accentLight, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.accent, fontFamily: F }}><SparkleIcon /> Редакт.</button>}
-                <button onClick={e => { e.stopPropagation(); onExportPdf(r.id_rpd); }} style={{ display: "inline-flex", alignItems: "center", gap: 3, padding: "3px 9px", border: "1px solid " + T.border, borderRadius: 4, background: T.surface, cursor: "pointer", fontSize: 11, fontWeight: 600, color: T.text, fontFamily: F }}><DownloadIcon /></button>
-              </div>
+            <td style={actCell}>
+              <button onClick={e => { e.stopPropagation(); onOpen(r); }} style={{ ...btnBase, border: "1px solid " + T.border, background: T.surface, cursor: "pointer", color: T.text }}>Просмотр</button>
+            </td>
+            <td style={actCell}>
+              <button onClick={canEdit ? (e => { e.stopPropagation(); onEdit(r); }) : undefined} disabled={!canEdit} title={canEdit ? "" : "Нельзя редактировать в текущем статусе"} style={{ ...btnBase, border: "1px solid " + (canEdit ? T.accent : T.borderLight), background: canEdit ? T.accentLight : T.borderLight, color: canEdit ? T.accent : T.textLight, cursor: canEdit ? "pointer" : "not-allowed", opacity: canEdit ? 1 : 0.7 }}><SparkleIcon /> Редакт.</button>
+            </td>
+            <td style={actCell}>
+              <button onClick={e => { e.stopPropagation(); onExportPdf(r.id_rpd); }} title="Скачать PDF" style={{ ...btnBase, border: "1px solid " + T.border, background: T.surface, cursor: "pointer", color: T.text }}><DownloadIcon /></button>
             </td>
           </tr>;
         })}</tbody>
@@ -203,95 +207,219 @@ const SEC_LABELS = {
   "2":   "2. Результаты обучения",
   "3":   "3. Объём и виды работ",
   "4":   "4. Содержание",
-  "4.1": "4.1 Тематика лаб. работ",
-  "4.2": "4.2 Тематика практ. занятий",
+  "4.1": "Тематика лаб. работ",
+  "4.2": "Тематика практ. занятий",
   "5.1": "5.1 Обр. технологии",
   "5.2": "5.2 Методические указания",
   "6.1": "6.1 Печатная литература",
   "6.2": "6.2 Электронная литература",
-  "6.3": "6.3 ПО",
-  "6.4": "6.4 БД и ИСС",
+  "6.3": "6.3 БД и ИСС",
+  "6.4": "6.4 ПО",
   "7":   "7. МТО",
   "8":   "8. ФОС",
   docs:  "Документы (LLM)",
 };
 const READ_ONLY_KEYS = new Set(["title", "3", "8"]);
-/* Грубая привязка разделов к страницам сгенерированного PDF (зависит от вёрстки шаблона) */
-const PDF_PAGE_MAP = {
-  title: 1,
-  "1.1": 2, "1.2": 2, "1.3": 2,
-  "2": 3,
-  "3": 4,
-  "4": 4, "4.1": 6, "4.2": 6,
-  "5.1": 7, "5.2": 7,
-  "6.1": 8, "6.2": 8, "6.3": 9, "6.4": 9,
-  "7": 9,
-  "8": 10,
-  docs: 1,
+/* Подразделы — отображаются в сайдбаре с отступом, без жирного номера */
+const SUB_KEYS = new Set(["4.1", "4.2"]);
+/* Разделы, отображаемые в боковой панели (без служебной вкладки «Документы (LLM)»,
+   т.к. её нет в реальном PDF — это лишь контекст для LLM) */
+const SIDEBAR_KEYS = SEC_KEYS.filter(k => k !== "docs");
+/* Грубая привязка разделов к страницам PDF — используется только как fallback,
+   пока не завершено динамическое сканирование текста PDF.
+   Значение: { page, y } — y в исходных PDF-единицах от верха страницы (0 = к началу страницы) */
+const PDF_PAGE_MAP_FALLBACK = {
+  title: { page: 1, y: 0 },
+  "1.1": { page: 2, y: 0 }, "1.2": { page: 2, y: 0 }, "1.3": { page: 2, y: 0 },
+  "2":   { page: 3, y: 0 },
+  "3":   { page: 4, y: 0 },
+  "4":   { page: 4, y: 0 }, "4.1": { page: 6, y: 0 }, "4.2": { page: 6, y: 0 },
+  "5.1": { page: 7, y: 0 }, "5.2": { page: 7, y: 0 },
+  "6.1": { page: 8, y: 0 }, "6.2": { page: 8, y: 0 }, "6.3": { page: 9, y: 0 }, "6.4": { page: 9, y: 0 },
+  "7":   { page: 9, y: 0 },
+  "8":   { page: 10, y: 0 },
 };
-function sectionForPdfPage(page) {
-  let foundKey = "title", foundP = 0;
-  for (const k of SEC_KEYS) {
-    if (k === "docs") continue;
-    const p = PDF_PAGE_MAP[k];
-    if (p !== undefined && p <= page && p > foundP) { foundKey = k; foundP = p; }
+/* Регулярки для распознавания заголовков разделов в извлечённом тексте PDF.
+   PDF.js конкатенирует строки с пробелами — допускаем различное кол-во пробелов и точек. */
+const PDF_SECTION_PATTERNS = [
+  { key: "1.1", re: /1[.\s]+1[.\s]+Цели/i },
+  { key: "1.2", re: /1[.\s]+2[.\s]+Изучаемые/i },
+  { key: "1.3", re: /1[.\s]+3[.\s]+Входные/i },
+  { key: "2",   re: /(?:^|[\s.])2[.\s]+Планируемые\s+результаты/i },
+  { key: "3",   re: /(?:^|[\s.])3[.\s]+Объ[её]м\s+и\s+виды/i },
+  { key: "4",   re: /(?:^|[\s.])4[.\s]+Содержание\s+дисциплины/i },
+  // В шаблоне ПНИПУ заголовки идут без префикса "4.1/4.2" — просто
+  // "Тематика примерных лабораторных работ" / "Тематика примерных практических занятий".
+  { key: "4.1", re: /(?:4[.\s]+1[.\s]+(?:Тематика|Лабораторн|Перечень\s+(?:тем\s+)?лабораторн)|Тематика\s+(?:примерных\s+)?лабораторн|Перечень\s+(?:тем\s+)?лабораторн)/i },
+  { key: "4.2", re: /(?:4[.\s]+2[.\s]+(?:Тематика|Практическ|Перечень\s+(?:тем\s+)?практическ)|Тематика\s+(?:примерных\s+)?практическ|Перечень\s+(?:тем\s+)?практическ)/i },
+  { key: "5.1", re: /5[.\s]+1[.\s]+Образовательные/i },
+  { key: "5.2", re: /5[.\s]+2[.\s]+Методические/i },
+  { key: "6.1", re: /6[.\s]+1[.\s]+(?:Печатная|Основная|Учебно[-\s]*методическ|Учебная)/i },
+  { key: "6.2", re: /6[.\s]+2[.\s]+(?:Электронная|Дополнительн)/i },
+  { key: "6.3", re: /6[.\s]+3[.\s]+(?:Современные|Базы|Профессиональные|Перечень\s+(?:информац|профессион))/i },
+  { key: "6.4", re: /6[.\s]+4[.\s]+(?:Лицензионное|Программное|Перечень\s+(?:лицензион|программн))/i },
+  { key: "7",   re: /(?:^|[\s.])7[.\s]+Материально/i },
+  { key: "8",   re: /(?:^|[\s.])8[.\s]+Фонд\s+оценочных/i },
+];
+async function scanPdfForSections(pdfDoc) {
+  const map = { title: { page: 1, y: 0 } };
+  for (let i = 1; i <= pdfDoc.numPages; i++) {
+    const page = await pdfDoc.getPage(i);
+    const viewport = page.getViewport({ scale: 1 });
+    const tc = await page.getTextContent();
+    // 1) Поэлементный поиск — даёт точную Y-координату заголовка
+    for (const item of tc.items) {
+      if (!item.str || !item.str.trim()) continue;
+      for (const { key, re } of PDF_SECTION_PATTERNS) {
+        if (key in map) continue;
+        if (re.test(item.str)) {
+          const yFromTop = Math.max(0, viewport.height - (item.transform?.[5] ?? viewport.height));
+          map[key] = { page: i, y: yFromTop };
+        }
+      }
+    }
+    // 2) Построчный поиск — на случай, когда заголовок разбит PDF.js на несколько items
+    const lineMap = new Map(); // yKey -> { text, y }
+    for (const item of tc.items) {
+      if (!item.str) continue;
+      const y = item.transform?.[5];
+      if (typeof y !== "number") continue;
+      const yKey = Math.round(y);
+      const cur = lineMap.get(yKey);
+      lineMap.set(yKey, { text: cur ? cur.text + " " + item.str : item.str, y });
+    }
+    for (const { text, y } of lineMap.values()) {
+      for (const { key, re } of PDF_SECTION_PATTERNS) {
+        if (key in map) continue;
+        if (re.test(text)) {
+          const yFromTop = Math.max(0, viewport.height - y);
+          map[key] = { page: i, y: yFromTop };
+        }
+      }
+    }
   }
-  return foundKey;
+  return map;
 }
 
-function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = true }) {
+function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
-  const [activeSec, setActiveSec] = useState("title"); const [saving, setSaving] = useState(false);
+  // У каждого режима — своя «активная вкладка»: при переключении просмотр ↔ редактирование
+  // в сайдбаре сразу подсвечивается последняя секция этого режима, а не «протекает» из другого.
+  const [activeSecPdf, setActiveSecPdf] = useState("title");
+  const [activeSecEdit, setActiveSecEdit] = useState("title");
+  const [saving, setSaving] = useState(false);
   const [pdfData, setPdfData] = useState(null); const [pdfLoading, setPdfLoading] = useState(false); const [pdfError, setPdfError] = useState(null);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1.1);
-  const [sidebarW, setSidebarW] = useState(160);
+  const [pdfSectionMap, setPdfSectionMap] = useState(PDF_PAGE_MAP_FALLBACK);
+  const [sidebarW, setSidebarW] = useState(220);
   const [pageInputValue, setPageInputValue] = useState(1);
+  const flashTimeoutRef = useRef(null);
   const pdfScrollRef = useRef(null);
   const pdfPageRefs = useRef({});
+  const pdfPageObserverRef = useRef(null);
   const pdfScrollPosRef = useRef(0);
   const editScrollPosRef = useRef(0);
   const programmaticUntilRef = useRef(0);
+  // true, пока tryRestore тащит scrollTop к целевой позиции после смены режима/
+  // возврата на вкладку. Сбрасывается ровно когда восстановление завершилось
+  // (scrollHeight дорос и scrollTop встал на target) или исчерпан лимит попыток.
+  const restoringScrollRef = useRef(false);
   const preferredActiveSecRef = useRef(null);
+  // Цель текущего программного скролла в edit-режиме: { key, top, deadline }.
+  // flash-рамка у раздела запускается, когда scrollTop приехал к top (или истёк deadline).
+  const pendingFlashRef = useRef(null);
   const pageInputFocusedRef = useRef(false);
   const resizingRef = useRef(false);
   const scrollRef = useRef(null);
+  // PDF считается «грязным» (требует перерендера на сервере), если данные РПД
+  // могли поменяться: после load() с сервера, сохранения, изменения статуса
+  // или явного нажатия «↻ Обновить». Между переключениями режима без правок
+  // PDF переиспользуется — серверный рендер не дёргается заново.
+  const pdfDirtyRef = useRef(true);
+  const initialLoadRef = useRef(true);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
   const isEdit = editMode; const isHead = userRole === "Зав. кафедрой";
+  const showPdf = !isEdit;
+  const activeSec = showPdf ? activeSecPdf : activeSecEdit;
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.getRpd(rpdId); const r = res.data; setRpd(r);
       setEditTexts({ goals: r.goals_text || "", tasks: r.tasks_text || "", objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
+      // Первый load при монтировании компонента не помечает PDF грязным
+      // (PDF и так ещё не загружен). Все последующие load() — это перечитывание
+      // после изменений, поэтому PDF на сервере мог обновиться.
+      if (initialLoadRef.current) initialLoadRef.current = false;
+      else pdfDirtyRef.current = true;
     } catch { } setLoading(false);
   }, [rpdId]);
   useEffect(() => { load(); }, [load]);
 
-  // PDF preview for view mode
-  const showPdf = !isEdit;
+  const reloadPdf = useCallback(() => {
+    pdfDirtyRef.current = true;
+    setPdfReloadKey(k => k + 1);
+  }, []);
+
+  // PDF preview for view mode.
+  // При showPdf=false (режим редактирования) PDF НЕ сбрасывается — blob URL
+  // остаётся в памяти, и при возврате в режим просмотра компонент мгновенно
+  // покажет уже загруженный документ без обращения к серверу.
   useEffect(() => {
-    if (!showPdf) { setPdfData(null); setPdfNumPages(0); setPdfCurrentPage(1); return; }
-    let cancelled = false; let createdUrl = null;
+    if (!showPdf) return;
+    if (pdfData && !pdfDirtyRef.current) return; // PDF актуален — не дёргаем сервер
+    let cancelled = false; let createdUrl = null; let transferred = false;
     setPdfLoading(true); setPdfError(null); setPdfData(null); setPdfNumPages(0); setPdfCurrentPage(1);
+    setPdfSectionMap(PDF_PAGE_MAP_FALLBACK);
     pdfPageRefs.current = {};
     api.fetchPdfInline(rpdId).then(r => {
       if (cancelled) return;
       createdUrl = window.URL.createObjectURL(r.data);
       setPdfData(createdUrl);
+      transferred = true;
+      pdfDirtyRef.current = false;
     }).catch(() => { if (!cancelled) setPdfError("Не удалось сформировать PDF"); })
       .finally(() => { if (!cancelled) setPdfLoading(false); });
-    return () => { cancelled = true; if (createdUrl) window.URL.revokeObjectURL(createdUrl); };
+    return () => {
+      cancelled = true;
+      // Если blob успел уйти в state — освобождением займётся cleanup-эффект ниже,
+      // здесь revoke только если запрос отменён ДО setPdfData.
+      if (createdUrl && !transferred) try { window.URL.revokeObjectURL(createdUrl); } catch { }
+    };
   }, [rpdId, showPdf, pdfReloadKey]);
 
-  // Track current page by observing which PDF page is centered in the scroll container
+  // Освобождение прошлого blob URL при смене pdfData и при размонтировании.
+  useEffect(() => () => { if (pdfData) try { window.URL.revokeObjectURL(pdfData); } catch { } }, [pdfData]);
+
+  // При переключении режима «Просмотр ↔ Редактирование» DOM скролл-контейнера
+  // пересоздаётся (scrollTop=0). pendingFlashRef сбрасываем — он принадлежал
+  // прошлой DOM-сессии. preferredActiveSecRef фиксируем на «активную вкладку
+  // нового режима»: пока restoringScrollRef=true, scroll-spy будет держать её
+  // и не «мигать» на «Титульник» по промежуточному scrollTop=0. Снятие флага
+  // делает сам tryRestore — когда scrollTop реально встанет на цель.
+  const initialModeRef = useRef(true);
   useEffect(() => {
-    if (!showPdf || !pdfNumPages) return;
+    if (initialModeRef.current) { initialModeRef.current = false; return; }
+    pendingFlashRef.current = null;
+    preferredActiveSecRef.current = editMode ? activeSecEdit : activeSecPdf;
+  }, [editMode]);
+
+  // Track current page by observing which PDF page is centered in the scroll container.
+  // IO держим в ref, чтобы page-узлы могли регистрироваться через ref-callback —
+  // после edit→view DOM пересоздаётся, и обычный effect-подход с массовой подпиской
+  // в один проход не успевал переподписаться на новые узлы (нумерация зависала).
+  useEffect(() => {
+    if (!showPdf) {
+      if (pdfPageObserverRef.current) { pdfPageObserverRef.current.disconnect(); pdfPageObserverRef.current = null; }
+      pdfPageRefs.current = {};
+      return;
+    }
     const root = pdfScrollRef.current; if (!root) return;
     const obs = new IntersectionObserver((entries) => {
       const visible = entries.filter(e => e.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
@@ -300,23 +428,72 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = 
         if (n) setPdfCurrentPage(n);
       }
     }, { root, threshold: [0.3, 0.6] });
+    pdfPageObserverRef.current = obs;
+    // Подписываемся на уже зарегистрированные узлы (если они есть).
     Object.values(pdfPageRefs.current).forEach(el => { if (el) obs.observe(el); });
-    return () => obs.disconnect();
-  }, [showPdf, pdfNumPages, pdfScale]);
+    return () => { obs.disconnect(); if (pdfPageObserverRef.current === obs) pdfPageObserverRef.current = null; };
+  }, [showPdf, pdfData]);
 
-  // Подсветка раздела сайдбара по текущей странице PDF (в режиме просмотра)
-  useEffect(() => {
-    if (!showPdf) return;
-    if (Date.now() < programmaticUntilRef.current) return;
-    const preferred = preferredActiveSecRef.current;
-    if (preferred && PDF_PAGE_MAP[preferred] === pdfCurrentPage) {
-      setActiveSec(p => p === preferred ? p : preferred);
-      return;
+  // Ref-callback для каждой страницы: при mount регистрируется в текущем IO,
+  // при unmount — отписывается. Так нумерация выживает любые ремонтажи DOM.
+  // Кэшируем колбэки по n, чтобы их идентичность не менялась между рендерами
+  // (иначе React-pdf отвязывал бы ref на каждом рендере).
+  const pdfPageRefCallbacks = useRef({});
+  const setPdfPageRef = useCallback((n) => {
+    if (!pdfPageRefCallbacks.current[n]) {
+      pdfPageRefCallbacks.current[n] = (el) => {
+        const prev = pdfPageRefs.current[n];
+        if (prev && prev !== el && pdfPageObserverRef.current) {
+          try { pdfPageObserverRef.current.unobserve(prev); } catch { }
+        }
+        if (el) {
+          pdfPageRefs.current[n] = el;
+          if (pdfPageObserverRef.current) {
+            try { pdfPageObserverRef.current.observe(el); } catch { }
+          }
+        } else {
+          delete pdfPageRefs.current[n];
+        }
+      };
     }
-    if (preferred && PDF_PAGE_MAP[preferred] !== pdfCurrentPage) preferredActiveSecRef.current = null;
-    const found = sectionForPdfPage(pdfCurrentPage);
-    setActiveSec(p => p === found ? p : found);
-  }, [pdfCurrentPage, showPdf]);
+    return pdfPageRefCallbacks.current[n];
+  }, []);
+
+  // Подсветка раздела сайдбара по реальной позиции скролла PDF (в режиме просмотра).
+  // Активным считается раздел, чей заголовок ближе всего сверху относительно текущего скролла.
+  useEffect(() => {
+    if (!showPdf || !pdfNumPages) return;
+    const c = pdfScrollRef.current; if (!c) return;
+    let raf = 0;
+    function compute() {
+      // Пока активен «программный скролл» (клик по вкладке) или идёт восстановление
+      // позиции после смены режима — держим preferred (если есть) и НЕ трогаем
+      // activeSec по реальному scrollTop, иначе мелькнёт «Титульник» на scroll=0.
+      if (restoringScrollRef.current || Date.now() < programmaticUntilRef.current) {
+        const preferred = preferredActiveSecRef.current;
+        if (preferred) setActiveSecPdf(p => p === preferred ? p : preferred);
+        return;
+      }
+      const scrollTop = c.scrollTop;
+      const probe = scrollTop + 60;
+      let bestKey = "title", bestPos = -Infinity;
+      for (const k of SIDEBAR_KEYS) {
+        const sec = pdfSectionMap[k]; if (!sec) continue;
+        const pageEl = pdfPageRefs.current[sec.page]; if (!pageEl) continue;
+        const pos = pageEl.offsetTop + (sec.y || 0) * pdfScale;
+        if (pos <= probe && pos > bestPos) { bestKey = k; bestPos = pos; }
+      }
+      setActiveSecPdf(p => p === bestKey ? p : bestKey);
+      preferredActiveSecRef.current = null;
+    }
+    function handler() {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(compute);
+    }
+    c.addEventListener("scroll", handler, { passive: true });
+    handler();
+    return () => { c.removeEventListener("scroll", handler); cancelAnimationFrame(raf); };
+  }, [showPdf, pdfNumPages, pdfSectionMap, pdfScale, pdfData]);
 
   // Синхронизация значения поля ввода страницы с реальной текущей (если пользователь не печатает)
   useEffect(() => {
@@ -324,26 +501,92 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = 
     setPageInputValue(pdfCurrentPage);
   }, [pdfCurrentPage]);
 
-  // Восстановление позиции скролла при возврате на вкладку с этой РПД
+  // Очистка таймера подсветки при размонтировании
+  useEffect(() => () => { if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current); }, []);
+
+  // Восстановление позиции скролла:
+  //   • при возврате на вкладку с этой РПД,
+  //   • при переключении режима «Просмотр ↔ Редактирование» (DOM скролл-контейнера
+  //     пересоздаётся, scrollTop обнуляется — нужно вернуть сохранённое значение).
+  // Высота контента может быть ещё не готова (react-pdf постранично рендерит документ),
+  // поэтому пробуем восстановить scrollTop в течение нескольких кадров, пока scrollHeight
+  // не «дорастёт» до нужной позиции.
   useEffect(() => {
     if (!isActive) return;
-    const id = requestAnimationFrame(() => {
-      if (showPdf) {
-        const c = pdfScrollRef.current;
-        if (c && pdfScrollPosRef.current && c.scrollTop !== pdfScrollPosRef.current) c.scrollTop = pdfScrollPosRef.current;
-      } else {
-        const c = scrollRef.current;
-        if (c && editScrollPosRef.current && c.scrollTop !== editScrollPosRef.current) c.scrollTop = editScrollPosRef.current;
+    // Захватываем целевую позицию ОДИН раз — иначе onScroll-хендлер во время
+    // частичного восстановления перезапишет ref, и мы потеряем исходный target.
+    const target = showPdf ? pdfScrollPosRef.current : editScrollPosRef.current;
+    if (!target) { restoringScrollRef.current = false; return; }
+    // Взводим флаг ДО планирования rAF: scroll-spy эффект (зарегистрирован выше)
+    // в этом же цикле уже успеет дёрнуть свой rAF, и его compute() обязан увидеть
+    // флаг до того, как пересчитает activeSec по scrollTop=0.
+    restoringScrollRef.current = true;
+    let raf = 0; let attempts = 0;
+    // Лимит попыток — страховка на случай, если контейнер так и не дорастёт
+    // до target (PDF не отрендерился). Цикл сам остановится, флаг снимется,
+    // scroll-spy вернётся к работе по реальному scrollTop.
+    const MAX_ATTEMPTS = 600;
+    function tryRestore() {
+      const c = showPdf ? pdfScrollRef.current : scrollRef.current;
+      if (c) {
+        const maxScroll = c.scrollHeight - c.clientHeight;
+        if (maxScroll >= target) {
+          if (c.scrollTop !== target) c.scrollTop = target;
+          // onScroll затем обновит ref до target — ничего восстанавливать не нужно
+          restoringScrollRef.current = false;
+          return;
+        }
+        // Высота ещё не выросла — частично прокручиваем туда, куда сейчас можно
+        // (так PDF не «прыгает» резко в самом конце), и продолжаем попытки.
+        if (maxScroll > 0 && c.scrollTop < maxScroll) c.scrollTop = maxScroll;
       }
-    });
-    return () => cancelAnimationFrame(id);
-  }, [isActive, showPdf, pdfData, loading]);
+      if (++attempts < MAX_ATTEMPTS) raf = requestAnimationFrame(tryRestore);
+      else restoringScrollRef.current = false;
+    }
+    raf = requestAnimationFrame(tryRestore);
+    return () => { cancelAnimationFrame(raf); restoringScrollRef.current = false; };
+  }, [isActive, showPdf, pdfData, pdfNumPages, loading]);
 
-  // Scroll spy (only in edit mode)
+  // Scroll spy (only in edit mode). Если докрутили почти до конца — активируем последний sidebar-раздел,
+  // даже если его нельзя «поднять» к самому верху (документ короче, чем нужно).
+  // Во время программного smooth-скролла (после клика по вкладке) подсветка зафиксирована
+  // через preferredActiveSecRef, и flash-рамка у целевого раздела запускается, когда скролл реально приехал.
   useEffect(() => {
     if (showPdf) return;
     const c = scrollRef.current; if (!c) return; let raf = 0;
-    function handler() { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { const top = c.getBoundingClientRect().top + 90; let found = SEC_KEYS[0]; for (const k of SEC_KEYS) { const el = refs[k].current; if (el && el.getBoundingClientRect().top <= top) found = k; } setActiveSec(p => p === found ? p : found); }); }
+    function handler() {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        // Восстановление scrollTop после смены режима — держим прежний activeSec
+        // и не подсвечиваем «Титульник» по промежуточным значениям scrollTop=0.
+        if (restoringScrollRef.current || Date.now() < programmaticUntilRef.current) return;
+        // Программный скролл активен — держим подсвеченным целевой раздел и ждём прибытия,
+        // чтобы запустить flash-рамку у него только в момент остановки скролла.
+        if (pendingFlashRef.current) {
+          const { key, top: targetTop, deadline } = pendingFlashRef.current;
+          setActiveSecEdit(p => p === key ? p : key);
+          if (Math.abs(c.scrollTop - targetTop) < 6 || Date.now() > deadline) {
+            const el = refs[key]?.current;
+            pendingFlashRef.current = null;
+            preferredActiveSecRef.current = null;
+            if (el) flashElement(el);
+          }
+          return;
+        }
+        const atBottom = c.scrollTop + c.clientHeight >= c.scrollHeight - 4;
+        const top = c.getBoundingClientRect().top + 90;
+        let found = SIDEBAR_KEYS[0];
+        for (const k of SIDEBAR_KEYS) {
+          const el = refs[k].current;
+          if (el && el.getBoundingClientRect().top <= top) found = k;
+        }
+        if (atBottom) found = SIDEBAR_KEYS[SIDEBAR_KEYS.length - 1];
+        setActiveSecEdit(p => p === found ? p : found);
+        // Реальный пользовательский скролл — сбрасываем «преференс» от прошлого
+        // клика, чтобы он не оверрайдил подсветку при дальнейших движениях.
+        preferredActiveSecRef.current = null;
+      });
+    }
     c.addEventListener("scroll", handler, { passive: true }); return () => { c.removeEventListener("scroll", handler); cancelAnimationFrame(raf); };
   }, [loading, showPdf]);
 
@@ -354,16 +597,48 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = 
     if (immediate) setPdfCurrentPage(n);
   }
 
+  function scrollToPdfSection(key) {
+    const sec = pdfSectionMap[key]; if (!sec) return null;
+    const page = Math.min(sec.page || 1, pdfNumPages || sec.page || 1);
+    const el = pdfPageRefs.current[page]; const c = pdfScrollRef.current;
+    if (!el || !c) return null;
+    const yPx = (sec.y || 0) * pdfScale;
+    // Небольшой отступ сверху над заголовком — чтобы он не «прилипал» к верхней кромке viewport,
+    // но и не открывался текст из предыдущего раздела.
+    c.scrollTo({ top: Math.max(0, el.offsetTop + yPx - 18), behavior: "smooth" });
+    return page;
+  }
+
+  function flashElement(el) {
+    if (!el) return;
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    el.classList.remove("sec-flash");
+    void el.offsetWidth; // принудительный reflow — перезапуск анимации
+    el.classList.add("sec-flash");
+    flashTimeoutRef.current = setTimeout(() => { el.classList.remove("sec-flash"); }, 1600);
+  }
+
   function goTo(key) {
     if (showPdf) {
-      const page = Math.min(PDF_PAGE_MAP[key] || 1, pdfNumPages || 1);
       preferredActiveSecRef.current = key;
       programmaticUntilRef.current = Date.now() + 900;
-      setActiveSec(key);
-      scrollToPdfPage(page, false);
+      setActiveSecPdf(key);
+      scrollToPdfSection(key);
+      // Подсветку самой PDF-страницы (flash-рамку) намеренно не запускаем — нужна только в edit-режиме.
       return;
     }
-    const el = refs[key]?.current; const c = scrollRef.current; if (!el || !c) return; c.scrollTo({ top: c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12, behavior: "smooth" });
+    const el = refs[key]?.current; const c = scrollRef.current; if (!el || !c) return;
+    // Подсветка вкладки слева — мгновенно. Flash-рамка вокруг раздела — только после прибытия скролла.
+    setActiveSecEdit(key);
+    preferredActiveSecRef.current = key;
+    const targetTop = Math.max(0, c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12);
+    if (Math.abs(c.scrollTop - targetTop) < 6) {
+      pendingFlashRef.current = null;
+      flashElement(el);
+    } else {
+      pendingFlashRef.current = { key, top: targetTop, deadline: Date.now() + 1500 };
+      c.scrollTo({ top: targetTop, behavior: "smooth" });
+    }
   }
 
   function startResize(e) {
@@ -430,6 +705,8 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = 
   if (!rpd) return <div style={{ flex: 1, padding: 40, textAlign: "center", background: T.bg }}>РПД не найдена</div>;
 
   const canEdit = rpd.status === "Черновик" || rpd.status === "На доработке";
+  const hasLabTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "lab"));
+  const hasPracticeTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "practice"));
 
   function EditableBlock({ skey, label, fieldKey }) {
     const val = editTexts[fieldKey] || "";
@@ -661,12 +938,43 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = 
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
       {/* SIDEBAR */}
       <div style={{ width: sidebarW, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        {isEdit && canEdit && <div style={{ padding: "5px 10px", background: T.orangeLight, borderBottom: "1px solid " + T.orange, fontSize: 10, fontWeight: 700, color: T.orange, textAlign: "center", letterSpacing: .3 }}>✏ РЕДАКТИРОВАНИЕ</div>}
-        {(!isEdit || !canEdit) && !isHead && <div style={{ padding: "5px 10px", background: T.blueLight, borderBottom: "1px solid " + T.blue, fontSize: 10, fontWeight: 700, color: T.blue, textAlign: "center", letterSpacing: .3 }}>👁 ПРОСМОТР</div>}
-        {isHead && rpd.status === "На согласовании" && <div style={{ padding: "5px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
-        <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SEC_KEYS.map(k => {
+        {/* Переключатель режима «Просмотр / Редактирование» — активный режим подсвечен,
+            клик по неактивному переключает режим прямо в окне открытой РПД. */}
+        <div style={{ display: "flex", borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
+          <button
+            onClick={() => { if (isEdit && onToggleMode) onToggleMode(); }}
+            title={isEdit ? "Переключиться в просмотр PDF" : "Текущий режим"}
+            style={{
+              flex: 1, padding: "6px 4px", border: "none",
+              borderRight: "1px solid " + T.border,
+              background: !isEdit ? T.blueLight : "transparent",
+              color: !isEdit ? T.blue : T.textMuted,
+              fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
+              cursor: isEdit ? "pointer" : "default", textAlign: "center",
+            }}>👁 ПРОСМОТР</button>
+          <button
+            onClick={() => { if (!isEdit && canEdit && onToggleMode) onToggleMode(); }}
+            disabled={!canEdit && !isEdit}
+            title={!canEdit ? "Редактирование недоступно при текущем статусе РПД" : (!isEdit ? "Переключиться в режим редактирования" : "Текущий режим")}
+            style={{
+              flex: 1, padding: "6px 4px", border: "none",
+              background: isEdit ? T.orangeLight : "transparent",
+              color: isEdit ? T.orange : (canEdit ? T.textMuted : T.textLight),
+              fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
+              cursor: (!isEdit && canEdit) ? "pointer" : "default", textAlign: "center",
+              opacity: (!canEdit && !isEdit) ? 0.5 : 1,
+            }}>✏ РЕДАКТИРОВАНИЕ</button>
+        </div>
+        {isHead && rpd.status === "На согласовании" && <div style={{ padding: "4px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
+        <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SIDEBAR_KEYS.map(k => {
+          // В режиме просмотра прячем 4.1 / 4.2, если в РПД нет соответствующих тем —
+          // скроллить там не к чему, и в PDF этих разделов тоже нет.
+          if (!isEdit && k === "4.1" && !hasLabTopics) return null;
+          if (!isEdit && k === "4.2" && !hasPracticeTopics) return null;
           const hasErr = validationErrors.length > 0 && validationErrors.some(e => e.secKey === k);
-          return <button key={k} onClick={() => goTo(k)} style={{ display: "flex", width: "100%", padding: "8px 12px", border: "none", borderLeft: hasErr ? "3px solid " + T.red : activeSec === k ? "3px solid " + T.accent : "3px solid transparent", background: activeSec === k ? T.accentLight : "transparent", cursor: "pointer", fontSize: 11, fontFamily: F, fontWeight: activeSec === k ? 700 : 400, color: hasErr ? T.red : activeSec === k ? T.accent : T.text, alignItems: "center", gap: 6, boxSizing: "border-box", textAlign: "left" }}>
+          const isSub = SUB_KEYS.has(k);
+          return <button key={k} onClick={() => goTo(k)} style={{ display: "flex", width: "100%", padding: isSub ? "6px 12px 6px 28px" : "8px 12px", border: "none", borderLeft: hasErr ? "3px solid " + T.red : activeSec === k ? "3px solid " + T.accent : "3px solid transparent", background: activeSec === k ? T.accentLight : "transparent", cursor: "pointer", fontSize: isSub ? 10 : 11, fontFamily: F, fontStyle: isSub ? "italic" : "normal", fontWeight: activeSec === k ? 700 : 400, color: hasErr ? T.red : activeSec === k ? T.accent : isSub ? T.textMuted : T.text, alignItems: "center", gap: 6, boxSizing: "border-box", textAlign: "left" }}>
+            {isSub && <span style={{ color: T.textLight, flexShrink: 0 }}>›</span>}
             <span style={{ flex: 1, textAlign: "left", lineHeight: 1.3, wordBreak: "break-word" }}>{SEC_LABELS[k]}</span>
             {hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
           </button>;
@@ -714,17 +1022,24 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = 
             <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} style={pdfToolBtn(false)} title="Увеличить">+</button>
             <button onClick={() => setPdfScale(1.1)} style={{ ...pdfToolBtn(false), fontSize: 11, padding: "3px 8px" }} title="Сбросить масштаб">1:1</button>
             <div style={{ flex: 1 }} />
-            <Btn small onClick={() => setPdfReloadKey(k => k + 1)} disabled={pdfLoading}>↻ Обновить</Btn>
+            <Btn small onClick={reloadPdf} disabled={pdfLoading}>↻ Обновить</Btn>
             <Btn small onClick={() => onExportPdf(rpdId)}><DownloadIcon /> Скачать</Btn>
           </div>
           <div ref={pdfScrollRef} onScroll={e => { pdfScrollPosRef.current = e.currentTarget.scrollTop; }} style={{ flex: 1, position: "relative", overflow: "auto", background: T.pdfBg, padding: "16px 0" }}>
             {pdfLoading && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12, zIndex: 2, pointerEvents: "none" }}><Spinner size={36} /><div style={{ fontSize: 13 }}>Формируется PDF из шаблона...</div></div>}
-            {pdfError && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12 }}><div style={{ fontSize: 14, color: "#ffb4b4" }}>{pdfError}</div><Btn small onClick={() => setPdfReloadKey(k => k + 1)}>Повторить</Btn></div>}
+            {pdfError && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12 }}><div style={{ fontSize: 14, color: "#ffb4b4" }}>{pdfError}</div><Btn small onClick={reloadPdf}>Повторить</Btn></div>}
             {pdfData && (
-              <Document file={pdfData} onLoadSuccess={({ numPages }) => setPdfNumPages(numPages)} onLoadError={(e) => { console.error("PDF load error:", e); setPdfError("Не удалось открыть PDF: " + (e?.message || "неизвестная ошибка")); }} loading="">
+              <Document file={pdfData} onLoadSuccess={(pdfDoc) => {
+                setPdfNumPages(pdfDoc.numPages);
+                scanPdfForSections(pdfDoc).then(m => {
+                  if (Object.keys(m).length > 1) setPdfSectionMap(prev => ({ ...prev, ...m }));
+                }).catch(() => { });
+              }} onLoadError={(e) => { console.error("PDF load error:", e); setPdfError("Не удалось открыть PDF: " + (e?.message || "неизвестная ошибка")); }} loading="">
                 {Array.from({ length: pdfNumPages }, (_, i) => i + 1).map(n => (
-                  <div key={n} data-page={n} ref={el => { pdfPageRefs.current[n] = el; }} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
-                    <Page pageNumber={n} scale={pdfScale} renderAnnotationLayer={false} renderTextLayer={false} loading="" />
+                  <div key={n} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
+                    <div data-page={n} ref={setPdfPageRef(n)} style={{ display: "inline-block" }}>
+                      <Page pageNumber={n} scale={pdfScale} renderAnnotationLayer={false} renderTextLayer={false} loading="" />
+                    </div>
                   </div>
                 ))}
               </Document>
@@ -802,15 +1117,15 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, isActive = 
             <SectionEditor />
           </div>
           <HR />
-          {/* 4.1 Тематика лабораторных работ */}
+          {/* Тематика лабораторных работ */}
           <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>4.1. Тематика примерных лабораторных работ</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных лабораторных работ</div>
             <TopicsEditor kind="lab" />
           </div>
           <HR />
-          {/* 4.2 Тематика практических занятий */}
+          {/* Тематика практических занятий */}
           <div ref={refs["4.2"]} style={{ marginBottom: 32 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>4.2. Тематика практических занятий</div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика практических занятий</div>
             <TopicsEditor kind="practice" />
           </div>
           <HR />
@@ -939,6 +1254,9 @@ export default function App() {
     setOpenRpds(prev => { const ex = prev.find(r => r.id_rpd === rpd.id_rpd); if (ex) return prev.map(r => r.id_rpd === rpd.id_rpd ? { ...r, editMode } : r); return [...prev, { ...rpd, editMode }]; });
     setActiveRpdId(rpd.id_rpd); setActiveTab("edit");
   }
+  function toggleRpdMode(rpdId) {
+    setOpenRpds(prev => prev.map(r => r.id_rpd === rpdId ? { ...r, editMode: !r.editMode } : r));
+  }
   function closeRpdTab(rpdId) {
     const next = openRpds.filter(r => r.id_rpd !== rpdId);
     setOpenRpds(next); loadRpds();
@@ -964,7 +1282,7 @@ export default function App() {
   ];
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
-    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
+    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
 
     {/* TopBar */}
     <div style={{ flexShrink: 0, zIndex: 10 }}>
@@ -1000,7 +1318,7 @@ export default function App() {
     {openRpds.map(r => {
       const isActive = activeTab === "edit" && activeRpdId === r.id_rpd;
       return <div key={r.id_rpd} style={{ display: isActive ? "flex" : "none", flex: 1, flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-        <RpdEditor rpdId={r.id_rpd} editMode={r.editMode} userRole={role} onBack={() => closeRpdTab(r.id_rpd)} onExportPdf={handleExportPdf} isActive={isActive} />
+        <RpdEditor rpdId={r.id_rpd} editMode={r.editMode} userRole={role} onBack={() => closeRpdTab(r.id_rpd)} onExportPdf={handleExportPdf} onToggleMode={() => toggleRpdMode(r.id_rpd)} isActive={isActive} />
       </div>;
     })}
 
