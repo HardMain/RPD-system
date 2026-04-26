@@ -301,7 +301,7 @@ async function scanPdfForSections(pdfDoc) {
   return map;
 }
 
-function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
+function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
@@ -325,7 +325,15 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
   const pdfPageObserverRef = useRef(null);
   const pdfScrollPosRef = useRef(0);
   const editScrollPosRef = useRef(0);
-  const programmaticUntilRef = useRef(0);
+  // Сохранённая ДО ручного/внешнего reload позиция скролла. Нужно потому, что pdfData=null
+  // или setLoading(true) обнуляют DOM/контент, и автоклэмп scrollTop=0 затирает обычные
+  // pdfScrollPosRef/editScrollPosRef через onScroll. Тег режима защищает от случая, когда
+  // pending был сохранён в одном режиме, а юзер успел переключиться в другой.
+  const pendingScrollRestoreRef = useRef(null); // { mode: "pdf"|"edit", value: number } | null
+  // Цель текущего программного скролла в PDF-режиме (клик по разделу в сайдбаре):
+  // { key, top, deadline }. Пока ref не nil — scroll-spy не пересчитывает activeSec, а удерживает
+  // подсветку на key. Снимается, когда scrollTop ≈ top (приехали) или истёк deadline.
+  const pdfNavTargetRef = useRef(null);
   // true, пока tryRestore тащит scrollTop к целевой позиции после смены режима/
   // возврата на вкладку. Сбрасывается ровно когда восстановление завершилось
   // (scrollHeight дорос и scrollTop встал на target) или исчерпан лимит попыток.
@@ -363,9 +371,30 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
   useEffect(() => { load(); }, [load]);
 
   const reloadPdf = useCallback(() => {
+    // Захватываем актуальный scrollTop ДО setPdfData(null) → иначе автоклэмп схлопнувшегося
+    // контейнера сбросит pdfScrollPosRef в 0 через onScroll-хендлер, и восстанавливать будет нечего.
+    const c = pdfScrollRef.current;
+    if (c) pendingScrollRestoreRef.current = { mode: "pdf", value: c.scrollTop };
     pdfDirtyRef.current = true;
     setPdfReloadKey(k => k + 1);
   }, []);
+
+  // Внешний триггер «перечитать всё» (например, парная edit-вкладка сохранилась → notifyRpdChanged
+  // у App'а инкрементит reloadKey этой view-вкладки). На первом монтировании ничего не делаем —
+  // load() уже отрабатывает в основном эффекте. Скролл сохраняется автоматически:
+  // pdfScrollPosRef / editScrollPosRef хранят последнюю позицию, а restoration-эффект
+  // ниже сам её восстановит, как только pdfData/loading изменятся после перезагрузки.
+  const initialReloadRef = useRef(true);
+  useEffect(() => {
+    if (initialReloadRef.current) { initialReloadRef.current = false; return; }
+    // Так же, как и при ручном reloadPdf: захватываем текущий scroll для текущего режима
+    // ДО того, как load() сорвёт DOM в Spinner и автоклэмп сбросит scroll-ref в 0.
+    const c = showPdf ? pdfScrollRef.current : scrollRef.current;
+    if (c) pendingScrollRestoreRef.current = { mode: showPdf ? "pdf" : "edit", value: c.scrollTop };
+    load();
+    if (showPdf) reloadPdf();
+    else pdfDirtyRef.current = true;
+  }, [reloadKey]);
 
   // PDF preview for view mode.
   // При showPdf=false (режим редактирования) PDF НЕ сбрасывается — blob URL
@@ -466,12 +495,24 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
     const c = pdfScrollRef.current; if (!c) return;
     let raf = 0;
     function compute() {
-      // Пока активен «программный скролл» (клик по вкладке) или идёт восстановление
-      // позиции после смены режима — держим preferred (если есть) и НЕ трогаем
-      // activeSec по реальному scrollTop, иначе мелькнёт «Титульник» на scroll=0.
-      if (restoringScrollRef.current || Date.now() < programmaticUntilRef.current) {
+      // Пока идёт восстановление позиции после смены режима — держим preferred (если есть)
+      // и НЕ трогаем activeSec по реальному scrollTop, иначе мелькнёт «Титульник» на scroll=0.
+      if (restoringScrollRef.current) {
         const preferred = preferredActiveSecRef.current;
         if (preferred) setActiveSecPdf(p => p === preferred ? p : preferred);
+        return;
+      }
+      // Пока активен программный smooth-скролл к разделу (клик по сайдбару),
+      // держим подсвеченным целевой раздел. Снимаем фиксацию ровно когда scrollTop ≈ top
+      // (а не по таймеру) — поэтому при долгом плавном скролле подсветка НЕ мигает на
+      // промежуточных секциях, через которые пробегает viewport.
+      const nav = pdfNavTargetRef.current;
+      if (nav) {
+        setActiveSecPdf(p => p === nav.key ? p : nav.key);
+        if (Math.abs(c.scrollTop - nav.top) < 6 || Date.now() > nav.deadline) {
+          pdfNavTargetRef.current = null;
+          preferredActiveSecRef.current = null;
+        }
         return;
       }
       const scrollTop = c.scrollTop;
@@ -513,10 +554,17 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
   // не «дорастёт» до нужной позиции.
   useEffect(() => {
     if (!isActive) return;
-    // Захватываем целевую позицию ОДИН раз — иначе onScroll-хендлер во время
-    // частичного восстановления перезапишет ref, и мы потеряем исходный target.
-    const target = showPdf ? pdfScrollPosRef.current : editScrollPosRef.current;
-    if (!target) { restoringScrollRef.current = false; return; }
+    // Сначала пробуем «pending»-цель (она заранее захвачена reloadPdf'ом или внешним reload-эффектом
+    // ДО автоклэмпа). Если pending'а нет ИЛИ он от другого режима — fallback на обычный scroll-ref.
+    const currentMode = showPdf ? "pdf" : "edit";
+    const pending = pendingScrollRestoreRef.current;
+    const usingPending = !!(pending && pending.mode === currentMode);
+    const target = usingPending ? pending.value : (showPdf ? pdfScrollPosRef.current : editScrollPosRef.current);
+    if (!target) {
+      restoringScrollRef.current = false;
+      if (usingPending) pendingScrollRestoreRef.current = null;
+      return;
+    }
     // Взводим флаг ДО планирования rAF: scroll-spy эффект (зарегистрирован выше)
     // в этом же цикле уже успеет дёрнуть свой rAF, и его compute() обязан увидеть
     // флаг до того, как пересчитает activeSec по scrollTop=0.
@@ -534,6 +582,7 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
           if (c.scrollTop !== target) c.scrollTop = target;
           // onScroll затем обновит ref до target — ничего восстанавливать не нужно
           restoringScrollRef.current = false;
+          if (usingPending) pendingScrollRestoreRef.current = null;
           return;
         }
         // Высота ещё не выросла — частично прокручиваем туда, куда сейчас можно
@@ -541,9 +590,12 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
         if (maxScroll > 0 && c.scrollTop < maxScroll) c.scrollTop = maxScroll;
       }
       if (++attempts < MAX_ATTEMPTS) raf = requestAnimationFrame(tryRestore);
-      else restoringScrollRef.current = false;
+      else { restoringScrollRef.current = false; if (usingPending) pendingScrollRestoreRef.current = null; }
     }
     raf = requestAnimationFrame(tryRestore);
+    // ВАЖНО: cleanup НЕ чистит pendingScrollRestoreRef — pdfData во время reload меняется
+    // дважды (blob → null → newBlob), эффект перезапускается, и следующий запуск должен
+    // снова найти ту же pending-цель и продолжить восстанавливать.
     return () => { cancelAnimationFrame(raf); restoringScrollRef.current = false; };
   }, [isActive, showPdf, pdfData, pdfNumPages, loading]);
 
@@ -559,7 +611,7 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
       raf = requestAnimationFrame(() => {
         // Восстановление scrollTop после смены режима — держим прежний activeSec
         // и не подсвечиваем «Титульник» по промежуточным значениям scrollTop=0.
-        if (restoringScrollRef.current || Date.now() < programmaticUntilRef.current) return;
+        if (restoringScrollRef.current) return;
         // Программный скролл активен — держим подсвеченным целевой раздел и ждём прибытия,
         // чтобы запустить flash-рамку у него только в момент остановки скролла.
         if (pendingFlashRef.current) {
@@ -605,8 +657,9 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
     const yPx = (sec.y || 0) * pdfScale;
     // Небольшой отступ сверху над заголовком — чтобы он не «прилипал» к верхней кромке viewport,
     // но и не открывался текст из предыдущего раздела.
-    c.scrollTo({ top: Math.max(0, el.offsetTop + yPx - 18), behavior: "smooth" });
-    return page;
+    const top = Math.max(0, el.offsetTop + yPx - 18);
+    c.scrollTo({ top, behavior: "smooth" });
+    return { page, top };
   }
 
   function flashElement(el) {
@@ -621,9 +674,20 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
   function goTo(key) {
     if (showPdf) {
       preferredActiveSecRef.current = key;
-      programmaticUntilRef.current = Date.now() + 900;
       setActiveSecPdf(key);
-      scrollToPdfSection(key);
+      const result = scrollToPdfSection(key);
+      // Если smooth-скролл реально стартовал — фиксируем целевой scrollTop.
+      // compute() в scroll-spy будет удерживать подсветку на key, пока scrollTop не приедет
+      // к result.top (точное попадание ±6px) или не истечёт страховочный deadline.
+      // Это убирает «мигание» подсветки промежуточных разделов в конце долгого скролла.
+      if (result) {
+        const c = pdfScrollRef.current;
+        if (c && Math.abs(c.scrollTop - result.top) < 6) {
+          pdfNavTargetRef.current = null; // уже на месте
+        } else {
+          pdfNavTargetRef.current = { key, top: result.top, deadline: Date.now() + 8000 };
+        }
+      }
       // Подсветку самой PDF-страницы (flash-рамку) намеренно не запускаем — нужна только в edit-режиме.
       return;
     }
@@ -676,8 +740,16 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
 
   async function handleSave() {
     setSaving(true);
-    try { await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations }); await load(); } catch { }
+    let ok = false;
+    try {
+      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations });
+      await load();
+      ok = true;
+    } catch { }
     setSaving(false);
+    // Сообщаем родителю — он триггернёт перезагрузку парной view-вкладки
+    // (если она открыта) через её reloadKey.
+    if (ok && onAfterSave) onAfterSave();
   }
 
   function getValidationErrors() {
@@ -938,33 +1010,57 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
       {/* SIDEBAR */}
       <div style={{ width: sidebarW, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-        {/* Переключатель режима «Просмотр / Редактирование» — активный режим подсвечен,
-            клик по неактивному переключает режим прямо в окне открытой РПД. */}
+        {/* Переключатель режима. Если та же РПД уже открыта в парной вкладке (hasPair),
+            кнопку противоположного режима блокируем — этот режим занят соседней вкладкой
+            (по аналогии с заблокированным «Редактирование» для уже согласованной РПД). */}
         <div style={{ display: "flex", borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
-          <button
-            onClick={() => { if (isEdit && onToggleMode) onToggleMode(); }}
-            title={isEdit ? "Переключиться в просмотр PDF" : "Текущий режим"}
-            style={{
-              flex: 1, padding: "6px 4px", border: "none",
-              borderRight: "1px solid " + T.border,
-              background: !isEdit ? T.blueLight : "transparent",
-              color: !isEdit ? T.blue : T.textMuted,
-              fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
-              cursor: isEdit ? "pointer" : "default", textAlign: "center",
-            }}>👁 ПРОСМОТР</button>
-          <button
-            onClick={() => { if (!isEdit && canEdit && onToggleMode) onToggleMode(); }}
-            disabled={!canEdit && !isEdit}
-            title={!canEdit ? "Редактирование недоступно при текущем статусе РПД" : (!isEdit ? "Переключиться в режим редактирования" : "Текущий режим")}
-            style={{
-              flex: 1, padding: "6px 4px", border: "none",
-              background: isEdit ? T.orangeLight : "transparent",
-              color: isEdit ? T.orange : (canEdit ? T.textMuted : T.textLight),
-              fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
-              cursor: (!isEdit && canEdit) ? "pointer" : "default", textAlign: "center",
-              opacity: (!canEdit && !isEdit) ? 0.5 : 1,
-            }}>✏ РЕДАКТИРОВАНИЕ</button>
+          {(() => {
+            const viewTakenByPair = hasPair && isEdit; // мы edit, значит view — это сосед
+            const editTakenByPair = hasPair && !isEdit; // мы view, значит edit — это сосед
+            const viewClickable = isEdit && !viewTakenByPair;
+            const editClickable = !isEdit && canEdit && !editTakenByPair;
+            return <>
+              <button
+                onClick={() => { if (viewClickable && onToggleMode) onToggleMode(); }}
+                disabled={viewTakenByPair}
+                title={viewTakenByPair ? "Этот режим уже открыт в парной вкладке" : (isEdit ? "Переключиться в просмотр PDF" : "Текущий режим")}
+                style={{
+                  flex: 1, padding: "6px 4px", border: "none",
+                  borderRight: "1px solid " + T.border,
+                  background: !isEdit ? T.blueLight : "transparent",
+                  color: !isEdit ? T.blue : (viewTakenByPair ? T.textLight : T.textMuted),
+                  fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
+                  cursor: viewClickable ? "pointer" : "default", textAlign: "center",
+                  opacity: viewTakenByPair ? 0.5 : 1,
+                }}>👁 ПРОСМОТР</button>
+              <button
+                onClick={() => { if (editClickable && onToggleMode) onToggleMode(); }}
+                disabled={(!canEdit && !isEdit) || editTakenByPair}
+                title={editTakenByPair ? "Этот режим уже открыт в парной вкладке" : (!canEdit ? "Редактирование недоступно при текущем статусе РПД" : (!isEdit ? "Переключиться в режим редактирования" : "Текущий режим"))}
+                style={{
+                  flex: 1, padding: "6px 4px", border: "none",
+                  background: isEdit ? T.orangeLight : "transparent",
+                  color: isEdit ? T.orange : (editTakenByPair ? T.textLight : (canEdit ? T.textMuted : T.textLight)),
+                  fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
+                  cursor: editClickable ? "pointer" : "default", textAlign: "center",
+                  opacity: ((!canEdit && !isEdit) || editTakenByPair) ? 0.5 : 1,
+                }}>✏ РЕДАКТИРОВАНИЕ</button>
+            </>;
+          })()}
         </div>
+        {/* Discoverable-кнопка для пары: «Открыть рядом в [противоположном режиме]».
+            Прячем когда пара уже есть. Если редактировать нельзя в принципе (статус
+            закрывает edit) — тоже не показываем кнопку открытия edit-копии. */}
+        {!hasPair && onOpenPair && (isEdit || canEdit) && <button
+          onClick={() => onOpenPair()}
+          title={`Откроет копию РПД в режиме «${isEdit ? "просмотр" : "редактирование"}» во второй панели · при сохранении edit-вкладки парная view-вкладка обновится автоматически`}
+          style={{
+            display: "block", width: "100%", padding: "5px 8px",
+            border: "none", borderBottom: "1px solid " + T.border,
+            background: T.accentLight, color: T.accent,
+            fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
+            cursor: "pointer", textAlign: "center", flexShrink: 0,
+          }}>⧉ Открыть рядом в режиме «{isEdit ? "просмотр" : "редактор"}»</button>}
         {isHead && rpd.status === "На согласовании" && <div style={{ padding: "4px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
         <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SIDEBAR_KEYS.map(k => {
           // В режиме просмотра прячем 4.1 / 4.2, если в РПД нет соответствующих тем —
@@ -1038,7 +1134,7 @@ function RpdEditor({ rpdId, editMode, userRole, onBack, onExportPdf, onToggleMod
                 {Array.from({ length: pdfNumPages }, (_, i) => i + 1).map(n => (
                   <div key={n} style={{ display: "flex", justifyContent: "center", marginBottom: 12 }}>
                     <div data-page={n} ref={setPdfPageRef(n)} style={{ display: "inline-block" }}>
-                      <Page pageNumber={n} scale={pdfScale} renderAnnotationLayer={false} renderTextLayer={false} loading="" />
+                      <Page pageNumber={n} scale={pdfScale} renderAnnotationLayer={false} renderTextLayer={true} loading="" />
                     </div>
                   </div>
                 ))}
@@ -1241,7 +1337,26 @@ function SystemInfoPage() {
 export default function App() {
   const [user, setUser] = useState(null); const [checking, setChecking] = useState(true);
   const [activeTab, setActiveTab] = useState("my");
-  const [rpds, setRpds] = useState([]); const [openRpds, setOpenRpds] = useState([]); const [activeRpdId, setActiveRpdId] = useState(null);
+  const [rpds, setRpds] = useState([]);
+  // Каждая открытая вкладка: { tabId: string, id_rpd: number, mode: "edit"|"view", ...rpd_metadata }.
+  // tabId уникален (одна РПД может одновременно занимать ДВЕ вкладки — одну в edit, одну в view),
+  // mode хранится отдельно и не зашит в tabId, поэтому переключение режима «на месте» не меняет ID
+  // (и не дёргает React переидентификацию вкладки в panes.tabs).
+  const [openRpds, setOpenRpds] = useState([]);
+  // Состояние сплита: левая панель есть всегда, правая опциональна (null — обычный одиночный режим).
+  // tabs/activeId — это tabId-строки.
+  const [panes, setPanes] = useState({ left: { tabs: [], activeId: null }, right: null });
+  const [draggingTabId, setDraggingTabId] = useState(null);
+  // На какую половину сейчас наведена перетаскиваемая вкладка ("left" | "right" | null) —
+  // нужно для подсветки целевой зоны во время drag.
+  const [dragOverSide, setDragOverSide] = useState(null);
+  // Соотношение ширины левой панели к общей (0.2…0.8). Используется только когда сплит активен.
+  const [splitRatio, setSplitRatio] = useState(0.5);
+  const splitContainerRef = useRef(null);
+  const resizingSplitRef = useRef(false);
+  // Счётчики «перезагрузить» по tabId. Когда edit-вкладка сохраняется, App дёргает счётчики
+  // ОСТАЛЬНЫХ вкладок этой же РПД — те видят изменение пропа и перечитывают данные/PDF.
+  const [tabReloadKeys, setTabReloadKeys] = useState({});
   const [showNotif, setShowNotif] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -1250,24 +1365,179 @@ export default function App() {
   const loadRpds = useCallback(async () => { try { const r = await api.getRpds(); setRpds(r.data); } catch { } }, []);
   useEffect(() => { if (user) { loadRpds(); api.getUnreadCount().then(r => setUnreadCount(r.data.count)).catch(() => { }); } }, [user, loadRpds]);
 
-  function openRpdFn(rpd, editMode) {
-    setOpenRpds(prev => { const ex = prev.find(r => r.id_rpd === rpd.id_rpd); if (ex) return prev.map(r => r.id_rpd === rpd.id_rpd ? { ...r, editMode } : r); return [...prev, { ...rpd, editMode }]; });
-    setActiveRpdId(rpd.id_rpd); setActiveTab("edit");
+  function findPaneOf(tabId) {
+    if (panes.left.tabs.includes(tabId)) return "left";
+    if (panes.right && panes.right.tabs.includes(tabId)) return "right";
+    return null;
   }
-  function toggleRpdMode(rpdId) {
-    setOpenRpds(prev => prev.map(r => r.id_rpd === rpdId ? { ...r, editMode: !r.editMode } : r));
+  function oppositeSide(side) { return side === "left" ? "right" : "left"; }
+  function newTabId(id_rpd, mode) { return `tab-${id_rpd}-${mode}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`; }
+  // Вкладка-«сосед»: та же id_rpd, противоположный mode. Если есть — это активная пара
+  // и в редакторе блокируется in-place toggle (каждая вкладка зафиксирована в своём режиме),
+  // а кнопка «Открыть рядом» прячется (пара уже открыта).
+  function findSiblingTab(tabId) {
+    const tab = openRpds.find(t => t.tabId === tabId); if (!tab) return null;
+    return openRpds.find(t => t.id_rpd === tab.id_rpd && t.tabId !== tabId) || null;
   }
-  function closeRpdTab(rpdId) {
-    const next = openRpds.filter(r => r.id_rpd !== rpdId);
+
+  function openRpdFn(rpd, editMode, options = {}) {
+    const mode = editMode ? "edit" : "view";
+    // Если эта же (id_rpd, mode) уже открыта — просто фокусируемся.
+    const sameTab = openRpds.find(t => t.id_rpd === rpd.id_rpd && t.mode === mode);
+    if (sameTab) { focusTab(sameTab.tabId); return; }
+    // Если уже открыта другая «версия» этой РПД (другой mode), новую кладём в ПРОТИВОПОЛОЖНУЮ
+    // панель — чтобы edit и view сразу оказались side-by-side.
+    const other = openRpds.find(t => t.id_rpd === rpd.id_rpd);
+    let targetSide = options.targetSide;
+    if (!targetSide) targetSide = other ? oppositeSide(findPaneOf(other.tabId)) : "left";
+    const tabId = newTabId(rpd.id_rpd, mode);
+    // ВНИМАНИЕ к порядку: rpd может прилетать как существующая запись openRpds (из openPairFor),
+    // у неё есть свои tabId/mode/id_rpd — поэтому spread ИДЁТ ПЕРВЫМ, а наши значения после, чтобы
+    // переопределить, а не наоборот.
+    setOpenRpds(prev => [...prev, { ...rpd, tabId, id_rpd: rpd.id_rpd, mode }]);
+    setPanes(prev => {
+      if (targetSide === "right") {
+        if (!prev.right) return { ...prev, right: { tabs: [tabId], activeId: tabId } };
+        return { ...prev, right: { tabs: [...prev.right.tabs, tabId], activeId: tabId } };
+      }
+      return { ...prev, left: { tabs: [...prev.left.tabs, tabId], activeId: tabId } };
+    });
+    setActiveTab("edit");
+  }
+  function focusTab(tabId) {
+    setPanes(prev => {
+      if (prev.left.tabs.includes(tabId)) return { ...prev, left: { ...prev.left, activeId: tabId } };
+      if (prev.right && prev.right.tabs.includes(tabId)) return { ...prev, right: { ...prev.right, activeId: tabId } };
+      return prev;
+    });
+    setActiveTab("edit");
+  }
+  function toggleTabMode(tabId) {
+    const tab = openRpds.find(t => t.tabId === tabId); if (!tab) return;
+    const newMode = tab.mode === "edit" ? "view" : "edit";
+    // Если рядом уже есть пара в нужном режиме — блокируем toggle (в редакторе кнопка вообще
+    // спрятана), здесь страховка на случай вызова другим путём.
+    const sibling = openRpds.find(t => t.id_rpd === tab.id_rpd && t.mode === newMode);
+    if (sibling) { focusTab(sibling.tabId); return; }
+    setOpenRpds(prev => prev.map(t => t.tabId === tabId ? { ...t, mode: newMode } : t));
+  }
+  // Открыть копию текущей РПД в противоположном режиме во второй панели (или просто рядом,
+  // если панели одна). Это и есть discoverable-механизм для пары edit+view.
+  function openPairFor(tabId) {
+    const tab = openRpds.find(t => t.tabId === tabId); if (!tab) return;
+    const otherMode = tab.mode === "edit" ? "view" : "edit";
+    const sibling = openRpds.find(t => t.id_rpd === tab.id_rpd && t.mode === otherMode);
+    if (sibling) { focusTab(sibling.tabId); return; }
+    const here = findPaneOf(tabId);
+    const target = here ? oppositeSide(here) : "right";
+    openRpdFn(tab, otherMode === "edit", { targetSide: target });
+  }
+  function closeRpdTab(tabId) {
+    const next = openRpds.filter(t => t.tabId !== tabId);
     setOpenRpds(next); loadRpds();
-    if (activeRpdId === rpdId) { if (next.length > 0) { setActiveRpdId(next[next.length - 1].id_rpd); } else { setActiveRpdId(null); setActiveTab("my"); } }
+    setTabReloadKeys(prev => { if (!(tabId in prev)) return prev; const { [tabId]: _, ...rest } = prev; return rest; });
+    setPanes(prev => {
+      let newLeft = prev.left;
+      let newRight = prev.right;
+      if (prev.left.tabs.includes(tabId)) {
+        const tabs = prev.left.tabs.filter(id => id !== tabId);
+        const activeId = prev.left.activeId === tabId ? (tabs.length > 0 ? tabs[tabs.length - 1] : null) : prev.left.activeId;
+        newLeft = { tabs, activeId };
+      }
+      if (prev.right && prev.right.tabs.includes(tabId)) {
+        const tabs = prev.right.tabs.filter(id => id !== tabId);
+        const activeId = prev.right.activeId === tabId ? (tabs.length > 0 ? tabs[tabs.length - 1] : null) : prev.right.activeId;
+        newRight = tabs.length === 0 ? null : { tabs, activeId };
+      }
+      if (newLeft.tabs.length === 0 && newRight) return { left: newRight, right: null };
+      return { left: newLeft, right: newRight };
+    });
+    if (next.length === 0) setActiveTab("my");
+  }
+  function moveTabToPane(tabId, targetSide) {
+    setPanes(prev => {
+      const inLeft = prev.left.tabs.includes(tabId);
+      const inRight = !!(prev.right && prev.right.tabs.includes(tabId));
+      if (!inLeft && !inRight) return prev;
+      const sourceSide = inLeft ? "left" : "right";
+      if (sourceSide === targetSide) {
+        if (targetSide === "left") return { ...prev, left: { ...prev.left, activeId: tabId } };
+        return { ...prev, right: { ...prev.right, activeId: tabId } };
+      }
+      let newLeft = prev.left;
+      let newRight = prev.right;
+      if (sourceSide === "left") {
+        const tabs = prev.left.tabs.filter(id => id !== tabId);
+        const activeId = prev.left.activeId === tabId ? (tabs.length > 0 ? tabs[tabs.length - 1] : null) : prev.left.activeId;
+        newLeft = { tabs, activeId };
+      } else {
+        const tabs = prev.right.tabs.filter(id => id !== tabId);
+        const activeId = prev.right.activeId === tabId ? (tabs.length > 0 ? tabs[tabs.length - 1] : null) : prev.right.activeId;
+        newRight = tabs.length === 0 ? null : { tabs, activeId };
+      }
+      if (targetSide === "left") {
+        newLeft = { tabs: [...newLeft.tabs, tabId], activeId: tabId };
+      } else {
+        newRight = newRight ? { tabs: [...newRight.tabs, tabId], activeId: tabId } : { tabs: [tabId], activeId: tabId };
+      }
+      if (newLeft.tabs.length === 0 && newRight) return { left: newRight, right: null };
+      return { left: newLeft, right: newRight };
+    });
+  }
+  function mergePanes() {
+    setPanes(prev => {
+      if (!prev.right) return prev;
+      const tabs = [...prev.left.tabs, ...prev.right.tabs];
+      const activeId = prev.left.activeId != null ? prev.left.activeId : prev.right.activeId;
+      return { left: { tabs, activeId }, right: null };
+    });
+  }
+  function swapPanes() {
+    setPanes(prev => prev.right ? { left: prev.right, right: prev.left } : prev);
+    // Зеркалим соотношение ширин: было 70/30 → станет 30/70, чтобы визуальный
+    // «вес» панелей поехал вместе с их содержимым, а не наоборот.
+    setSplitRatio(r => 1 - r);
+  }
+  // Дёргаем «соседей по id_rpd», но не саму initiator-вкладку: она только что сама всё перечитала.
+  function notifyRpdChanged(initiatorTabId) {
+    const init = openRpds.find(t => t.tabId === initiatorTabId); if (!init) return;
+    const others = openRpds.filter(t => t.id_rpd === init.id_rpd && t.tabId !== initiatorTabId);
+    if (others.length === 0) return;
+    setTabReloadKeys(prev => {
+      const next = { ...prev };
+      others.forEach(t => { next[t.tabId] = (next[t.tabId] || 0) + 1; });
+      return next;
+    });
+  }
+  function startSplitResize(e) {
+    e.preventDefault();
+    resizingSplitRef.current = true;
+    function onMove(ev) {
+      if (!resizingSplitRef.current) return;
+      const c = splitContainerRef.current; if (!c) return;
+      const rect = c.getBoundingClientRect();
+      const x = ev.clientX - rect.left;
+      const ratio = Math.max(0.2, Math.min(0.8, x / rect.width));
+      setSplitRatio(ratio);
+    }
+    function onUp() {
+      resizingSplitRef.current = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
   }
 
   async function handleExportPdf(rpdId) {
     try { const r = await api.exportPdf(rpdId); const url = window.URL.createObjectURL(r.data); const a = document.createElement("a"); a.href = url; a.download = `RPD_${rpdId}.pdf`; a.click(); window.URL.revokeObjectURL(url); } catch { alert("Ошибка экспорта PDF"); }
   }
 
-  const handleLogout = () => { localStorage.removeItem("token"); setUser(null); setOpenRpds([]); setActiveRpdId(null); };
+  const handleLogout = () => { localStorage.removeItem("token"); setUser(null); setOpenRpds([]); setPanes({ left: { tabs: [], activeId: null }, right: null }); setTabReloadKeys({}); };
 
   if (checking) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}><Spinner size={40} /></div>;
   if (!user) return <LoginPage onLogin={u => setUser(u)} />;
@@ -1299,10 +1569,85 @@ export default function App() {
       <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "0 12px", paddingTop: 6, background: T.bg, borderBottom: "1px solid " + T.border }}>
         {navTabs.map(t => <TabBtn key={t.id} label={t.label} active={activeTab === t.id} onClick={() => setActiveTab(t.id)} />)}
       </div>
-      {openRpds.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "4px 12px 0", background: T.bg, borderBottom: "1px solid " + T.border, overflowX: "auto" }}>
-        <span style={{ fontSize: 11, color: T.textMuted, marginRight: 4, flexShrink: 0 }}>Открытые РПД:</span>
-        {openRpds.map(r => { const isA = activeTab === "edit" && activeRpdId === r.id_rpd; return <div key={r.id_rpd} onClick={() => { setActiveRpdId(r.id_rpd); setActiveTab("edit"); }} style={{ display: "flex", alignItems: "center", gap: 4, padding: "4px 10px", borderRadius: "5px 5px 0 0", background: isA ? T.surface : T.tabInactive, border: "1px solid " + (isA ? T.accent : T.border), borderBottom: isA ? "2px solid " + T.accent : "1px solid transparent", cursor: "pointer", fontSize: 11, fontWeight: isA ? 700 : 400, color: isA ? T.accent : T.text, flexShrink: 0 }}><span style={{ fontSize: 10, opacity: 0.6 }}>[{r.editMode ? "E" : "V"}]</span><span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.direction_code} {r.discipline_name} {r.academic_year}</span><span onClick={e => { e.stopPropagation(); closeRpdTab(r.id_rpd); }} style={{ cursor: "pointer", marginLeft: 4, opacity: 0.5, fontSize: 13, lineHeight: 1, flexShrink: 0 }}>✕</span></div>; })}
-      </div>}
+      {openRpds.length > 0 && (() => {
+        // Один и тот же чип-вкладки рендерим и в одиночном, и в split-режиме.
+        // Внутри split [L]/[R] больше не нужен — принадлежность панели читается по позиции.
+        const renderTab = (t) => {
+          const paneSide = findPaneOf(t.tabId);
+          const isActiveInPane = paneSide === "left"
+            ? panes.left.activeId === t.tabId
+            : (panes.right && panes.right.activeId === t.tabId);
+          const isCurrentTab = activeTab === "edit" && isActiveInPane;
+          const isDragging = draggingTabId === t.tabId;
+          const isPaired = openRpds.some(o => o.id_rpd === t.id_rpd && o.tabId !== t.tabId);
+          return <div
+            key={t.tabId}
+            draggable
+            onDragStart={(e) => {
+              setDraggingTabId(t.tabId);
+              if (activeTab !== "edit") setActiveTab("edit");
+              try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", t.tabId); } catch { }
+            }}
+            onDragEnd={() => { setDraggingTabId(null); setDragOverSide(null); }}
+            onClick={() => focusTab(t.tabId)}
+            title={isPaired ? "Эта РПД открыта в обоих режимах одновременно (edit ↔ view синхронизируются при сохранении)" : "Перетащите вниз, чтобы открыть в отдельной панели"}
+            style={{
+              display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
+              borderRadius: "5px 5px 0 0",
+              background: isCurrentTab ? T.surface : T.tabInactive,
+              border: "1px solid " + (isCurrentTab ? T.accent : T.border),
+              borderBottom: isCurrentTab ? "2px solid " + T.accent : "1px solid transparent",
+              cursor: isDragging ? "grabbing" : "grab", fontSize: 11, fontWeight: isCurrentTab ? 700 : 400,
+              color: isCurrentTab ? T.accent : T.text, flexShrink: 0,
+              opacity: isDragging ? 0.5 : 1,
+              userSelect: "none",
+            }}>
+            {/* [E]/[V] показывает текущий режим вкладки. Если открыта пара — добавляем «🔗»,
+                чтобы было сразу видно что edit и view связаны и автоматически синхронизируются. */}
+            <span style={{ fontSize: 10, opacity: 0.7, color: t.mode === "edit" ? T.orange : T.blue, fontWeight: 700 }}>[{t.mode === "edit" ? "E" : "V"}]</span>
+            {isPaired && <span title="Связана с парной вкладкой" style={{ fontSize: 10, opacity: 0.6 }}>🔗</span>}
+            <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.direction_code} {t.discipline_name} {t.academic_year}</span>
+            <span onClick={e => { e.stopPropagation(); closeRpdTab(t.tabId); }} style={{ cursor: "pointer", marginLeft: 4, opacity: 0.5, fontSize: 13, lineHeight: 1, flexShrink: 0 }}>✕</span>
+          </div>;
+        };
+        const tabIdToTab = Object.fromEntries(openRpds.map(t => [t.tabId, t]));
+        const leftTabRpds = panes.left.tabs.map(id => tabIdToTab[id]).filter(Boolean);
+        const rightTabRpds = panes.right ? panes.right.tabs.map(id => tabIdToTab[id]).filter(Boolean) : [];
+        const ratioPct = (splitRatio * 100).toFixed(3);
+        const invRatioPct = ((1 - splitRatio) * 100).toFixed(3);
+        // Чтобы стык в строке вкладок СОВПАДАЛ с разделителем редактора снизу, обе группы
+        // должны делиться от ПОЛНОЙ ширины контейнера, а не от «оставшейся после метки/кнопки».
+        // Поэтому метка живёт ВНУТРИ левой группы, кнопка — внутри правой; внешний padding 0.
+        // Левая группа: width = splitRatio*100% - 1px, разделитель 2px, правая: (1-r)*100% - 1px.
+        // Сумма ровно 100% и центр разделителя в точке splitRatio*100% — как у редактора.
+        return <div style={{ display: "flex", alignItems: "stretch", padding: "4px 0 0", background: T.bg, borderBottom: "1px solid " + T.border, minHeight: 32 }}>
+          {!panes.right ? (
+            // Одиночный режим — одна группа на всю ширину.
+            <div style={{ flex: 1, display: "flex", alignItems: "stretch", padding: "0 12px", minWidth: 0, boxSizing: "border-box" }}>
+              <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6, alignSelf: "center", flexShrink: 0 }}>Открытые РПД:</span>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto", flex: 1, minWidth: 0 }}>
+                {leftTabRpds.map(renderTab)}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={{ width: `calc(${ratioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "0 6px 0 12px", minWidth: 0, boxSizing: "border-box" }}>
+                <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6, alignSelf: "center", flexShrink: 0 }}>Открытые РПД:</span>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto", flex: 1, minWidth: 0 }}>
+                  {leftTabRpds.map(renderTab)}
+                </div>
+              </div>
+              <div title="Стык панелей" style={{ width: 2, alignSelf: "stretch", background: T.border, flexShrink: 0 }} />
+              <div style={{ width: `calc(${invRatioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "0 12px 0 6px", minWidth: 0, boxSizing: "border-box" }}>
+                <div style={{ display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto", flex: 1, minWidth: 0 }}>
+                  {rightTabRpds.map(renderTab)}
+                </div>
+                <button onClick={mergePanes} title="Свести все вкладки в одну панель" style={{ marginLeft: 8, alignSelf: "center", border: "1px solid " + T.border, background: T.surface, borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", color: T.text, flexShrink: 0, fontFamily: F }}>↩ Объединить</button>
+              </div>
+            </>
+          )}
+        </div>;
+      })()}
     </div>
 
     {/* Pages */}
@@ -1314,13 +1659,120 @@ export default function App() {
         <tbody>{rpds.filter(r => r.status === "Согласовано").map(r => <tr key={r.id_rpd} onClick={() => openRpdFn(r, false)} style={{ background: T.surface, cursor: "pointer" }}><td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td><td style={tcell}>{r.academic_year}</td><td style={tcell}>{r.author_name}</td><td style={tcell}><Badge status={r.status} /></td></tr>)}</tbody></table>
     </div>}
     {activeTab === "system" && <SystemInfoPage />}
-    {/* Открытые редакторы РПД остаются смонтированными — это сохраняет состояние просмотра PDF (загруженный документ, скролл, текущую страницу) при переключении вкладок */}
-    {openRpds.map(r => {
-      const isActive = activeTab === "edit" && activeRpdId === r.id_rpd;
-      return <div key={r.id_rpd} style={{ display: isActive ? "flex" : "none", flex: 1, flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-        <RpdEditor rpdId={r.id_rpd} editMode={r.editMode} userRole={role} onBack={() => closeRpdTab(r.id_rpd)} onExportPdf={handleExportPdf} onToggleMode={() => toggleRpdMode(r.id_rpd)} isActive={isActive} />
-      </div>;
-    })}
+    {/* Зона редакторов. Все открытые РПД остаются смонтированными — переключение вкладок и
+        переезд между панелями (drag-n-drop) не должны сбрасывать PDF, скролл и автоген-состояние.
+        Поэтому каждая <RpdEditor /> обёрнута в position:absolute контейнер; меняется лишь геометрия,
+        DOM-узел тот же → React не размонтирует. Контейнер-обёртка показывается только на «edit». */}
+    <div ref={splitContainerRef} style={{ display: activeTab === "edit" ? "block" : "none", flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
+      {openRpds.map(t => {
+        const paneSide = findPaneOf(t.tabId);
+        if (!paneSide) return null;
+        const splitOn = !!panes.right;
+        const isActiveInPane = paneSide === "left" ? panes.left.activeId === t.tabId : panes.right.activeId === t.tabId;
+        const visible = activeTab === "edit" && isActiveInPane;
+        const leftPct = (splitRatio * 100).toFixed(3) + "%";
+        const rightPct = ((1 - splitRatio) * 100).toFixed(3) + "%";
+        const positionStyle = splitOn
+          ? (paneSide === "left"
+            ? { left: 0, top: 0, width: leftPct, height: "100%" }
+            : { left: leftPct, top: 0, width: rightPct, height: "100%" })
+          : { left: 0, top: 0, width: "100%", height: "100%" };
+        const hasPair = openRpds.some(o => o.id_rpd === t.id_rpd && o.tabId !== t.tabId);
+        return <div key={t.tabId} style={{
+          position: "absolute", ...positionStyle,
+          display: visible ? "flex" : "none", flexDirection: "column",
+          overflow: "hidden", minHeight: 0, boxSizing: "border-box",
+        }}>
+          <RpdEditor
+            rpdId={t.id_rpd}
+            tabId={t.tabId}
+            editMode={t.mode === "edit"}
+            hasPair={hasPair}
+            reloadKey={tabReloadKeys[t.tabId] || 0}
+            onAfterSave={() => notifyRpdChanged(t.tabId)}
+            onOpenPair={() => openPairFor(t.tabId)}
+            userRole={role}
+            onBack={() => closeRpdTab(t.tabId)}
+            onExportPdf={handleExportPdf}
+            onToggleMode={() => toggleTabMode(t.tabId)}
+            isActive={visible}
+          />
+        </div>;
+      })}
+      {/* Плейсхолдер пустой панели — если правая панель есть, но в ней не оказалось активной вкладки
+          (например, пользователь закрыл активную, но другие ещё остались — тогда мы выбираем последнюю,
+          этот случай не сработает; но на случай рассинхрона пусть будет видимая пустота). */}
+      {panes.right && panes.right.activeId == null && <div style={{ position: "absolute", left: (splitRatio * 100).toFixed(3) + "%", top: 0, width: ((1 - splitRatio) * 100).toFixed(3) + "%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: T.textMuted, fontSize: 13 }}>Правая панель пуста</div>}
+      {panes.left.activeId == null && panes.left.tabs.length === 0 && !panes.right && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMuted, fontSize: 13 }}>Нет открытых РПД</div>}
+      {/* Разделитель + кнопка swap. Сидят поверх стыка панелей, мышью можно тянуть.
+          Двойной клик по разделителю — сброс к 50/50. */}
+      {panes.right && <>
+        <div
+          onMouseDown={startSplitResize}
+          onDoubleClick={() => setSplitRatio(0.5)}
+          title="Перетащите для изменения ширины · двойной клик — сбросить к 50/50"
+          style={{
+            position: "absolute", top: 0, height: "100%",
+            left: `calc(${(splitRatio * 100).toFixed(3)}% - 3px)`, width: 6,
+            cursor: "col-resize", zIndex: 30,
+            background: "transparent",
+          }}
+        >
+          {/* видимая полоска по центру невидимой «толстой» зоны hit-area */}
+          <div style={{ position: "absolute", left: 2, top: 0, width: 2, height: "100%", background: T.border }} />
+        </div>
+        <button
+          onClick={swapPanes}
+          title="Поменять панели местами"
+          style={{
+            position: "absolute", top: 8,
+            left: `calc(${(splitRatio * 100).toFixed(3)}% - 14px)`, width: 28, height: 28,
+            borderRadius: 14, border: "1px solid " + T.border, background: T.surface,
+            color: T.accent, cursor: "pointer", zIndex: 31,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 14, fontFamily: F, boxShadow: "0 1px 4px rgba(0,0,0,.12)",
+          }}
+        >⇄</button>
+      </>}
+      {/* Зоны сброса (drop zones) — появляются только во время перетаскивания вкладки.
+          z-index выше редакторов, pointer-events:auto только у самих зон, чтобы клики ниже
+          были «съедены» только целевыми областями. */}
+      {draggingTabId !== null && <div style={{ position: "absolute", inset: 0, zIndex: 50, display: "flex", pointerEvents: "none" }}>
+        {(() => {
+          // Стиль зоны: «активная» (мышь над ней) — насыщенный фон + двойная толщина рамки.
+          // «пассивная» — приглушённая. Видно куда конкретно сейчас бросишь.
+          const zoneStyle = (side) => {
+            const active = dragOverSide === side;
+            return {
+              flex: 1, margin: 8,
+              border: (active ? "4px" : "3px") + " dashed " + T.accent,
+              borderRadius: 10,
+              background: active ? "rgba(155,89,180,0.28)" : "rgba(155,89,180,0.10)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: active ? T.accentDark : T.accent,
+              fontWeight: 700, fontSize: 18,
+              pointerEvents: "auto",
+              transition: "background-color 80ms, border-width 80ms",
+              boxShadow: active ? "0 0 0 3px rgba(155,89,180,0.20) inset" : "none",
+            };
+          };
+          return <>
+            <div
+              onDragEnter={() => setDragOverSide("left")}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOverSide !== "left") setDragOverSide("left"); }}
+              onDrop={e => { e.preventDefault(); moveTabToPane(draggingTabId, "left"); setDraggingTabId(null); setDragOverSide(null); }}
+              style={zoneStyle("left")}
+            >◀ В левую панель</div>
+            <div
+              onDragEnter={() => setDragOverSide("right")}
+              onDragOver={e => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (dragOverSide !== "right") setDragOverSide("right"); }}
+              onDrop={e => { e.preventDefault(); moveTabToPane(draggingTabId, "right"); setDraggingTabId(null); setDragOverSide(null); }}
+              style={zoneStyle("right")}
+            >В правую панель ▶</div>
+          </>;
+        })()}
+      </div>}
+    </div>
 
     <NotifPanel show={showNotif} onClose={() => { setShowNotif(false); api.getUnreadCount().then(r => setUnreadCount(r.data.count)).catch(() => { }); }} />
     {showCreate && <CreateRpdModal onClose={() => setShowCreate(false)} onCreated={(r) => { setShowCreate(false); loadRpds(); openRpdFn(r, true); }} />}
