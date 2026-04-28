@@ -27,6 +27,7 @@ class Rpd(Base):
 
     discipline = relationship("Discipline", back_populates="rpds")
     author = relationship("User", foreign_keys=[id_author])
+    bup_links = relationship("RpdBupDiscipline", back_populates="rpd", cascade="all, delete-orphan")
     developers = relationship("RpdDeveloper", back_populates="rpd", cascade="all, delete-orphan")
     sections = relationship("RpdSection", back_populates="rpd", cascade="all, delete-orphan",
                             order_by="RpdSection.section_number")

@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import engine, Base
-from app.routers import auth, rpd, llm, notifications, competencies, upload, export, admin
+from app.routers import auth, rpd, llm, notifications, competencies, upload, export, admin, bups
 from app.seed import seed_data
 
 
@@ -37,6 +37,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(rpd.router)
+app.include_router(bups.router)
 app.include_router(competencies.router)
 app.include_router(llm.router)
 app.include_router(upload.router)

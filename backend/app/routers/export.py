@@ -11,10 +11,11 @@ from urllib.parse import quote
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
-from app.models.user import (
+from app.models import (
     User, Rpd, Discipline, Direction, RpdSection, RpdTopic,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, ApprovalStage, CompetencyIndicator, Competency, UploadedDocument,
+    RpdBupDiscipline,
 )
 from app.services.docx_renderer import render_rpd_pdf_bytes
 from app.services.rpd_template_context import build_context
@@ -31,6 +32,7 @@ async def _load_rpd(db: AsyncSession, rpd_id: int) -> Rpd:
         select(Rpd).where(Rpd.id_rpd == rpd_id)
         .options(
             selectinload(Rpd.discipline).selectinload(Discipline.direction),
+            selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
             selectinload(Rpd.author),
             selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
             selectinload(Rpd.sections).selectinload(RpdSection.topics),
@@ -61,8 +63,10 @@ async def _render(rpd: Rpd) -> bytes:
 
 def _filename(rpd: Rpd) -> str:
     d = rpd.discipline
+    bd = next((l.bup_discipline for l in (rpd.bup_links or []) if l.bup_discipline), None)
+    code = (bd.code if bd else None) or "no_code"
     return (
-        f"RPD_{d.code or 'no_code'}_{d.name}_{rpd.academic_year}.pdf"
+        f"RPD_{code}_{d.name}_{rpd.academic_year}.pdf"
         .replace("/", "_").replace(" ", "_")
     )
 

@@ -6,11 +6,11 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
-from app.models.user import (
+from app.models import (
     User, Rpd, Discipline, Direction, RpdSection, RpdTopic,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification, ApprovalStage, CompetencyIndicator,
-    UploadedDocument,
+    UploadedDocument, BupDiscipline, RpdBupDiscipline,
 )
 from app.schemas import (
     RpdCreate, RpdUpdate, RpdListOut, RpdDetailOut,
@@ -29,8 +29,18 @@ router = APIRouter(prefix="/api/rpd", tags=["rpd"])
 
 # ── Helpers ──
 
+def _representative_bup_disc(r: Rpd) -> BupDiscipline | None:
+    """«Представительная» БУП-дисциплина для отображения часов/семестра в
+    UI, который пока не знает про мульти-БУП. Берём первую."""
+    for link in r.bup_links or []:
+        if link.bup_discipline is not None:
+            return link.bup_discipline
+    return None
+
+
 def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     d = r.discipline
+    bd = _representative_bup_disc(r)
     outcomes = []
     for lo in r.learning_outcomes:
         ind = lo.indicator
@@ -66,17 +76,22 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
 
     return RpdDetailOut(
         id_rpd=r.id_rpd, id_discipline=d.id_discipline,
-        discipline_name=d.name, discipline_code=d.code,
+        discipline_name=d.name,
+        discipline_code=bd.code if bd else None,
         direction_name=d.direction.name, direction_code=d.direction.code,
         direction_profile=d.direction.profile,
         academic_year=r.academic_year,
         status=r.status, goals_text=r.goals_text, tasks_text=r.tasks_text,
         objects_text=r.objects_text, requirements_text=r.requirements_text,
         educational_tech=r.educational_tech, methodical_recommendations=r.methodical_recommendations,
-        author_name=r.author.full_name, semester=d.semester,
-        total_hours=d.total_hours, lecture_hours=d.lecture_hours,
-        practice_hours=d.practice_hours, lab_hours=d.lab_hours,
-        self_study_hours=d.self_study_hours, control_form=d.control_form,
+        author_name=r.author.full_name,
+        semester=bd.semester if bd else None,
+        total_hours=bd.total_hours if bd else None,
+        lecture_hours=bd.lecture_hours if bd else None,
+        practice_hours=bd.practice_hours if bd else None,
+        lab_hours=bd.lab_hours if bd else None,
+        self_study_hours=bd.self_study_hours if bd else None,
+        control_form=bd.control_form if bd else None,
         sections=[RpdSectionOut.model_validate(s) for s in r.sections],
         literature=[LiteratureOut.model_validate(l) for l in r.literature],
         software=[SoftwareOut.model_validate(s) for s in r.software],
@@ -93,6 +108,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
 def _rpd_select_options():
     return [
         selectinload(Rpd.discipline).selectinload(Discipline.direction),
+        selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
         selectinload(Rpd.author),
         selectinload(Rpd.sections).selectinload(RpdSection.topics),
         selectinload(Rpd.literature),
@@ -126,23 +142,37 @@ async def list_directions(db: AsyncSession = Depends(get_db)):
 
 @router.get("/disciplines", response_model=list[DisciplineOut])
 async def list_disciplines(direction_id: int | None = None, db: AsyncSession = Depends(get_db)):
+    """Список логических дисциплин с агрегатными часами «представительной»
+    БУП-дисциплины (для совместимости с текущим UI)."""
     q = select(Discipline).join(Direction)
     if direction_id:
         q = q.where(Discipline.id_direction == direction_id)
-    result = await db.execute(q.order_by(Discipline.name).options(selectinload(Discipline.direction)))
+    result = await db.execute(
+        q.order_by(Discipline.name)
+        .options(
+            selectinload(Discipline.direction),
+            selectinload(Discipline.bup_disciplines),
+        )
+    )
     rows = result.scalars().all()
-    return [
-        DisciplineOut(
+    out: list[DisciplineOut] = []
+    for d in rows:
+        bd = d.bup_disciplines[0] if d.bup_disciplines else None
+        out.append(DisciplineOut(
             id_discipline=d.id_discipline, id_direction=d.id_direction,
-            code=d.code, name=d.name, semester=d.semester,
-            total_hours=d.total_hours, lecture_hours=d.lecture_hours,
-            practice_hours=d.practice_hours, lab_hours=d.lab_hours,
-            self_study_hours=d.self_study_hours, control_form=d.control_form,
+            name=d.name,
+            code=bd.code if bd else None,
+            semester=bd.semester if bd else None,
+            total_hours=bd.total_hours if bd else None,
+            lecture_hours=bd.lecture_hours if bd else None,
+            practice_hours=bd.practice_hours if bd else None,
+            lab_hours=bd.lab_hours if bd else None,
+            self_study_hours=bd.self_study_hours if bd else None,
+            control_form=bd.control_form if bd else None,
             direction_name=d.direction.name if d.direction else None,
             direction_code=d.direction.code if d.direction else None,
-        )
-        for d in rows
-    ]
+        ))
+    return out
 
 
 # ── RPD list ──
@@ -156,7 +186,11 @@ async def list_rpds(
 ):
     q = (
         select(Rpd)
-        .options(selectinload(Rpd.discipline).selectinload(Discipline.direction), selectinload(Rpd.author))
+        .options(
+            selectinload(Rpd.discipline).selectinload(Discipline.direction),
+            selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
+            selectinload(Rpd.author),
+        )
     )
     if user.role and user.role.name == "Преподаватель":
         q = q.where(Rpd.id_author == user.id_user)
@@ -167,8 +201,10 @@ async def list_rpds(
     q = q.order_by(Rpd.updated_at.desc())
     result = await db.execute(q)
     rows = result.scalars().all()
-    return [
-        RpdListOut(
+    out: list[RpdListOut] = []
+    for r in rows:
+        bd = _representative_bup_disc(r)
+        out.append(RpdListOut(
             id_rpd=r.id_rpd,
             discipline_name=r.discipline.name,
             direction_name=r.discipline.direction.name,
@@ -176,12 +212,11 @@ async def list_rpds(
             academic_year=r.academic_year,
             status=r.status,
             author_name=r.author.full_name,
-            semester=r.discipline.semester,
-            total_hours=r.discipline.total_hours,
+            semester=bd.semester if bd else None,
+            total_hours=bd.total_hours if bd else None,
             updated_at=r.updated_at,
-        )
-        for r in rows
-    ]
+        ))
+    return out
 
 
 # ── RPD detail ──
@@ -193,6 +228,16 @@ async def get_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = 
 
 
 # ── Create RPD ──
+
+async def _attach_rpd_to_bup_disciplines(rpd: Rpd, db: AsyncSession) -> None:
+    """Привязать РПД ко всем BupDiscipline той же логической дисциплины
+    (поведение АРМ: один макет — несколько БУП-дисциплин)."""
+    bd_rows = await db.execute(
+        select(BupDiscipline).where(BupDiscipline.id_discipline == rpd.id_discipline)
+    )
+    for bd in bd_rows.scalars().all():
+        db.add(RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=bd.id_bup_discipline))
+
 
 @router.post("/", response_model=RpdDetailOut, status_code=201)
 async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -268,9 +313,12 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
                 ))
         else:
             db.add(rpd)
+            await db.flush()
     else:
         db.add(rpd)
+        await db.flush()
 
+    await _attach_rpd_to_bup_disciplines(rpd, db)
     await db.commit()
     rpd_full = await _get_rpd_full(rpd.id_rpd, db)
     return _build_rpd_detail(rpd_full)

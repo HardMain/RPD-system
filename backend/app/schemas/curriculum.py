@@ -15,10 +15,16 @@ class DirectionOut(BaseModel):
 
 
 class DisciplineOut(BaseModel):
+    """Логическая дисциплина (справочник имён по направлению).
+
+    Атрибуты часов/семестра/контроля живут в BupDiscipline. Здесь — только
+    справочные поля. Поля часов, оставленные ниже, опциональны: эндпоинты
+    могут их заполнять из «представительной» BupDiscipline для совместимости.
+    """
     id_discipline: int
     id_direction: int
-    code: str | None = None
     name: str
+    code: str | None = None
     semester: str | None = None
     total_hours: int | None = None
     lecture_hours: int | None = None
@@ -53,6 +59,8 @@ class CompetencyOut(BaseModel):
 
 
 class DisciplineCompetencyOut(BaseModel):
+    """Backwards-compat: сейчас под капотом тянем из BupDiscipline-связки,
+    схема ответа осталась прежней."""
     id_competency: int
     code: str
     name: str

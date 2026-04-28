@@ -3,6 +3,8 @@
 Canonical homes:
 - auth.py          — LoginRequest, TokenResponse, UserOut
 - curriculum.py    — DirectionOut, DisciplineOut, IndicatorOut, CompetencyOut, DisciplineCompetencyOut
+- bup.py           — BupOut, BupDetailOut, BupDisciplineOut, BupDisciplineCompetencyOut
+- storage.py       — StoredFileOut
 - rpd.py           — RpdCreate/Update, RpdSection*, RpdTopic*, Literature*, Software*,
                      MaterialTech*, Database*, LearningOutcome*, Developer*, UploadedDocumentOut,
                      ApprovalAction/Out, LlmGenerate*, RpdListOut, RpdDetailOut
@@ -15,6 +17,10 @@ from app.schemas.auth import LoginRequest, TokenResponse, UserOut
 from app.schemas.curriculum import (
     DirectionOut, DisciplineOut, IndicatorOut, CompetencyOut, DisciplineCompetencyOut,
 )
+from app.schemas.bup import (
+    BupOut, BupDetailOut, BupDisciplineOut, BupDisciplineCompetencyOut,
+)
+from app.schemas.storage import StoredFileOut
 from app.schemas.rpd import (
     RpdCreate, RpdUpdate,
     RpdTopicOut, RpdTopicCreate, RpdTopicUpdate,
@@ -41,6 +47,10 @@ __all__ = [
     "LoginRequest", "TokenResponse", "UserOut",
     # curriculum
     "DirectionOut", "DisciplineOut", "IndicatorOut", "CompetencyOut", "DisciplineCompetencyOut",
+    # bup
+    "BupOut", "BupDetailOut", "BupDisciplineOut", "BupDisciplineCompetencyOut",
+    # storage
+    "StoredFileOut",
     # rpd
     "RpdCreate", "RpdUpdate",
     "RpdTopicOut", "RpdTopicCreate", "RpdTopicUpdate",

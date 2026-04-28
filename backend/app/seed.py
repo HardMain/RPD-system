@@ -1,5 +1,6 @@
 """Demo seed data — populates the database with roles, departments, users,
-directions, disciplines, competencies and 4 sample RPDs on first startup.
+directions, disciplines, BUP, BUP-disciplines, competencies and 4 sample RPDs
+on first startup.
 
 Idempotent: if any role exists, the seed is skipped.
 """
@@ -9,9 +10,10 @@ from app.core.database import async_session
 from app.core.auth import hash_password
 from app.models import (
     Role, Department, User, Direction, Discipline, Competency,
-    CompetencyIndicator, DisciplineCompetency, Rpd, RpdSection, RpdTopic,
+    CompetencyIndicator, Rpd, RpdSection, RpdTopic,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification,
+    Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
 )
 
 
@@ -104,27 +106,77 @@ async def seed_data():
         db.add_all([ci1, ci2, ci3, ci4, ci4b, ci5, ci7a, ci7b, ci7c])
         await db.flush()
 
-        # ── Disciplines ──
-        d_inf = Discipline(id_direction=dir1.id_direction, code="Б1.О.15", name="Информатика", semester="1, 2", total_hours=252, lecture_hours=26, practice_hours=0, lab_hours=56, self_study_hours=126, control_form="Экзамен, зачёт")
-        d_kg = Discipline(id_direction=dir1.id_direction, code="Б1.О.22", name="Компьютерная графика", semester="5", total_hours=252, lecture_hours=36, practice_hours=0, lab_hours=54, self_study_hours=162, control_form="Зачёт с оценкой")
-        d_phys = Discipline(id_direction=dir1.id_direction, code="Б1.О.08", name="Физика", semester="1, 2", total_hours=144, lecture_hours=36, practice_hours=18, lab_hours=18, self_study_hours=72, control_form="Экзамен")
-        d_db = Discipline(id_direction=dir1.id_direction, code="Б1.О.20", name="Базы данных", semester="3", total_hours=180, lecture_hours=36, practice_hours=18, lab_hours=36, self_study_hours=90, control_form="Экзамен")
-        d_algo = Discipline(id_direction=dir1.id_direction, code="Б1.О.19", name="Алгоритмы и структуры данных", semester="3, 4", total_hours=216, lecture_hours=36, practice_hours=36, lab_hours=36, self_study_hours=108, control_form="Экзамен")
+        # ── Disciplines (логический справочник) ──
+        d_inf = Discipline(id_direction=dir1.id_direction, name="Информатика")
+        d_kg = Discipline(id_direction=dir1.id_direction, name="Компьютерная графика")
+        d_phys = Discipline(id_direction=dir1.id_direction, name="Физика")
+        d_db = Discipline(id_direction=dir1.id_direction, name="Базы данных")
+        d_algo = Discipline(id_direction=dir1.id_direction, name="Алгоритмы и структуры данных")
         db.add_all([d_inf, d_kg, d_phys, d_db, d_algo])
         await db.flush()
 
-        # ── Discipline-Competency links ──
+        # ── BUP (демонстрационный учебный план направления ПИ-2024) ──
+        bup1 = Bup(
+            id_direction=dir1.id_direction,
+            name="2024 ЭТФ ПИ б (полный)",
+            year=2024,
+            faculty="Электротехнический факультет",
+            profile="Разработка программно-информационных систем",
+        )
+        db.add(bup1)
+        await db.flush()
+
+        # ── BupDiscipline (часы и атрибуты в плане) ──
+        bd_inf = BupDiscipline(
+            id_bup=bup1.id_bup, id_discipline=d_inf.id_discipline,
+            id_department=dept.id_department,
+            code="Б1.О.15", semester="1, 2", control_form="Экзамен, зачёт",
+            total_hours=252, lecture_hours=26, lab_hours=56, practice_hours=0,
+            ksr_hours=0, self_study_hours=126, zet=7,
+        )
+        bd_kg = BupDiscipline(
+            id_bup=bup1.id_bup, id_discipline=d_kg.id_discipline,
+            id_department=dept.id_department,
+            code="Б1.О.22", semester="5", control_form="Зачёт с оценкой",
+            total_hours=252, lecture_hours=36, lab_hours=54, practice_hours=0,
+            ksr_hours=0, self_study_hours=162, zet=7,
+        )
+        bd_phys = BupDiscipline(
+            id_bup=bup1.id_bup, id_discipline=d_phys.id_discipline,
+            id_department=dept.id_department,
+            code="Б1.О.08", semester="1, 2", control_form="Экзамен",
+            total_hours=144, lecture_hours=36, lab_hours=18, practice_hours=18,
+            ksr_hours=0, self_study_hours=72, zet=4,
+        )
+        bd_db = BupDiscipline(
+            id_bup=bup1.id_bup, id_discipline=d_db.id_discipline,
+            id_department=dept.id_department,
+            code="Б1.О.20", semester="3", control_form="Экзамен",
+            total_hours=180, lecture_hours=36, lab_hours=36, practice_hours=18,
+            ksr_hours=0, self_study_hours=90, zet=5,
+        )
+        bd_algo = BupDiscipline(
+            id_bup=bup1.id_bup, id_discipline=d_algo.id_discipline,
+            id_department=dept.id_department,
+            code="Б1.О.19", semester="3, 4", control_form="Экзамен",
+            total_hours=216, lecture_hours=36, lab_hours=36, practice_hours=36,
+            ksr_hours=0, self_study_hours=108, zet=6,
+        )
+        db.add_all([bd_inf, bd_kg, bd_phys, bd_db, bd_algo])
+        await db.flush()
+
+        # ── BupDiscipline-Competency links (закрепление в плане) ──
         db.add_all([
-            DisciplineCompetency(id_discipline=d_inf.id_discipline, id_competency=comp1.id_competency),
-            DisciplineCompetency(id_discipline=d_inf.id_discipline, id_competency=comp2.id_competency),
-            DisciplineCompetency(id_discipline=d_inf.id_discipline, id_competency=comp7.id_competency),
-            DisciplineCompetency(id_discipline=d_kg.id_discipline, id_competency=comp2.id_competency),
-            DisciplineCompetency(id_discipline=d_kg.id_discipline, id_competency=comp3.id_competency),
-            DisciplineCompetency(id_discipline=d_phys.id_discipline, id_competency=comp1.id_competency),
-            DisciplineCompetency(id_discipline=d_db.id_discipline, id_competency=comp2.id_competency),
-            DisciplineCompetency(id_discipline=d_db.id_discipline, id_competency=comp3.id_competency),
-            DisciplineCompetency(id_discipline=d_algo.id_discipline, id_competency=comp1.id_competency),
-            DisciplineCompetency(id_discipline=d_algo.id_discipline, id_competency=comp2.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_inf.id_bup_discipline, id_competency=comp1.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_inf.id_bup_discipline, id_competency=comp2.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_inf.id_bup_discipline, id_competency=comp7.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_kg.id_bup_discipline, id_competency=comp2.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_kg.id_bup_discipline, id_competency=comp3.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_phys.id_bup_discipline, id_competency=comp1.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_db.id_bup_discipline, id_competency=comp2.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_db.id_bup_discipline, id_competency=comp3.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_algo.id_bup_discipline, id_competency=comp1.id_competency),
+            BupDisciplineCompetency(id_bup_discipline=bd_algo.id_bup_discipline, id_competency=comp2.id_competency),
         ])
         await db.flush()
 
@@ -206,6 +258,14 @@ async def seed_data():
         db.add_all([rpd1, rpd2, rpd3, rpd4])
         await db.flush()
 
+        # ── Привязка РПД к BupDiscipline (multi-БУП-связки) ──
+        rpd_bd_pairs = [
+            (rpd1, bd_inf), (rpd2, bd_kg), (rpd3, bd_phys), (rpd4, bd_inf),
+        ]
+        for r, bd in rpd_bd_pairs:
+            db.add(RpdBupDiscipline(id_rpd=r.id_rpd, id_bup_discipline=bd.id_bup_discipline))
+        await db.flush()
+
         # ── Sections for rpd2 (КГ) ──
         kg_sections = [
             ("Введение в компьютерную графику", "История, классификация, области применения КГ.", 4, 0, 4, 16),
@@ -236,7 +296,6 @@ async def seed_data():
 
         # ── Sections for rpd4 (Информатика, архивная) — по примеру из ПНИПУ ──
         inf_sections = [
-            # 1 семестр
             ("Основные понятия теории информации",
              "Цели и задачи информатики. Понятие информации, общая характеристика процессов сбора, передачи, обработки и накопления информации. Свойства информации. Данные. Операции с данными. Кодирование текстовых, числовых, графических данных. Основные структуры: линейные, табличные, иерархические. Системы счисления. Единицы представления, измерения и хранения данных.",
              1, 0, 2, 6),

@@ -58,7 +58,11 @@ class Notification(Base):
 # working by surfacing the curriculum & rpd models from this module too. New
 # code should prefer `from app.models import X`.
 from app.models.curriculum import (  # noqa: E402,F401
-    Direction, Discipline, Competency, CompetencyIndicator, DisciplineCompetency,
+    Direction, Discipline, Competency, CompetencyIndicator,
+)
+from app.models.storage import StoredFile  # noqa: E402,F401
+from app.models.bup import (  # noqa: E402,F401
+    Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
 )
 from app.models.rpd import (  # noqa: E402,F401
     Rpd, RpdDeveloper, RpdSection, RpdTopic, RpdLearningOutcome,

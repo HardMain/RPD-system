@@ -1,13 +1,12 @@
 """Competencies and indicators endpoints."""
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.auth import get_current_user
-from app.models.user import (
-    User, Competency, CompetencyIndicator, DisciplineCompetency, Discipline,
+from app.models import (
+    Competency, BupDiscipline, BupDisciplineCompetency,
 )
 from app.schemas import CompetencyOut, IndicatorOut, DisciplineCompetencyOut
 
@@ -27,34 +26,56 @@ async def list_competencies(
     return result.scalars().all()
 
 
+def _comp_to_out(comp: Competency) -> DisciplineCompetencyOut:
+    return DisciplineCompetencyOut(
+        id_competency=comp.id_competency,
+        code=comp.code,
+        name=comp.name,
+        indicators=[
+            IndicatorOut(
+                id_indicator=ind.id_indicator,
+                code=ind.code,
+                description=ind.description,
+            )
+            for ind in comp.indicators
+        ],
+    )
+
+
 @router.get("/by-discipline/{discipline_id}", response_model=list[DisciplineCompetencyOut])
 async def competencies_by_discipline(
     discipline_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Get competencies linked to a specific discipline, with their indicators."""
+    """Объединение всех компетенций, закреплённых в любой БУП-дисциплине,
+    относящейся к данной логической дисциплине. Сохранено для совместимости
+    с текущим UI; точечный выбор — `/by-bup-discipline/{id}`."""
     result = await db.execute(
-        select(DisciplineCompetency)
-        .where(DisciplineCompetency.id_discipline == discipline_id)
+        select(BupDisciplineCompetency)
+        .join(BupDiscipline, BupDiscipline.id_bup_discipline == BupDisciplineCompetency.id_bup_discipline)
+        .where(BupDiscipline.id_discipline == discipline_id)
         .options(
-            selectinload(DisciplineCompetency.competency)
-            .selectinload(Competency.indicators)
+            selectinload(BupDisciplineCompetency.competency).selectinload(Competency.indicators)
         )
     )
-    rows = result.scalars().all()
-    return [
-        DisciplineCompetencyOut(
-            id_competency=dc.competency.id_competency,
-            code=dc.competency.code,
-            name=dc.competency.name,
-            indicators=[
-                IndicatorOut(
-                    id_indicator=ind.id_indicator,
-                    code=ind.code,
-                    description=ind.description,
-                )
-                for ind in dc.competency.indicators
-            ],
+    seen: dict[int, Competency] = {}
+    for link in result.scalars().all():
+        seen.setdefault(link.competency.id_competency, link.competency)
+    return [_comp_to_out(c) for c in sorted(seen.values(), key=lambda c: c.code)]
+
+
+@router.get("/by-bup-discipline/{bup_discipline_id}", response_model=list[DisciplineCompetencyOut])
+async def competencies_by_bup_discipline(
+    bup_discipline_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    """Компетенции, закреплённые в данной дисциплине БУП (как в АРМ РПД)."""
+    result = await db.execute(
+        select(BupDisciplineCompetency)
+        .where(BupDisciplineCompetency.id_bup_discipline == bup_discipline_id)
+        .options(
+            selectinload(BupDisciplineCompetency.competency).selectinload(Competency.indicators)
         )
-        for dc in rows
-    ]
+    )
+    comps = [link.competency for link in result.scalars().all()]
+    return [_comp_to_out(c) for c in sorted(comps, key=lambda c: c.code)]

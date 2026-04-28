@@ -5,7 +5,10 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
-from app.models.user import User, Rpd, Discipline, Direction, LlmGenerationLog, UploadedDocument
+from app.models import (
+    User, Rpd, Discipline, Direction, LlmGenerationLog, UploadedDocument,
+    RpdBupDiscipline,
+)
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
 from app.services.llm_service import generate_section, extract_text_from_file
 
@@ -23,6 +26,7 @@ async def generate(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
         .options(
             selectinload(Rpd.discipline).selectinload(Discipline.direction),
+            selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
             selectinload(Rpd.uploaded_documents),
         )
     )
@@ -32,6 +36,8 @@ async def generate(
 
     disc = rpd.discipline
     direc = disc.direction
+    # Часы плана берутся из «представительной» БУП-дисциплины РПД
+    bd = next((l.bup_discipline for l in rpd.bup_links if l.bup_discipline), None)
 
     # Build context from uploaded documents
     extra_context = data.context or ""
@@ -49,11 +55,11 @@ async def generate(
         discipline=disc.name,
         direction=direc.name,
         profile=direc.profile or "",
-        total_hours=disc.total_hours or 0,
-        lecture_hours=disc.lecture_hours or 0,
-        practice_hours=disc.practice_hours or 0,
-        lab_hours=disc.lab_hours or 0,
-        self_study_hours=disc.self_study_hours or 0,
+        total_hours=(bd.total_hours if bd else 0) or 0,
+        lecture_hours=(bd.lecture_hours if bd else 0) or 0,
+        practice_hours=(bd.practice_hours if bd else 0) or 0,
+        lab_hours=(bd.lab_hours if bd else 0) or 0,
+        self_study_hours=(bd.self_study_hours if bd else 0) or 0,
         extra_context=extra_context,
     )
 

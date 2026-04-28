@@ -38,19 +38,26 @@ def _parse_semester(raw: Any) -> int:
 
 
 def build_context(rpd) -> dict:
-    """rpd — объект ORM Rpd с подгруженными связями. Возвращает dict под docxtpl."""
+    """rpd — объект ORM Rpd с подгруженными связями. Возвращает dict под docxtpl.
+
+    Часы и форма контроля берутся из «представительной» BupDiscipline (пока
+    multi-БУП не реализован в UI экспорта)."""
     d = rpd.discipline
     direction = d.direction
+    bd = next(
+        (l.bup_discipline for l in (rpd.bup_links or []) if l.bup_discipline),
+        None,
+    )
 
-    total_hours = _safe(d.total_hours, 0)
-    lec = _safe(d.lecture_hours, 0)
-    pr = _safe(d.practice_hours, 0)
-    lab = _safe(d.lab_hours, 0)
-    srs = _safe(d.self_study_hours, 0)
+    total_hours = _safe(bd.total_hours if bd else 0, 0)
+    lec = _safe(bd.lecture_hours if bd else 0, 0)
+    pr = _safe(bd.practice_hours if bd else 0, 0)
+    lab = _safe(bd.lab_hours if bd else 0, 0)
+    srs = _safe(bd.self_study_hours if bd else 0, 0)
     contact = lec + pr + lab
 
     # Контрольная форма: распределение часов по типу контроля
-    control = (d.control_form or "").lower()
+    control = ((bd.control_form if bd else "") or "").lower()
     exam_h = 9 if "экз" in control else 0
     diff_credit_h = 0
     credit_h = 0
@@ -59,7 +66,7 @@ def build_context(rpd) -> dict:
     elif "зач" in control:
         credit_h = 0
 
-    sem_num = _parse_semester(d.semester)
+    sem_num = _parse_semester(bd.semester if bd else None)
 
     # ── Workload: текущий семестр + 7 пустых слотов = всего 8 столбцов ─────
     semester_block = {

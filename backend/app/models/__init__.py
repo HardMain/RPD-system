@@ -2,7 +2,9 @@
 
 Canonical homes:
 - user.py        — Role, Department, User, Notification
-- curriculum.py  — Direction, Discipline, Competency, CompetencyIndicator, DisciplineCompetency
+- curriculum.py  — Direction, Discipline, Competency, CompetencyIndicator
+- bup.py         — Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline
+- storage.py     — StoredFile
 - rpd.py         — Rpd + RpdSection, RpdTopic, RpdLiterature, RpdSoftware,
                    RpdMaterialTech, RpdDatabase, RpdLearningOutcome, RpdDeveloper,
                    UploadedDocument, LlmGenerationLog, ApprovalStage
@@ -13,7 +15,11 @@ re-exports the curriculum and rpd models for backwards compatibility.
 """
 from app.models.user import Role, Department, User, Notification
 from app.models.curriculum import (
-    Direction, Discipline, Competency, CompetencyIndicator, DisciplineCompetency,
+    Direction, Discipline, Competency, CompetencyIndicator,
+)
+from app.models.storage import StoredFile
+from app.models.bup import (
+    Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
 )
 from app.models.rpd import (
     Rpd, RpdDeveloper, RpdSection, RpdTopic, RpdLearningOutcome,
@@ -23,7 +29,9 @@ from app.models.rpd import (
 
 __all__ = [
     "Role", "Department", "User", "Notification",
-    "Direction", "Discipline", "Competency", "CompetencyIndicator", "DisciplineCompetency",
+    "Direction", "Discipline", "Competency", "CompetencyIndicator",
+    "StoredFile",
+    "Bup", "BupDiscipline", "BupDisciplineCompetency", "RpdBupDiscipline",
     "Rpd", "RpdDeveloper", "RpdSection", "RpdTopic", "RpdLearningOutcome",
     "RpdLiterature", "RpdSoftware", "RpdMaterialTech", "RpdDatabase",
     "UploadedDocument", "LlmGenerationLog", "ApprovalStage",

@@ -1,4 +1,10 @@
-"""Curriculum-domain models: directions, disciplines, competencies and links."""
+"""Curriculum-domain models: directions, disciplines, competencies and indicators.
+
+Discipline здесь — это *логический* справочник имён дисциплин по направлению.
+Атрибуты часов, семестра, формы контроля и закрепления компетенций живут
+в `BupDiscipline` (см. `app.models.bup`), потому что они зависят от пары
+(дисциплина, БУП), а не только от дисциплины.
+"""
 from sqlalchemy import Column, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import relationship
 
@@ -12,27 +18,21 @@ class Direction(Base):
     name = Column(String(200), nullable=False)
     profile = Column(String(200))
     degree_level = Column(String(50))
+
     disciplines = relationship("Discipline", back_populates="direction")
     competencies = relationship("Competency", back_populates="direction")
+    bups = relationship("Bup", back_populates="direction", cascade="all, delete-orphan")
 
 
 class Discipline(Base):
     __tablename__ = "disciplines"
     id_discipline = Column(Integer, primary_key=True, autoincrement=True)
     id_direction = Column(Integer, ForeignKey("directions.id_direction"), nullable=False)
-    code = Column(String(20))
     name = Column(String(200), nullable=False)
-    semester = Column(String(20))
-    total_hours = Column(Integer)
-    lecture_hours = Column(Integer)
-    practice_hours = Column(Integer)
-    lab_hours = Column(Integer)
-    self_study_hours = Column(Integer)
-    control_form = Column(String(50))
 
     direction = relationship("Direction", back_populates="disciplines")
     rpds = relationship("Rpd", back_populates="discipline")
-    discipline_competencies = relationship("DisciplineCompetency", back_populates="discipline")
+    bup_disciplines = relationship("BupDiscipline", back_populates="discipline")
 
 
 class Competency(Base):
@@ -41,9 +41,10 @@ class Competency(Base):
     id_direction = Column(Integer, ForeignKey("directions.id_direction"), nullable=False)
     code = Column(String(20), nullable=False)
     name = Column(Text, nullable=False)
+
     direction = relationship("Direction", back_populates="competencies")
     indicators = relationship("CompetencyIndicator", back_populates="competency")
-    discipline_competencies = relationship("DisciplineCompetency", back_populates="competency")
+    bup_discipline_links = relationship("BupDisciplineCompetency", back_populates="competency")
 
 
 class CompetencyIndicator(Base):
@@ -52,13 +53,5 @@ class CompetencyIndicator(Base):
     id_competency = Column(Integer, ForeignKey("competencies.id_competency"), nullable=False)
     code = Column(String(20), nullable=False)
     description = Column(Text, nullable=False)
+
     competency = relationship("Competency", back_populates="indicators")
-
-
-class DisciplineCompetency(Base):
-    __tablename__ = "discipline_competencies"
-    id_discipline_competency = Column(Integer, primary_key=True, autoincrement=True)
-    id_discipline = Column(Integer, ForeignKey("disciplines.id_discipline"), nullable=False)
-    id_competency = Column(Integer, ForeignKey("competencies.id_competency"), nullable=False)
-    discipline = relationship("Discipline", back_populates="discipline_competencies")
-    competency = relationship("Competency", back_populates="discipline_competencies")
