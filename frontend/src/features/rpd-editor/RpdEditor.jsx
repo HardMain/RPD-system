@@ -25,6 +25,7 @@ import { DatabasesEditor } from "./editors/DatabasesEditor.jsx";
 import { MtechEditor } from "./editors/MtechEditor.jsx";
 import { DocsUpload } from "./editors/DocsUpload.jsx";
 import { MetaEditor } from "./editors/MetaEditor.jsx";
+import { ViewRpdEditor } from "./editors/ViewRpdEditor.jsx";
 
 export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
@@ -720,6 +721,14 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>8. Фонд оценочных средств</div>
                 <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Заполняется автоматически из ФОС</div>
                 <div style={{ padding: 16, border: "1px solid " + T.borderLight, borderRadius: 6, background: T.bg, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Описан в отдельном документе (приложение к РПД)</div>
+              </div>
+              <HR />
+              {/* ПРОСМОТР РПД — таблица БУП-дисциплин с ФГОС */}
+              <div ref={refs.view} style={{ marginBottom: 32, padding: "20px 24px", background: T.bg, borderRadius: 6, border: "1px dashed " + T.border }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 12 }}>
+                  Просмотр РПД · справочная информация, в печатную форму не попадает
+                </div>
+                <ViewRpdEditor />
               </div>
               <HR />
               {/* ДОКУМЕНТЫ для LLM */}

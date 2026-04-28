@@ -79,6 +79,20 @@ export const upsertOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes/u
 export const getAssessmentTools = () => api.get('/assessment-tools/');
 export const createAssessmentTool = (name) => api.post('/assessment-tools/', { name });
 
+// Файлы (общий просмотр любых stored_files по id)
+export const fileUrl = (fileId) => `/api/files/${fileId}`;
+
+// Направления (админ) — управление ФГОС-файлом
+export const adminListDirections = () => api.get('/admin/directions/');
+export const adminUploadFgos = (directionId, file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post(`/admin/directions/${directionId}/fgos`, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+export const adminRemoveFgos = (directionId) => api.delete(`/admin/directions/${directionId}/fgos`);
+
 // Developers
 export const addDeveloper = (rpdId, userId) => api.post(`/rpd/${rpdId}/developers?user_id=${userId}`);
 export const removeDeveloper = (devId) => api.delete(`/rpd/developers/${devId}`);

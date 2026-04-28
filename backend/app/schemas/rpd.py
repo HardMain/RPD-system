@@ -295,6 +295,11 @@ class BupDisciplineRefOut(BaseModel):
     ksr_hours: int | None = None
     self_study_hours: int | None = None
     zet: int | None = None
+    direction_code: str | None = None
+    direction_name: str | None = None
+    direction_profile: str | None = None
+    fgos_file_id: int | None = None
+    fgos_file_name: str | None = None
 
 
 class RpdDetailOut(BaseModel):

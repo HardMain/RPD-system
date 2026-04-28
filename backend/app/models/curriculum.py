@@ -18,10 +18,12 @@ class Direction(Base):
     name = Column(String(200), nullable=False)
     profile = Column(String(200))
     degree_level = Column(String(50))
+    id_fgos_file = Column(Integer, ForeignKey("stored_files.id_file"), nullable=True)
 
     disciplines = relationship("Discipline", back_populates="direction")
     competencies = relationship("Competency", back_populates="direction")
     bups = relationship("Bup", back_populates="direction", cascade="all, delete-orphan")
+    fgos_file = relationship("StoredFile", foreign_keys=[id_fgos_file])
 
 
 class Discipline(Base):

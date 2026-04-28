@@ -11,11 +11,13 @@ export const SEC_KEYS = [
   "6.1", "6.2", "6.3", "6.4",
   "7",
   "8",
+  "view",
   "docs",
 ];
 
 export const SEC_LABELS = {
   meta: "Метаинформация",
+  view: "Просмотр РПД (ФГОС)",
   title: "Титульник",
   "1.1": "1.1 Цели и задачи",
   "1.2": "1.2 Изучаемые объекты",
@@ -46,5 +48,5 @@ export const SUB_KEYS = new Set(["4.1", "4.2"]);
 export const SIDEBAR_KEYS = SEC_KEYS.filter(k => k !== "docs");
 
 /* Не-PDF разделы — есть только в редакторе, в режиме просмотра PDF их в сайдбаре нет
-   (метаинформация, загрузка контекстных документов). */
-export const NON_PDF_KEYS = new Set(["meta", "docs"]);
+   (метаинформация, просмотр РПД с ФГОС, загрузка контекстных документов). */
+export const NON_PDF_KEYS = new Set(["meta", "view", "docs"]);

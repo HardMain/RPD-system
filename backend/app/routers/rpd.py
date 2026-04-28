@@ -76,24 +76,27 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         uploaded_at=doc.uploaded_at,
     ) for doc in r.uploaded_documents]
 
-    bup_disciplines = [
-        BupDisciplineRefOut(
-            id_bup_discipline=link.bup_discipline.id_bup_discipline,
-            id_bup=link.bup_discipline.id_bup,
-            bup_name=link.bup_discipline.bup.name if link.bup_discipline.bup else "",
-            code=link.bup_discipline.code,
-            semester=link.bup_discipline.semester,
-            control_form=link.bup_discipline.control_form,
-            total_hours=link.bup_discipline.total_hours,
-            lecture_hours=link.bup_discipline.lecture_hours,
-            lab_hours=link.bup_discipline.lab_hours,
-            practice_hours=link.bup_discipline.practice_hours,
-            ksr_hours=link.bup_discipline.ksr_hours,
-            self_study_hours=link.bup_discipline.self_study_hours,
-            zet=link.bup_discipline.zet,
+    def _bd_ref(link) -> BupDisciplineRefOut:
+        bd = link.bup_discipline
+        bup = bd.bup
+        direc = bup.direction if bup else None
+        fgos = direc.fgos_file if direc and direc.fgos_file else None
+        return BupDisciplineRefOut(
+            id_bup_discipline=bd.id_bup_discipline,
+            id_bup=bd.id_bup,
+            bup_name=bup.name if bup else "",
+            code=bd.code, semester=bd.semester, control_form=bd.control_form,
+            total_hours=bd.total_hours, lecture_hours=bd.lecture_hours,
+            lab_hours=bd.lab_hours, practice_hours=bd.practice_hours,
+            ksr_hours=bd.ksr_hours, self_study_hours=bd.self_study_hours,
+            zet=bd.zet,
+            direction_code=direc.code if direc else None,
+            direction_name=direc.name if direc else None,
+            direction_profile=direc.profile if direc else None,
+            fgos_file_id=fgos.id_file if fgos else None,
+            fgos_file_name=fgos.original_name if fgos else None,
         )
-        for link in (r.bup_links or []) if link.bup_discipline
-    ]
+    bup_disciplines = [_bd_ref(link) for link in (r.bup_links or []) if link.bup_discipline]
 
     return RpdDetailOut(
         id_rpd=r.id_rpd, id_discipline=d.id_discipline,
@@ -133,7 +136,9 @@ def _rpd_select_options():
         selectinload(Rpd.discipline).selectinload(Discipline.direction),
         selectinload(Rpd.bup_links)
             .selectinload(RpdBupDiscipline.bup_discipline)
-            .selectinload(BupDiscipline.bup),
+            .selectinload(BupDiscipline.bup)
+            .selectinload(Bup.direction)
+            .selectinload(Direction.fgos_file),
         selectinload(Rpd.author),
         selectinload(Rpd.sections).selectinload(RpdSection.topics),
         selectinload(Rpd.literature),

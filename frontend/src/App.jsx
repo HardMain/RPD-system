@@ -17,6 +17,7 @@ import { OnApprovalPage } from "./pages/OnApprovalPage.jsx";
 import { ArchivePage } from "./pages/ArchivePage.jsx";
 import { SystemInfoPage } from "./pages/SystemInfoPage.jsx";
 import { AdminBupsPage } from "./pages/AdminBupsPage.jsx";
+import { AdminDirectionsPage } from "./pages/AdminDirectionsPage.jsx";
 
 import { NotifPanel } from "./features/notifications/NotifPanel.jsx";
 import { CreateRpdModal } from "./features/rpd-create/CreateRpdModal.jsx";
@@ -258,6 +259,7 @@ export default function App() {
     isHead ? { id: "approval", label: "Согласование" } : { id: "onApproval", label: `На согласов. (${rpds.filter(r => r.status === "На согласовании").length})` },
     { id: "archive", label: `Архив (${rpds.filter(r => r.status === "Согласовано").length})` },
     isAdmin ? { id: "adminBups", label: "БУПы" } : null,
+    isAdmin ? { id: "adminDirections", label: "ФГОС" } : null,
     { id: "system", label: "Система" },
   ].filter(Boolean);
 
@@ -306,6 +308,7 @@ export default function App() {
     {activeTab === "onApproval" && <OnApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, false)} />}
     {activeTab === "archive" && <ArchivePage rpds={rpds} onOpen={r => openRpdFn(r, false)} />}
     {activeTab === "adminBups" && <AdminBupsPage />}
+    {activeTab === "adminDirections" && <AdminDirectionsPage />}
     {activeTab === "system" && <SystemInfoPage />}
 
     {/* Зона редакторов. Все открытые РПД остаются смонтированными — переключение вкладок и
