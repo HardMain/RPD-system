@@ -16,6 +16,7 @@ import { ApprovalPage } from "./pages/ApprovalPage.jsx";
 import { OnApprovalPage } from "./pages/OnApprovalPage.jsx";
 import { ArchivePage } from "./pages/ArchivePage.jsx";
 import { SystemInfoPage } from "./pages/SystemInfoPage.jsx";
+import { AdminBupsPage } from "./pages/AdminBupsPage.jsx";
 
 import { NotifPanel } from "./features/notifications/NotifPanel.jsx";
 import { CreateRpdModal } from "./features/rpd-create/CreateRpdModal.jsx";
@@ -251,12 +252,14 @@ export default function App() {
 
   const role = user.role;
   const isHead = role === "Зав. кафедрой";
+  const isAdmin = role === "Администратор";
   const navTabs = [
     { id: "my", label: `Мои РПД (${rpds.length})` },
     isHead ? { id: "approval", label: "Согласование" } : { id: "onApproval", label: `На согласов. (${rpds.filter(r => r.status === "На согласовании").length})` },
     { id: "archive", label: `Архив (${rpds.filter(r => r.status === "Согласовано").length})` },
+    isAdmin ? { id: "adminBups", label: "БУПы" } : null,
     { id: "system", label: "Система" },
-  ];
+  ].filter(Boolean);
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
     <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
@@ -302,6 +305,7 @@ export default function App() {
     {activeTab === "approval" && <ApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, true)} />}
     {activeTab === "onApproval" && <OnApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, false)} />}
     {activeTab === "archive" && <ArchivePage rpds={rpds} onOpen={r => openRpdFn(r, false)} />}
+    {activeTab === "adminBups" && <AdminBupsPage />}
     {activeTab === "system" && <SystemInfoPage />}
 
     {/* Зона редакторов. Все открытые РПД остаются смонтированными — переключение вкладок и

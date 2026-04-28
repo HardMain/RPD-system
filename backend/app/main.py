@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.database import engine, Base
-from app.routers import auth, rpd, llm, notifications, competencies, upload, export, admin, bups
+from app.routers import auth, rpd, llm, notifications, competencies, upload, export, admin, bups, admin_bups
 from app.seed import seed_data
 
 
@@ -44,6 +44,7 @@ app.include_router(upload.router)
 app.include_router(export.router)
 app.include_router(notifications.router)
 app.include_router(admin.router)
+app.include_router(admin_bups.router)
 
 
 @app.get("/api/health")

@@ -19,6 +19,8 @@ from app.schemas.curriculum import (
 )
 from app.schemas.bup import (
     BupOut, BupDetailOut, BupDisciplineOut, BupDisciplineCompetencyOut,
+    BupCreate, BupUpdate, BupDisciplineCreate, BupDisciplineUpdate,
+    BupImportResult,
 )
 from app.schemas.storage import StoredFileOut
 from app.schemas.rpd import (
@@ -49,6 +51,8 @@ __all__ = [
     "DirectionOut", "DisciplineOut", "IndicatorOut", "CompetencyOut", "DisciplineCompetencyOut",
     # bup
     "BupOut", "BupDetailOut", "BupDisciplineOut", "BupDisciplineCompetencyOut",
+    "BupCreate", "BupUpdate", "BupDisciplineCreate", "BupDisciplineUpdate",
+    "BupImportResult",
     # storage
     "StoredFileOut",
     # rpd

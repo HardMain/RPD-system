@@ -50,3 +50,60 @@ class BupOut(BaseModel):
 
 class BupDetailOut(BupOut):
     disciplines: list[BupDisciplineOut] = []
+
+
+# ── Mutation payloads (admin) ─────────────────────────────────────────────
+
+class BupCreate(BaseModel):
+    id_direction: int
+    name: str
+    year: int | None = None
+    faculty: str | None = None
+    profile: str | None = None
+
+
+class BupUpdate(BaseModel):
+    name: str | None = None
+    year: int | None = None
+    faculty: str | None = None
+    profile: str | None = None
+    id_direction: int | None = None
+
+
+class BupDisciplineCreate(BaseModel):
+    id_discipline: int
+    code: str | None = None
+    semester: str | None = None
+    control_form: str | None = None
+    total_hours: int | None = None
+    lecture_hours: int | None = None
+    lab_hours: int | None = None
+    practice_hours: int | None = None
+    ksr_hours: int | None = None
+    self_study_hours: int | None = None
+    zet: int | None = None
+    id_department: int | None = None
+    competency_ids: list[int] = []
+
+
+class BupDisciplineUpdate(BaseModel):
+    id_discipline: int | None = None
+    code: str | None = None
+    semester: str | None = None
+    control_form: str | None = None
+    total_hours: int | None = None
+    lecture_hours: int | None = None
+    lab_hours: int | None = None
+    practice_hours: int | None = None
+    ksr_hours: int | None = None
+    self_study_hours: int | None = None
+    zet: int | None = None
+    id_department: int | None = None
+    competency_ids: list[int] | None = None
+
+
+class BupImportResult(BaseModel):
+    bup: BupDetailOut
+    parsed_disciplines: int
+    created_competencies: list[str] = []
+    warnings: list[str] = []

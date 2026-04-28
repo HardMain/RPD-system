@@ -119,6 +119,38 @@ export const searchUsers = (q) => api.get('/admin/users/search', { params: { q }
 export const getRoles = () => api.get('/admin/roles');
 export const getDepartments = () => api.get('/admin/departments');
 
+// БУПы (read-only, доступно всем)
+export const getBups = (directionId) => api.get('/bups/', { params: { direction_id: directionId } });
+export const getBup = (id) => api.get(`/bups/${id}`);
+export const getBupDisciplines = (bupId) => api.get(`/bups/${bupId}/disciplines`);
+export const getBupDiscipline = (bdId) => api.get(`/bups/disciplines/${bdId}`);
+export const getCompetenciesByBupDiscipline = (bdId) =>
+  api.get(`/competencies/by-bup-discipline/${bdId}`);
+
+// БУПы (админ)
+export const adminListBups = (directionId) =>
+  api.get('/admin/bups/', { params: { direction_id: directionId } });
+export const adminGetBup = (id) => api.get(`/admin/bups/${id}`);
+export const adminCreateBup = (data) => api.post('/admin/bups/', data);
+export const adminUpdateBup = (id, data) => api.patch(`/admin/bups/${id}`, data);
+export const adminDeleteBup = (id) => api.delete(`/admin/bups/${id}`);
+export const adminImportBupXls = (file, year, nameOverride) => {
+  const form = new FormData();
+  form.append('file', file);
+  if (year != null && year !== '') form.append('year', String(year));
+  if (nameOverride) form.append('name_override', nameOverride);
+  return api.post('/admin/bups/import-xls', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+};
+export const adminAddBupDiscipline = (bupId, data) =>
+  api.post(`/admin/bups/${bupId}/disciplines`, data);
+export const adminUpdateBupDiscipline = (bdId, data) =>
+  api.patch(`/admin/bups/disciplines/${bdId}`, data);
+export const adminDeleteBupDiscipline = (bdId) =>
+  api.delete(`/admin/bups/disciplines/${bdId}`);
+export const adminDownloadBupSourceUrl = (bupId) => `/api/admin/bups/${bupId}/source-file`;
+
 // Health
 export const getHealth = () => api.get('/health');
 
