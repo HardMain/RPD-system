@@ -54,36 +54,42 @@ export function OutcomesEditor() {
     </div>;
   }
 
+  // Без tableLayout:fixed — браузер сам распределяет ширину как в остальных таблицах
+  // редактора (раздел 3 и т.д.). Колонки сужаются ровно до самого длинного слова в столбце,
+  // не уже — то есть «Компетенция» / «Индикатор» не разваливаются на «Компетен / ция».
+  // colgroup с процентами — это подсказки для auto-layout, относительные веса при широком
+  // контейнере; min-content поведение (= ширина самого длинного слова) браузер обеспечит сам.
+  const wrap = { wordBreak: "normal", overflowWrap: "break-word" };
   return <div>
-    <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
-        <col style={{ width: 80 }} />
-        <col style={{ width: 90 }} />
-        <col />
+        <col style={{ width: "12%" }} />
+        <col style={{ width: "10%" }} />
+        <col style={{ width: "26%" }} />
         <col style={{ width: "30%" }} />
-        <col style={{ width: 180 }} />
+        <col style={{ width: "22%" }} />
       </colgroup>
       <thead><tr>
-        <th style={th}>Компетенция</th>
-        <th style={th}>Индикатор</th>
-        <th style={th}>Описание индикатора</th>
-        <th style={th}>Планируемый результат обучения</th>
-        <th style={th}>Средство оценки</th>
+        <th style={{ ...th, ...wrap }}>Компетенция</th>
+        <th style={{ ...th, ...wrap }}>Индикатор</th>
+        <th style={{ ...th, ...wrap }}>Описание индикатора</th>
+        <th style={{ ...th, ...wrap }}>Планируемый результат обучения</th>
+        <th style={{ ...th, ...wrap }}>Средство оценки</th>
       </tr></thead>
       <tbody>
         {rows.map((r, idx) => (
           <tr key={r.id_indicator}>
-            <td style={td}><b>{r.competency_code}</b></td>
-            <td style={td}>{r.indicator_code}</td>
-            <td style={td}>{r.indicator_description}</td>
-            <td style={{ ...td, padding: 4 }}>
+            <td style={{ ...td, ...wrap }}><b>{r.competency_code}</b></td>
+            <td style={{ ...td, ...wrap }}>{r.indicator_code}</td>
+            <td style={{ ...td, ...wrap }}>{r.indicator_description}</td>
+            <td style={{ ...td, padding: 4, ...wrap }}>
               <OutcomeTextarea
                 value={r.outcome_text || ""}
                 disabled={!isEdit || !canEdit}
                 onSave={v => saveRow(idx, { outcome_text: v })}
               />
             </td>
-            <td style={{ ...td, padding: 4 }}>
+            <td style={{ ...td, padding: 4, ...wrap }}>
               <AssessmentToolPicker
                 value={r.assessment_tool || ""}
                 tools={tools}

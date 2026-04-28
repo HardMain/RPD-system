@@ -69,6 +69,12 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   // Цель текущего программного скролла в edit-режиме: { key, top, deadline }.
   // flash-рамка у раздела запускается, когда scrollTop приехал к top (или истёк deadline).
   const pendingFlashRef = useRef(null);
+  // Глобальная блокировка обновления подсветки сайдбара. Взводится в reloadPdf и handleSave,
+  // снимается, когда документ догрузился и скролл реально вернулся на сохранённую позицию
+  // (для PDF — в tryRestore при достижении target; для edit — через 2 кадра после save'а,
+  // когда дочерние редакторы перерендерились). Логика одна и та же для обеих кнопок:
+  // подсветка не дёргается, пока «всё не уляжется».
+  const sidebarLockRef = useRef(false);
   const pageInputFocusedRef = useRef(false);
   const resizingRef = useRef(false);
   const scrollRef = useRef(null);
@@ -83,8 +89,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const showPdf = !isEdit;
   const activeSec = showPdf ? activeSecPdf : activeSecEdit;
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  // silent=true — перечитываем РПД, не дёргая loading-флаг. Нужно, чтобы при «Сохранить»
+  // в режиме редактирования форма не размонтировалась в спиннер (вся страница мерцает,
+  // скролл-контейнер пересоздаётся и иногда восстанавливается не туда, куда нужно).
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.getRpd(rpdId); const r = res.data; setRpd(r);
       setEditTexts({ goals: r.goals_text || "", tasks: r.tasks_text || "", objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "", comment: r.comment || "" });
@@ -93,7 +102,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       // после изменений, поэтому PDF на сервере мог обновиться.
       if (initialLoadRef.current) initialLoadRef.current = false;
       else pdfDirtyRef.current = true;
-    } catch { } setLoading(false);
+    } catch { }
+    if (!silent) setLoading(false);
   }, [rpdId]);
   useEffect(() => { load(); }, [load]);
 
@@ -103,24 +113,39 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     const c = pdfScrollRef.current;
     if (c) pendingScrollRestoreRef.current = { mode: "pdf", value: c.scrollTop };
     pdfDirtyRef.current = true;
+    // Если перед ↻ юзер нажимал на пункт сайдбара (6.4 / 7 / 8 и т.п.) — pdfNavTargetRef
+    // остаётся выставленным на 8 секунд. Без сброса compute после reload первым же кадром
+    // принудительно подсветит nav.key, даже если scrollTop восстановился на другую точку,
+    // и подсветка моргнёт. Сбрасываем — пусть scroll-spy спокойно посчитает по реальной позиции.
+    pdfNavTargetRef.current = null;
+    preferredActiveSecRef.current = null;
+    // Замок снимется в tryRestore, когда документ дорендерится до сохранённой позиции
+    // и scrollTop реально встанет на target. До тех пор scroll-spy НЕ трогает activeSec.
+    sidebarLockRef.current = true;
     setPdfReloadKey(k => k + 1);
   }, []);
 
   // Внешний триггер «перечитать всё» (например, парная edit-вкладка сохранилась → notifyRpdChanged
   // у App'а инкрементит reloadKey этой view-вкладки). На первом монтировании ничего не делаем —
-  // load() уже отрабатывает в основном эффекте. Скролл сохраняется автоматически:
-  // pdfScrollPosRef / editScrollPosRef хранят последнюю позицию, а restoration-эффект
-  // ниже сам её восстановит, как только pdfData/loading изменятся после перезагрузки.
+  // load() уже отрабатывает в основном эффекте.
+  // Дебаунс 400мс: при «спаме» Save в парной edit-вкладке мы не запускаем 5 PDF-рендеров
+  // подряд на бэке (LibreOffice медленный, очередь забивается), а делаем один reload после
+  // паузы. load(true) — тихий, без mount/unmount формы; reloadPdf уже сам показывает
+  // спиннер поверх PDF.
   const initialReloadRef = useRef(true);
+  const reloadDebounceRef = useRef(null);
   useEffect(() => {
     if (initialReloadRef.current) { initialReloadRef.current = false; return; }
-    // Так же, как и при ручном reloadPdf: захватываем текущий scroll для текущего режима
-    // ДО того, как load() сорвёт DOM в Spinner и автоклэмп сбросит scroll-ref в 0.
-    const c = showPdf ? pdfScrollRef.current : scrollRef.current;
-    if (c) pendingScrollRestoreRef.current = { mode: showPdf ? "pdf" : "edit", value: c.scrollTop };
-    load();
-    if (showPdf) reloadPdf();
-    else pdfDirtyRef.current = true;
+    if (reloadDebounceRef.current) clearTimeout(reloadDebounceRef.current);
+    reloadDebounceRef.current = setTimeout(() => {
+      reloadDebounceRef.current = null;
+      const c = showPdf ? pdfScrollRef.current : scrollRef.current;
+      if (c) pendingScrollRestoreRef.current = { mode: showPdf ? "pdf" : "edit", value: c.scrollTop };
+      load(true);
+      if (showPdf) reloadPdf();
+      else pdfDirtyRef.current = true;
+    }, 400);
+    return () => { if (reloadDebounceRef.current) { clearTimeout(reloadDebounceRef.current); reloadDebounceRef.current = null; } };
   }, [reloadKey]);
 
   // PDF preview for view mode.
@@ -131,10 +156,19 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (!showPdf) return;
     if (pdfData && !pdfDirtyRef.current) return; // PDF актуален — не дёргаем сервер
     let cancelled = false; let createdUrl = null; let transferred = false;
+    // AbortController: при новом нажатии «↻ Обновить» / новом reloadKey предыдущий
+    // axios-запрос отменяется. Без этого 5 быстрых сохранений → 5 PDF-рендеров на сервере
+    // в очередь, и каждый занимает время LibreOffice. Отменённые ответы axios отдаст
+    // как CanceledError — флаг cancelled блокирует setState, ошибка пользователю не показывается.
+    const controller = new AbortController();
     setPdfLoading(true); setPdfError(null); setPdfData(null); setPdfNumPages(0); setPdfCurrentPage(1);
-    setPdfSectionMap(PDF_PAGE_MAP_FALLBACK);
-    pdfPageRefs.current = {};
-    api.fetchPdfInline(rpdId).then(r => {
+    // Намеренно НЕ сбрасываем pdfSectionMap к фоллбэку: старая (точная) разметка соответствует
+    // примерно той же структуре, что и новая, и используется compute сразу после tryRestore-успеха,
+    // ДО того как scanPdfForSections отсканирует свежий PDF. Иначе compute считает activeSec по
+    // фоллбэку с приблизительными координатами и моргает чужим разделом.
+    // pdfPageRefs тоже не зачищаем вручную — старые page-узлы и так размонтируются при смене pdfData,
+    // setPdfPageRef-callback при unmount удалит их из map.
+    api.fetchPdfInline(rpdId, { signal: controller.signal }).then(r => {
       if (cancelled) return;
       createdUrl = window.URL.createObjectURL(r.data);
       setPdfData(createdUrl);
@@ -144,6 +178,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       .finally(() => { if (!cancelled) setPdfLoading(false); });
     return () => {
       cancelled = true;
+      try { controller.abort(); } catch { }
       // Если blob успел уйти в state — освобождением займётся cleanup-эффект ниже,
       // здесь revoke только если запрос отменён ДО setPdfData.
       if (createdUrl && !transferred) try { window.URL.revokeObjectURL(createdUrl); } catch { }
@@ -222,6 +257,10 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     const c = pdfScrollRef.current; if (!c) return;
     let raf = 0;
     function compute() {
+      // Замок reload/save — НИЧЕГО не пересчитываем: ни preferred, ни scrollTop. Подсветка
+      // остаётся ровно той, какой была до нажатия кнопки. Снимется в tryRestore по факту
+      // реального доскролла.
+      if (sidebarLockRef.current) return;
       // Пока идёт восстановление позиции после смены режима — держим preferred (если есть)
       // и НЕ трогаем activeSec по реальному scrollTop, иначе мелькнёт «Титульник» на scroll=0.
       if (restoringScrollRef.current) {
@@ -287,8 +326,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     const pending = pendingScrollRestoreRef.current;
     const usingPending = !!(pending && pending.mode === currentMode);
     const target = usingPending ? pending.value : (showPdf ? pdfScrollPosRef.current : editScrollPosRef.current);
-    if (!target) {
+    // target может быть legitimately = 0 (юзер был в самом верху). Раньше `!target` это
+    // съедал и преждевременно снимал замок. Сейчас сверяем с null/undefined.
+    if (target == null) {
       restoringScrollRef.current = false;
+      sidebarLockRef.current = false;
       if (usingPending) pendingScrollRestoreRef.current = null;
       return;
     }
@@ -297,27 +339,55 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     // флаг до того, как пересчитает activeSec по scrollTop=0.
     restoringScrollRef.current = true;
     let raf = 0; let attempts = 0;
-    // Лимит попыток — страховка на случай, если контейнер так и не дорастёт
-    // до target (PDF не отрендерился). Цикл сам остановится, флаг снимется,
-    // scroll-spy вернётся к работе по реальному scrollTop.
     const MAX_ATTEMPTS = 600;
+    // Если maxScroll N кадров подряд не меняется — значит PDF дорендерился полностью.
+    // При недостижимой цели (юзер кликнул по 6.4/7/8 в конце доки и нажал ↻ — сохранённый
+    // scrollTop был = maxScroll старой версии, у новой может оказаться чуть меньше) этот
+    // цикл иначе крутился бы до MAX_ATTEMPTS, КАЖДЫЙ КАДР форся scrollTop = maxScroll и
+    // запирая пользователя — он не мог листать ни вверх ни вниз. Со стабильным выходом
+    // отпускаем замок раньше, юзер может листать свободно.
+    //
+    // ВАЖНО: «стабильность» считаем ТОЛЬКО после того, как PDF реально начал рендериться
+    // (maxScroll > 0 хотя бы раз). Иначе пока fetch ещё не вернулся и контейнер пуст,
+    // maxScroll остаётся = 0 на всех кадрах подряд — счётчик отстреливается за ~330мс,
+    // мы преждевременно вызываем finishRestore() и теряем pending-цель, а вернувшийся
+    // PDF уже не восстанавливает позицию (видим скролл в самом верху документа).
+    const STABLE_THRESHOLD = 20;
+    let lastMaxScroll = -1;
+    let stableFrames = 0;
+    let started = false;
+    function finishRestore() {
+      restoringScrollRef.current = false;
+      sidebarLockRef.current = false;
+      if (usingPending) pendingScrollRestoreRef.current = null;
+    }
     function tryRestore() {
       const c = showPdf ? pdfScrollRef.current : scrollRef.current;
       if (c) {
         const maxScroll = c.scrollHeight - c.clientHeight;
         if (maxScroll >= target) {
           if (c.scrollTop !== target) c.scrollTop = target;
-          // onScroll затем обновит ref до target — ничего восстанавливать не нужно
-          restoringScrollRef.current = false;
-          if (usingPending) pendingScrollRestoreRef.current = null;
+          finishRestore();
           return;
         }
-        // Высота ещё не выросла — частично прокручиваем туда, куда сейчас можно
-        // (так PDF не «прыгает» резко в самом конце), и продолжаем попытки.
-        if (maxScroll > 0 && c.scrollTop < maxScroll) c.scrollTop = maxScroll;
+        if (maxScroll > 0) started = true;
+        if (started) {
+          if (maxScroll === lastMaxScroll) {
+            // Высота больше не растёт — PDF дорендерился, target недостижим. Не запираем.
+            stableFrames++;
+            if (stableFrames >= STABLE_THRESHOLD) { finishRestore(); return; }
+          } else {
+            stableFrames = 0;
+            lastMaxScroll = maxScroll;
+            // Подкатываем сразу после прироста высоты, а не каждый кадр — иначе юзер
+            // не сможет проскроллить вверх вручную пока документ ещё подрисовывается.
+            if (c.scrollTop < maxScroll) c.scrollTop = maxScroll;
+          }
+        }
+        // started=false (контейнер пуст, ждём фетч) — просто продолжаем кадры без счёта.
       }
       if (++attempts < MAX_ATTEMPTS) raf = requestAnimationFrame(tryRestore);
-      else { restoringScrollRef.current = false; if (usingPending) pendingScrollRestoreRef.current = null; }
+      else finishRestore();
     }
     raf = requestAnimationFrame(tryRestore);
     // ВАЖНО: cleanup НЕ чистит pendingScrollRestoreRef — pdfData во время reload меняется
@@ -336,6 +406,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     function handler() {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
+        // Замок reload/save для edit-режима работает так же, как и для PDF-режима.
+        if (sidebarLockRef.current) return;
         // Восстановление scrollTop после смены режима — держим прежний activeSec
         // и не подсвечиваем «Титульник» по промежуточным значениям scrollTop=0.
         if (restoringScrollRef.current) return;
@@ -467,13 +539,25 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
   async function handleSave() {
     setSaving(true);
+    // Замок подсветки — пока идёт сохранение и пересчёт детей, scroll-spy не реагирует на
+    // возможные мелкие перепрыгивания scrollTop из-за перерендера дочерних редакторов
+    // (после setRpd они обновляют свои таблицы — высота секции на миг меняется).
+    sidebarLockRef.current = true;
     let ok = false;
     try {
       await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations, comment: editTexts.comment });
-      await load();
+      // Тихая перезагрузка — форма не размонтируется в спиннер, скролл и состояние
+      // дочерних редакторов сохраняются. PDF в парной view-вкладке обновится через
+      // onAfterSave (там reloadKey, и мерцание PDF — это нормально).
+      await load(true);
       ok = true;
     } catch { }
     setSaving(false);
+    // 2 кадра — даём React закоммитить новые состояния и браузеру отрисовать;
+    // только после этого scroll-spy снова начнёт обновлять activeSec.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      sidebarLockRef.current = false;
+    }));
     // Сообщаем родителю — он триггернёт перезагрузку парной view-вкладки
     // (если она открыта) через её reloadKey.
     if (ok && onAfterSave) onAfterSave();

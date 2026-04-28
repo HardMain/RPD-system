@@ -131,8 +131,8 @@ export const deleteDocument = (docId) => api.delete(`/upload/${docId}`);
 // Export
 export const exportPdf = (rpdId) =>
   api.get(`/export/${rpdId}/pdf`, { responseType: 'blob' });
-export const fetchPdfInline = (rpdId) =>
-  api.get(`/export/${rpdId}/pdf-inline`, { responseType: 'blob' });
+export const fetchPdfInline = (rpdId, config = {}) =>
+  api.get(`/export/${rpdId}/pdf-inline`, { responseType: 'blob', ...config });
 
 // Directions & Disciplines
 export const getDirections = () => api.get('/rpd/directions');

@@ -10,7 +10,7 @@ export function BottomBar({
     <Btn small onClick={onBack}>← Назад</Btn>
     {!showPdf && <Btn small onClick={() => onExportPdf(rpdId)}><DownloadIcon /> PDF</Btn>}
     {isEdit && canEdit && !isHead && <>
-      <Btn small onClick={onSave} disabled={saving}>{saving ? "Сохранение..." : "Сохранить"}</Btn>
+      <Btn small onClick={onSave} disabled={saving}>Сохранить</Btn>
       <div style={{ flex: 1 }} />
       <Btn primary onClick={onSendApproval}>Отправить на согласование</Btn>
     </>}
