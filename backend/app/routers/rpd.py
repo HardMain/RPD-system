@@ -22,8 +22,9 @@ from app.schemas import (
     LearningOutcomeCreate, LearningOutcomeOut,
     DeveloperOut, ApprovalAction, ApprovalOut,
     DirectionOut, DisciplineOut, UploadedDocumentOut,
-    OutcomeUpsert, OutcomeRowOut,
+    OutcomeUpsert, OutcomeRowOut, BupDisciplineRefOut,
 )
+from app.models import Bup
 
 router = APIRouter(prefix="/api/rpd", tags=["rpd"])
 
@@ -75,6 +76,25 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         uploaded_at=doc.uploaded_at,
     ) for doc in r.uploaded_documents]
 
+    bup_disciplines = [
+        BupDisciplineRefOut(
+            id_bup_discipline=link.bup_discipline.id_bup_discipline,
+            id_bup=link.bup_discipline.id_bup,
+            bup_name=link.bup_discipline.bup.name if link.bup_discipline.bup else "",
+            code=link.bup_discipline.code,
+            semester=link.bup_discipline.semester,
+            control_form=link.bup_discipline.control_form,
+            total_hours=link.bup_discipline.total_hours,
+            lecture_hours=link.bup_discipline.lecture_hours,
+            lab_hours=link.bup_discipline.lab_hours,
+            practice_hours=link.bup_discipline.practice_hours,
+            ksr_hours=link.bup_discipline.ksr_hours,
+            self_study_hours=link.bup_discipline.self_study_hours,
+            zet=link.bup_discipline.zet,
+        )
+        for link in (r.bup_links or []) if link.bup_discipline
+    ]
+
     return RpdDetailOut(
         id_rpd=r.id_rpd, id_discipline=d.id_discipline,
         discipline_name=d.name,
@@ -93,6 +113,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         lab_hours=bd.lab_hours if bd else None,
         self_study_hours=bd.self_study_hours if bd else None,
         control_form=bd.control_form if bd else None,
+        bup_disciplines=bup_disciplines,
         sections=[RpdSectionOut.model_validate(s) for s in r.sections],
         literature=[LiteratureOut.model_validate(l) for l in r.literature],
         software=[SoftwareOut.model_validate(s) for s in r.software],
@@ -109,7 +130,9 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
 def _rpd_select_options():
     return [
         selectinload(Rpd.discipline).selectinload(Discipline.direction),
-        selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
+        selectinload(Rpd.bup_links)
+            .selectinload(RpdBupDiscipline.bup_discipline)
+            .selectinload(BupDiscipline.bup),
         selectinload(Rpd.author),
         selectinload(Rpd.sections).selectinload(RpdSection.topics),
         selectinload(Rpd.literature),

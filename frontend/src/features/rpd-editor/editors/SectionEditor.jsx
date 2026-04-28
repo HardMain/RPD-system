@@ -5,6 +5,7 @@ import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { PlusIcon, TrashIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
+import { PlanSummary } from "./PlanSummary.jsx";
 
 export function SectionEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
@@ -17,6 +18,7 @@ export function SectionEditor() {
   const delSec = async (id) => { if (confirm("Удалить раздел?")) { await api.deleteSection(id); await reload(); } };
 
   return <div>
+    <PlanSummary bupDisciplines={rpd.bup_disciplines} sections={rpd.sections} />
     {rpd.sections?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead><tr>{["#", "Раздел", "Лек", "Пр", "Лаб", "СРС", "Содержание", isEdit && canEdit ? "" : null].filter(Boolean).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
       <tbody>{rpd.sections.map(s => <tr key={s.id_section}>

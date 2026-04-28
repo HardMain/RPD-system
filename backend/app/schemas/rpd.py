@@ -279,6 +279,23 @@ class RpdListOut(BaseModel):
         from_attributes = True
 
 
+class BupDisciplineRefOut(BaseModel):
+    """Краткие данные БУП-дисциплины, прикреплённой к РПД (для шапки часов)."""
+    id_bup_discipline: int
+    id_bup: int
+    bup_name: str
+    code: str | None = None
+    semester: str | None = None
+    control_form: str | None = None
+    total_hours: int | None = None
+    lecture_hours: int | None = None
+    lab_hours: int | None = None
+    practice_hours: int | None = None
+    ksr_hours: int | None = None
+    self_study_hours: int | None = None
+    zet: int | None = None
+
+
 class RpdDetailOut(BaseModel):
     id_rpd: int
     id_discipline: int
@@ -289,6 +306,7 @@ class RpdDetailOut(BaseModel):
     direction_profile: str | None = None
     academic_year: str
     status: str
+    bup_disciplines: list[BupDisciplineRefOut] = []
     goals_text: str | None = None
     tasks_text: str | None = None
     objects_text: str | None = None
