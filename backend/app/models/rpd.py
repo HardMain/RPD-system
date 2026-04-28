@@ -37,6 +37,7 @@ class Rpd(Base):
     material_tech = relationship("RpdMaterialTech", back_populates="rpd", cascade="all, delete-orphan")
     databases = relationship("RpdDatabase", back_populates="rpd", cascade="all, delete-orphan")
     learning_outcomes = relationship("RpdLearningOutcome", back_populates="rpd", cascade="all, delete-orphan")
+    fos_files = relationship("RpdFosFile", back_populates="rpd", cascade="all, delete-orphan")
     uploaded_documents = relationship("UploadedDocument", back_populates="rpd", cascade="all, delete-orphan")
     llm_logs = relationship("LlmGenerationLog", back_populates="rpd", cascade="all, delete-orphan")
     approvals = relationship("ApprovalStage", back_populates="rpd", cascade="all, delete-orphan",
@@ -132,6 +133,26 @@ class RpdDatabase(Base):
     name = Column(Text, nullable=False)
     url = Column(String(500))
     rpd = relationship("Rpd", back_populates="databases")
+
+
+class RpdFosFile(Base):
+    """Файл ФОС, прикреплённый к РПД.
+
+    `role`:
+      - 'main'  — основной файл ФОС (один на РПД, попадает в DOCX);
+      - 'other' — прочие файлы ФОС (несколько, в DOCX не попадают).
+    """
+    __tablename__ = "rpd_fos_files"
+    id_rpd_fos = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    id_file = Column(Integer, ForeignKey("stored_files.id_file"), nullable=False)
+    role = Column(String(10), nullable=False, default="other")
+    name = Column(String(300))
+    comment = Column(Text)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    rpd = relationship("Rpd", back_populates="fos_files")
+    file = relationship("StoredFile", foreign_keys=[id_file])
 
 
 class UploadedDocument(Base):

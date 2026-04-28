@@ -26,6 +26,7 @@ import { MtechEditor } from "./editors/MtechEditor.jsx";
 import { DocsUpload } from "./editors/DocsUpload.jsx";
 import { MetaEditor } from "./editors/MetaEditor.jsx";
 import { ViewRpdEditor } from "./editors/ViewRpdEditor.jsx";
+import { FosEditor } from "./editors/FosEditor.jsx";
 
 export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
@@ -716,11 +717,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <MtechEditor />
               </div>
               <HR />
-              {/* 8. ФОС — read-only */}
+              {/* 8. ФОС */}
               <div ref={refs["8"]} style={{ marginBottom: 32 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>8. Фонд оценочных средств</div>
-                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Заполняется автоматически из ФОС</div>
-                <div style={{ padding: 16, border: "1px solid " + T.borderLight, borderRadius: 6, background: T.bg, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Описан в отдельном документе (приложение к РПД)</div>
+                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Файл ФОС прикрепляется к печатной форме РПД, прочие файлы — справочные.</div>
+                <FosEditor />
               </div>
               <HR />
               {/* ПРОСМОТР РПД — таблица БУП-дисциплин с ФГОС */}

@@ -38,7 +38,7 @@ export const SEC_LABELS = {
   docs:  "Документы (LLM)",
 };
 
-export const READ_ONLY_KEYS = new Set(["title", "3", "8"]);
+export const READ_ONLY_KEYS = new Set(["title", "3"]);
 
 /* Подразделы — отображаются в сайдбаре с отступом, без жирного номера */
 export const SUB_KEYS = new Set(["4.1", "4.2"]);

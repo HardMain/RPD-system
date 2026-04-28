@@ -38,6 +38,7 @@ from app.schemas.rpd import (
     RpdListOut, RpdDetailOut,
     OutcomeUpsert, OutcomeRowOut,
     BupDisciplineRefOut,
+    FosFileOut, FosFileSelect,
 )
 from app.schemas.notification import NotificationOut
 from app.schemas.admin import UserCreate, UserDetailOut, RoleOut, DepartmentOut
@@ -72,6 +73,7 @@ __all__ = [
     "RpdListOut", "RpdDetailOut",
     "OutcomeUpsert", "OutcomeRowOut",
     "BupDisciplineRefOut",
+    "FosFileOut", "FosFileSelect",
     # notification
     "NotificationOut",
     # admin

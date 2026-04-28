@@ -11,6 +11,7 @@ from app.models import (
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification, ApprovalStage, CompetencyIndicator, Competency,
     UploadedDocument, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
+    RpdFosFile,
 )
 from app.schemas import (
     RpdCreate, RpdUpdate, RpdListOut, RpdDetailOut,
@@ -22,7 +23,7 @@ from app.schemas import (
     LearningOutcomeCreate, LearningOutcomeOut,
     DeveloperOut, ApprovalAction, ApprovalOut,
     DirectionOut, DisciplineOut, UploadedDocumentOut,
-    OutcomeUpsert, OutcomeRowOut, BupDisciplineRefOut,
+    OutcomeUpsert, OutcomeRowOut, BupDisciplineRefOut, FosFileOut,
 )
 from app.models import Bup
 
@@ -98,6 +99,17 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         )
     bup_disciplines = [_bd_ref(link) for link in (r.bup_links or []) if link.bup_discipline]
 
+    def _fos_out(link) -> FosFileOut:
+        sf = link.file
+        return FosFileOut(
+            id_rpd_fos=link.id_rpd_fos, id_file=link.id_file, role=link.role,
+            name=link.name, comment=link.comment,
+            original_name=sf.original_name if sf else "",
+            size_bytes=sf.size_bytes if sf else None,
+        )
+    fos_main = next((_fos_out(f) for f in (r.fos_files or []) if f.role == "main"), None)
+    fos_other = [_fos_out(f) for f in (r.fos_files or []) if f.role == "other"]
+
     return RpdDetailOut(
         id_rpd=r.id_rpd, id_discipline=d.id_discipline,
         discipline_name=d.name,
@@ -118,6 +130,8 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         self_study_hours=bd.self_study_hours if bd else None,
         control_form=bd.control_form if bd else None,
         bup_disciplines=bup_disciplines,
+        fos_main=fos_main,
+        fos_other=fos_other,
         sections=[RpdSectionOut.model_validate(s) for s in r.sections],
         literature=[LiteratureOut.model_validate(l) for l in r.literature],
         software=[SoftwareOut.model_validate(s) for s in r.software],
@@ -147,6 +161,7 @@ def _rpd_select_options():
         selectinload(Rpd.databases),
         selectinload(Rpd.learning_outcomes).selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency),
         selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
+        selectinload(Rpd.fos_files).selectinload(RpdFosFile.file),
         selectinload(Rpd.uploaded_documents),
         selectinload(Rpd.approvals).selectinload(ApprovalStage.reviewer),
     ]

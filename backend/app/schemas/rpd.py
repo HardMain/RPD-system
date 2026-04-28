@@ -33,6 +33,28 @@ class OutcomeUpsert(BaseModel):
     assessment_tool: str = ""
 
 
+class FosFileOut(BaseModel):
+    """Прикреплённый к РПД файл ФОС."""
+    id_rpd_fos: int
+    id_file: int
+    role: str           # 'main' | 'other'
+    name: str | None = None
+    comment: str | None = None
+    original_name: str
+    size_bytes: int | None = None
+
+    class Config:
+        from_attributes = True
+
+
+class FosFileSelect(BaseModel):
+    """Выбрать существующий файл из хранилища (если уже загружен ранее)."""
+    id_file: int
+    role: str = "other"
+    name: str | None = None
+    comment: str | None = None
+
+
 class OutcomeRowOut(BaseModel):
     """Строка таблицы планируемых результатов: индикатор + (опц.) запись."""
     id_indicator: int
@@ -328,6 +350,8 @@ class RpdDetailOut(BaseModel):
     lab_hours: int | None = None
     self_study_hours: int | None = None
     control_form: str | None = None
+    fos_main: FosFileOut | None = None
+    fos_other: list[FosFileOut] = []
     sections: list[RpdSectionOut] = []
     literature: list[LiteratureOut] = []
     software: list[SoftwareOut] = []

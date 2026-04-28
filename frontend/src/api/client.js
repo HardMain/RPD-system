@@ -82,6 +82,20 @@ export const createAssessmentTool = (name) => api.post('/assessment-tools/', { n
 // Файлы (общий просмотр любых stored_files по id)
 export const fileUrl = (fileId) => `/api/files/${fileId}`;
 
+// ФОС — файлы фонда оценочных средств у РПД
+export const getFosFiles = (rpdId) => api.get(`/rpd/${rpdId}/fos`);
+export const uploadFosFile = (rpdId, file, role = "other", name = "", comment = "") => {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("role", role);
+  if (name) form.append("name", name);
+  if (comment) form.append("comment", comment);
+  return api.post(`/rpd/${rpdId}/fos`, form, { headers: { "Content-Type": "multipart/form-data" } });
+};
+export const selectFosFile = (rpdId, payload) => api.post(`/rpd/${rpdId}/fos/select`, payload);
+export const deleteFosLink = (fosId) => api.delete(`/rpd/fos/${fosId}`);
+export const getFosLibrary = () => api.get(`/rpd/fos/library`);
+
 // Направления (админ) — управление ФГОС-файлом
 export const adminListDirections = () => api.get('/admin/directions/');
 export const adminUploadFgos = (directionId, file) => {

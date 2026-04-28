@@ -67,5 +67,6 @@ from app.models.bup import (  # noqa: E402,F401
 from app.models.rpd import (  # noqa: E402,F401
     Rpd, RpdDeveloper, RpdSection, RpdTopic, RpdLearningOutcome,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase,
+    RpdFosFile,
     UploadedDocument, LlmGenerationLog, ApprovalStage,
 )

@@ -24,6 +24,7 @@ from app.models.bup import (
 from app.models.rpd import (
     Rpd, RpdDeveloper, RpdSection, RpdTopic, RpdLearningOutcome,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase,
+    RpdFosFile,
     UploadedDocument, LlmGenerationLog, ApprovalStage,
 )
 
@@ -34,5 +35,6 @@ __all__ = [
     "Bup", "BupDiscipline", "BupDisciplineCompetency", "RpdBupDiscipline",
     "Rpd", "RpdDeveloper", "RpdSection", "RpdTopic", "RpdLearningOutcome",
     "RpdLiterature", "RpdSoftware", "RpdMaterialTech", "RpdDatabase",
+    "RpdFosFile",
     "UploadedDocument", "LlmGenerationLog", "ApprovalStage",
 ]
