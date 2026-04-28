@@ -153,6 +153,10 @@ export const searchUsers = (q) => api.get('/admin/users/search', { params: { q }
 export const getRoles = () => api.get('/admin/roles');
 export const getDepartments = () => api.get('/admin/departments');
 
+// Привязки РПД ↔ дисциплины БУПа (multi-БУП РПД)
+export const attachBupDiscipline = (rpdId, bdId) => api.post(`/rpd/${rpdId}/bup-disciplines/${bdId}`);
+export const detachBupDiscipline = (rpdId, bdId) => api.delete(`/rpd/${rpdId}/bup-disciplines/${bdId}`);
+
 // БУПы (read-only, доступно всем)
 export const getBups = (directionId) => api.get('/bups/', { params: { direction_id: directionId } });
 export const getBup = (id) => api.get(`/bups/${id}`);

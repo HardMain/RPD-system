@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { Btn } from "../../../components/Btn.jsx";
+import { Modal } from "../../../components/Modal.jsx";
 import { Badge } from "../../../components/Badge.jsx";
 import { TrashIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
@@ -50,20 +51,7 @@ export function MetaEditor() {
       )}
     </Field>
 
-    <Field label="Привязанные дисциплины БУПа">
-      {(rpd.bup_disciplines || []).length === 0
-        ? <ReadOnlyValue>не привязана</ReadOnlyValue>
-        : <div style={{ border: "1px solid " + T.borderLight, borderRadius: 4, overflow: "hidden" }}>
-          {rpd.bup_disciplines.map(b => (
-            <div key={b.id_bup_discipline} style={{ padding: "8px 12px", fontSize: 13, borderBottom: "1px solid " + T.borderLight, display: "flex", gap: 12, alignItems: "baseline" }}>
-              <span style={{ fontWeight: 700 }}>{b.code || "—"}</span>
-              <span style={{ flex: 1 }}>{b.bup_name}</span>
-              <span style={{ color: T.textMuted, fontSize: 12 }}>сем. {b.semester || "—"} · {b.control_form || "—"}</span>
-            </div>
-          ))}
-        </div>
-      }
-    </Field>
+    <BupDisciplineLinks rpdId={rpdId} canEdit={isEdit && canEdit} reload={reload} bupDisciplines={rpd.bup_disciplines || []} />
 
     <DeveloperEditor rpdId={rpdId} developers={rpd.developers || []} canEdit={isEdit && canEdit} reload={reload} />
 
@@ -92,6 +80,154 @@ function ReadOnlyValue({ children, placeholder }) {
   return <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 13, color: empty ? T.textMuted : T.text, fontStyle: empty ? "italic" : "normal" }}>
     {empty ? (placeholder || "—") : children}
   </div>;
+}
+
+
+// ─── Bup-Discipline links ──────────────────────────────────────────────────
+
+function BupDisciplineLinks({ rpdId, canEdit, reload, bupDisciplines }) {
+  const [showAttach, setShowAttach] = useState(false);
+  const [busyId, setBusyId] = useState(null);
+
+  async function detach(bd) {
+    if (!confirm(`Открепить «${bd.code || bd.bup_name}» от РПД?\n\nВведённые планируемые результаты по индикаторам этой дисциплины БУПа в РПД останутся — удалите их вручную, если нужно.`)) return;
+    setBusyId(bd.id_bup_discipline);
+    try { await api.detachBupDiscipline(rpdId, bd.id_bup_discipline); await reload(); }
+    catch (e) { alert(e?.response?.data?.detail || e.message); }
+    setBusyId(null);
+  }
+
+  return <Field label="Привязанные дисциплины БУПа">
+    {bupDisciplines.length === 0
+      ? <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Не привязана</div>
+      : <div style={{ border: "1px solid " + T.borderLight, borderRadius: 4, overflow: "hidden" }}>
+        {bupDisciplines.map(b => (
+          <div key={b.id_bup_discipline} style={{ padding: "8px 12px", fontSize: 13, borderBottom: "1px solid " + T.borderLight, display: "flex", gap: 10, alignItems: "center" }}>
+            <span style={{ fontWeight: 700, minWidth: 80 }}>{b.code || "—"}</span>
+            <div style={{ flex: 1 }}>
+              <div>{b.bup_name}</div>
+              <div style={{ color: T.textMuted, fontSize: 11, marginTop: 2 }}>
+                сем. {b.semester || "—"} · {b.control_form || "—"} · {b.total_hours ?? "—"} ч · {b.zet ?? "—"} ЗЕ
+              </div>
+            </div>
+            {canEdit && (
+              <button onClick={() => detach(b)} disabled={busyId === b.id_bup_discipline}
+                title="Открепить дисциплину БУПа от РПД"
+                style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}>
+                <TrashIcon />
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+    }
+    {canEdit && <div style={{ marginTop: 6 }}>
+      <Btn small onClick={() => setShowAttach(true)}>+ Добавить дисциплину БУПа</Btn>
+    </div>}
+    {showAttach && <AttachBupDisciplineModal
+      rpdId={rpdId}
+      excludeIds={new Set(bupDisciplines.map(b => b.id_bup_discipline))}
+      onClose={() => setShowAttach(false)}
+      onAttached={async () => { setShowAttach(false); await reload(); }}
+    />}
+  </Field>;
+}
+
+
+function AttachBupDisciplineModal({ rpdId, excludeIds, onClose, onAttached }) {
+  const [bups, setBups] = useState([]);
+  const [bupId, setBupId] = useState("");
+  const [bupDetail, setBupDetail] = useState(null);
+  const [picked, setPicked] = useState(new Set());
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.getBups().then(r => setBups(r.data)).catch(() => setBups([]));
+  }, []);
+
+  useEffect(() => {
+    if (!bupId) { setBupDetail(null); return; }
+    api.getBup(bupId).then(r => setBupDetail(r.data)).catch(() => setBupDetail(null));
+    setPicked(new Set());
+  }, [bupId]);
+
+  const disciplines = useMemo(() => (bupDetail?.disciplines || [])
+    .filter(d => !excludeIds.has(d.id_bup_discipline)), [bupDetail, excludeIds]);
+
+  function toggle(id) {
+    setPicked(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function commit() {
+    if (picked.size === 0) return;
+    setBusy(true);
+    try {
+      for (const bd of picked) {
+        await api.attachBupDiscipline(rpdId, bd);
+      }
+      await onAttached();
+    } catch (e) {
+      alert(e?.response?.data?.detail || e.message);
+    }
+    setBusy(false);
+  }
+
+  return <Modal width={620} onClose={onClose}>
+    <div style={{ padding: 20 }}>
+      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>Прикрепить дисциплину БУПа к РПД</div>
+
+      <div style={{ marginBottom: 12 }}>
+        <label style={{ fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 }}>БУП</label>
+        <select value={bupId} onChange={e => setBupId(e.target.value)}
+          style={{ width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F }}>
+          <option value="">— Выбрать БУП —</option>
+          {bups.map(b => <option key={b.id_bup} value={b.id_bup}>
+            {b.year ? b.year + " " : ""}{b.name} ({b.direction_code} {b.direction_name})
+          </option>)}
+        </select>
+      </div>
+
+      {bupDetail && (
+        <div style={{ marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 }}>
+            Дисциплины БУПа (уже привязанные не показаны)
+          </label>
+          <div style={{ border: "1px solid " + T.border, borderRadius: 6, maxHeight: 320, overflow: "auto", background: T.surface }}>
+            {disciplines.length === 0 && (
+              <div style={{ padding: 14, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>
+                Все дисциплины этого БУПа уже привязаны к РПД, либо БУП пуст.
+              </div>
+            )}
+            {disciplines.map(d => {
+              const checked = picked.has(d.id_bup_discipline);
+              return <label key={d.id_bup_discipline}
+                style={{ display: "flex", gap: 10, padding: "8px 12px", borderBottom: "1px solid " + T.borderLight, cursor: "pointer", background: checked ? T.accentLight : "transparent" }}>
+                <input type="checkbox" checked={checked} onChange={() => toggle(d.id_bup_discipline)} />
+                <div style={{ flex: 1, fontSize: 13 }}>
+                  <div><b>{d.code}</b> · {d.discipline_name}</div>
+                  <div style={{ color: T.textMuted, fontSize: 11, marginTop: 2 }}>
+                    Сем. {d.semester || "—"} · {d.control_form || "—"} · {d.total_hours ?? "—"} ч
+                  </div>
+                </div>
+              </label>;
+            })}
+          </div>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>Выбрано: {picked.size}</div>
+        </div>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+        <Btn onClick={onClose}>Отмена</Btn>
+        <Btn primary onClick={commit} disabled={picked.size === 0 || busy}>
+          {busy ? "Прикрепляю…" : "Прикрепить"}
+        </Btn>
+      </div>
+    </div>
+  </Modal>;
 }
 
 

@@ -714,6 +714,76 @@ async def delete_outcome(outcome_id: int, db: AsyncSession = Depends(get_db), us
         await db.commit()
 
 
+# ── Управление привязками РПД ↔ дисциплины БУПа ─────────────────────────
+
+
+@router.post("/{rpd_id}/bup-disciplines/{bd_id}", response_model=RpdDetailOut, status_code=201)
+async def attach_bup_discipline(
+    rpd_id: int, bd_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Прикрепить БУП-дисциплину к существующей РПД и достроить таблицу
+    планируемых результатов индикаторами её компетенций."""
+    rpd = await db.get(Rpd, rpd_id)
+    if not rpd:
+        raise HTTPException(status_code=404, detail="РПД не найдена")
+    bd = await db.get(BupDiscipline, bd_id)
+    if not bd:
+        raise HTTPException(status_code=404, detail="Дисциплина БУПа не найдена")
+
+    exists = await db.execute(
+        select(RpdBupDiscipline)
+        .where(RpdBupDiscipline.id_rpd == rpd_id)
+        .where(RpdBupDiscipline.id_bup_discipline == bd_id)
+    )
+    if not exists.scalar_one_or_none():
+        db.add(RpdBupDiscipline(id_rpd=rpd_id, id_bup_discipline=bd_id))
+        await db.flush()
+
+    # Достраиваем outcomes: создаём пустые записи для индикаторов, которых
+    # в РПД ещё нет, чтобы фронт сразу видел всю таблицу.
+    existing_inds = {lo.id_indicator for lo in (
+        await db.execute(select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id))
+    ).scalars().all()}
+    new_inds_res = await db.execute(
+        select(CompetencyIndicator)
+        .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
+        .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+        .where(BupDisciplineCompetency.id_bup_discipline == bd_id)
+    )
+    for ind in new_inds_res.scalars().all():
+        if ind.id_indicator in existing_inds:
+            continue
+        existing_inds.add(ind.id_indicator)
+        db.add(RpdLearningOutcome(
+            id_rpd=rpd_id, id_indicator=ind.id_indicator,
+            outcome_text=None, assessment_tool=None,
+        ))
+    await db.commit()
+    return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
+
+
+@router.delete("/{rpd_id}/bup-disciplines/{bd_id}", response_model=RpdDetailOut)
+async def detach_bup_discipline(
+    rpd_id: int, bd_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Открепить БУП-дисциплину от РПД. Уже заполненные outcomes остаются
+    в РПД — они могут содержать введённый текст; чистка таблицы — вручную."""
+    res = await db.execute(
+        select(RpdBupDiscipline)
+        .where(RpdBupDiscipline.id_rpd == rpd_id)
+        .where(RpdBupDiscipline.id_bup_discipline == bd_id)
+    )
+    link = res.scalar_one_or_none()
+    if link:
+        await db.delete(link)
+        await db.commit()
+    return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
+
+
 @router.get("/{rpd_id}/outcomes-table", response_model=list[OutcomeRowOut])
 async def get_outcomes_table(
     rpd_id: int,
