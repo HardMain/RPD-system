@@ -9,8 +9,8 @@ from app.core.auth import get_current_user
 from app.models import (
     User, Rpd, Discipline, Direction, RpdSection, RpdTopic,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
-    RpdDeveloper, Notification, ApprovalStage, CompetencyIndicator,
-    UploadedDocument, BupDiscipline, RpdBupDiscipline,
+    RpdDeveloper, Notification, ApprovalStage, CompetencyIndicator, Competency,
+    UploadedDocument, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
 )
 from app.schemas import (
     RpdCreate, RpdUpdate, RpdListOut, RpdDetailOut,
@@ -22,6 +22,7 @@ from app.schemas import (
     LearningOutcomeCreate, LearningOutcomeOut,
     DeveloperOut, ApprovalAction, ApprovalOut,
     DirectionOut, DisciplineOut, UploadedDocumentOut,
+    OutcomeUpsert, OutcomeRowOut,
 )
 
 router = APIRouter(prefix="/api/rpd", tags=["rpd"])
@@ -229,20 +230,66 @@ async def get_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = 
 
 # ── Create RPD ──
 
-async def _attach_rpd_to_bup_disciplines(rpd: Rpd, db: AsyncSession) -> None:
-    """Привязать РПД ко всем BupDiscipline той же логической дисциплины
-    (поведение АРМ: один макет — несколько БУП-дисциплин)."""
-    bd_rows = await db.execute(
-        select(BupDiscipline).where(BupDiscipline.id_discipline == rpd.id_discipline)
-    )
-    for bd in bd_rows.scalars().all():
+async def _attach_rpd_to_bup_disciplines(
+    rpd: Rpd, db: AsyncSession, *, bup_discipline_ids: list[int] | None = None,
+) -> None:
+    """Привязать РПД к BupDiscipline.
+
+    Если передан явный `bup_discipline_ids` — используем его. Иначе берём все
+    BupDiscipline той же логической дисциплины (поведение АРМ-fallback).
+    """
+    if bup_discipline_ids:
+        rows = await db.execute(
+            select(BupDiscipline).where(BupDiscipline.id_bup_discipline.in_(bup_discipline_ids))
+        )
+    else:
+        rows = await db.execute(
+            select(BupDiscipline).where(BupDiscipline.id_discipline == rpd.id_discipline)
+        )
+    for bd in rows.scalars().all():
         db.add(RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=bd.id_bup_discipline))
+
+
+async def _autofill_outcomes_from_bup_disciplines(
+    rpd: Rpd, bd_ids: list[int], db: AsyncSession,
+) -> None:
+    """Создать пустые `RpdLearningOutcome` для каждого индикатора компетенций
+    выбранных BupDiscipline (как в АРМ — таблица сразу появляется заполненной
+    индикаторами, текст и средство оценки преподаватель вписывает сам)."""
+    if not bd_ids:
+        return
+    res = await db.execute(
+        select(CompetencyIndicator)
+        .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
+        .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+        .where(BupDisciplineCompetency.id_bup_discipline.in_(bd_ids))
+        .distinct()
+    )
+    for ind in res.scalars().all():
+        db.add(RpdLearningOutcome(
+            id_rpd=rpd.id_rpd, id_indicator=ind.id_indicator,
+            outcome_text=None, assessment_tool=None,
+        ))
 
 
 @router.post("/", response_model=RpdDetailOut, status_code=201)
 async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    # Если переданы bup_discipline_ids, нужно вытащить id_discipline из первой БУП-дисциплины
+    id_discipline = data.id_discipline
+    if data.bup_discipline_ids:
+        first_bd = await db.execute(
+            select(BupDiscipline)
+            .where(BupDiscipline.id_bup_discipline == data.bup_discipline_ids[0])
+        )
+        bd = first_bd.scalar_one_or_none()
+        if not bd:
+            raise HTTPException(status_code=400, detail="БУП-дисциплина не найдена")
+        id_discipline = bd.id_discipline
+    if not id_discipline:
+        raise HTTPException(status_code=400, detail="Не указана дисциплина или БУП-дисциплины")
+
     rpd = Rpd(
-        id_discipline=data.id_discipline,
+        id_discipline=id_discipline,
         id_author=user.id_user,
         academic_year=data.academic_year,
         status="Черновик",
@@ -318,7 +365,14 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
         db.add(rpd)
         await db.flush()
 
-    await _attach_rpd_to_bup_disciplines(rpd, db)
+    await _attach_rpd_to_bup_disciplines(rpd, db, bup_discipline_ids=data.bup_discipline_ids or None)
+
+    # Если выбран явный список БУП-дисциплин — авто-наполняем outcomes индикаторами
+    # из их компетенций. Это полностью соответствует АРМ: после выбора дисциплины
+    # БУП в разделе «Планируемые результаты» уже есть таблица индикаторов.
+    if data.bup_discipline_ids and not data.based_on_rpd_id:
+        await _autofill_outcomes_from_bup_disciplines(rpd, data.bup_discipline_ids, db)
+
     await db.commit()
     rpd_full = await _get_rpd_full(rpd.id_rpd, db)
     return _build_rpd_detail(rpd_full)
@@ -614,6 +668,119 @@ async def delete_outcome(outcome_id: int, db: AsyncSession = Depends(get_db), us
     if lo:
         await db.delete(lo)
         await db.commit()
+
+
+@router.get("/{rpd_id}/outcomes-table", response_model=list[OutcomeRowOut])
+async def get_outcomes_table(
+    rpd_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Вернуть полную таблицу планируемых результатов:
+    все индикаторы из компетенций БУП-дисциплин этой РПД + текущий заполненный
+    текст и средство оценки (если есть)."""
+    rpd_res = await db.execute(
+        select(Rpd).where(Rpd.id_rpd == rpd_id)
+        .options(
+            selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
+            selectinload(Rpd.learning_outcomes),
+        )
+    )
+    rpd = rpd_res.scalar_one_or_none()
+    if not rpd:
+        raise HTTPException(status_code=404)
+
+    bd_ids = [link.id_bup_discipline for link in rpd.bup_links]
+    if not bd_ids:
+        return []
+
+    inds_res = await db.execute(
+        select(CompetencyIndicator, Competency)
+        .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
+        .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+        .where(BupDisciplineCompetency.id_bup_discipline.in_(bd_ids))
+        .order_by(Competency.code, CompetencyIndicator.code)
+    )
+    seen: set[int] = set()
+    outcome_by_ind = {lo.id_indicator: lo for lo in rpd.learning_outcomes}
+    rows: list[OutcomeRowOut] = []
+    for ind, comp in inds_res.all():
+        if ind.id_indicator in seen:
+            continue
+        seen.add(ind.id_indicator)
+        lo = outcome_by_ind.get(ind.id_indicator)
+        rows.append(OutcomeRowOut(
+            id_indicator=ind.id_indicator,
+            indicator_code=ind.code,
+            indicator_description=ind.description,
+            competency_code=comp.code,
+            competency_name=comp.name,
+            id_outcome=lo.id_outcome if lo else None,
+            outcome_text=lo.outcome_text if lo else None,
+            assessment_tool=lo.assessment_tool if lo else None,
+        ))
+    return rows
+
+
+@router.post("/{rpd_id}/outcomes/upsert", response_model=LearningOutcomeOut)
+async def upsert_outcome(
+    rpd_id: int,
+    data: OutcomeUpsert,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Создать/обновить запись планируемого результата по `id_indicator`.
+
+    Если оба поля (текст и средство) пустые и запись существует — удаляет её.
+    """
+    res = await db.execute(
+        select(RpdLearningOutcome)
+        .where(RpdLearningOutcome.id_rpd == rpd_id)
+        .where(RpdLearningOutcome.id_indicator == data.id_indicator)
+        .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
+    )
+    lo = res.scalar_one_or_none()
+    text = (data.outcome_text or "").strip()
+    tool = (data.assessment_tool or "").strip()
+
+    if lo:
+        if not text and not tool:
+            await db.delete(lo)
+            await db.commit()
+            return LearningOutcomeOut(
+                id_outcome=0, id_indicator=data.id_indicator,
+                indicator_code=None, competency_code=None,
+                outcome_text=None, assessment_tool=None,
+            )
+        lo.outcome_text = text or None
+        lo.assessment_tool = tool or None
+    else:
+        if not text and not tool:
+            return LearningOutcomeOut(
+                id_outcome=0, id_indicator=data.id_indicator,
+                indicator_code=None, competency_code=None,
+                outcome_text=None, assessment_tool=None,
+            )
+        lo = RpdLearningOutcome(
+            id_rpd=rpd_id, id_indicator=data.id_indicator,
+            outcome_text=text or None, assessment_tool=tool or None,
+        )
+        db.add(lo)
+    await db.commit()
+
+    # Reload with indicator+competency
+    res = await db.execute(
+        select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == lo.id_outcome)
+        .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
+    )
+    lo = res.scalar_one()
+    ind = lo.indicator
+    return LearningOutcomeOut(
+        id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        indicator_code=ind.code if ind else None,
+        competency_code=ind.competency.code if ind and ind.competency else None,
+        outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
+    )
 
 
 # ── Developers ──

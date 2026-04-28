@@ -1,46 +1,158 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
-import { Btn } from "../../../components/Btn.jsx";
-import { PlusIcon, TrashIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 
 export function OutcomesEditor() {
-  const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
-  const [comps, setComps] = useState([]);
-  const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ id_indicator: "", outcome_text: "", assessment_tool: "" });
-  useEffect(() => { if (rpd?.id_discipline) api.getCompetenciesByDiscipline(rpd.id_discipline).then(r => setComps(r.data)).catch(() => { }); }, []);
-  const used = new Set((rpd.learning_outcomes || []).map(o => o.id_indicator));
-  const add = async () => {
-    if (!form.id_indicator) return;
-    try { await api.addOutcome(rpdId, { id_indicator: +form.id_indicator, outcome_text: form.outcome_text, assessment_tool: form.assessment_tool }); setShowAdd(false); setForm({ id_indicator: "", outcome_text: "", assessment_tool: "" }); await reload(); } catch { }
-  };
-  const del = async (id) => { try { await api.deleteOutcome(id); await reload(); } catch { } };
+  const { rpdId, isEdit, canEdit, reload } = useRpdEditor();
+  const [rows, setRows] = useState([]);
+  const [tools, setTools] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+
+  const reloadRows = useCallback(async () => {
+    try {
+      const r = await api.getOutcomesTable(rpdId);
+      setRows(r.data);
+      setLoaded(true);
+    } catch { setLoaded(true); }
+  }, [rpdId]);
+
+  useEffect(() => {
+    reloadRows();
+    api.getAssessmentTools().then(r => setTools(r.data)).catch(() => setTools([]));
+  }, [reloadRows]);
+
+  // Сохранение по blur — отправляем upsert и обновляем локальную строку.
+  async function saveRow(idx, patch) {
+    const row = rows[idx];
+    const next = { ...row, ...patch };
+    setRows(prev => prev.map((r, i) => i === idx ? next : r));
+    try {
+      const r = await api.upsertOutcome(rpdId, {
+        id_indicator: row.id_indicator,
+        outcome_text: next.outcome_text || "",
+        assessment_tool: next.assessment_tool || "",
+      });
+      // backend вернёт id_outcome=0 если запись была удалена
+      const id_outcome = r.data.id_outcome || null;
+      setRows(prev => prev.map((rr, i) => i === idx ? { ...rr, id_outcome } : rr));
+      // Сообщаем родителю что РПД изменилась — чтобы PDF мог перерисоваться
+      reload?.();
+    } catch (e) {
+      // Откат при ошибке
+      setRows(prev => prev.map((r, i) => i === idx ? row : r));
+      alert("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
+    }
+  }
+
+  if (!loaded) return null;
+
+  if (rows.length === 0) {
+    return <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>
+      Для этой РПД не закреплено ни одной компетенции с индикаторами. Это значит, что РПД не привязана к дисциплине БУПа, либо у компетенций ещё не заполнены индикаторы.
+    </div>;
+  }
 
   return <div>
-    {rpd.learning_outcomes?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
-      <thead><tr>{["Компетенция", "Индикатор", "Результат", "Средство оценки", isEdit && canEdit ? "" : null].filter(x => x !== null).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
-      <tbody>{rpd.learning_outcomes.map(o => <tr key={o.id_outcome}>
-        <td style={td}>{o.competency_code}</td>
-        <td style={td}>{o.indicator_code}</td>
-        <td style={td}>{o.outcome_text}</td>
-        <td style={td}>{o.assessment_tool}</td>
-        {isEdit && canEdit && <td style={{ ...td, textAlign: "center" }}><button onClick={() => del(o.id_outcome)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button></td>}
-      </tr>)}</tbody>
-    </table> : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Результаты обучения не добавлены</div>}
-    {isEdit && canEdit && <div style={{ marginTop: 8 }}>
-      {!showAdd ? <Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить результат</Btn>
-        : <div style={{ padding: 12, border: "1px solid " + T.accent, borderRadius: 8, background: T.accentLight + "33" }}>
-          <select value={form.id_indicator} onChange={e => setForm(p => ({ ...p, id_indicator: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, fontFamily: F }}>
-            <option value="">— Выбрать индикатор —</option>
-            {comps.map(c => c.indicators?.filter(i => !used.has(i.id_indicator)).map(i => <option key={i.id_indicator} value={i.id_indicator}>{c.code} / {i.code} — {i.description}</option>))}
-          </select>
-          <textarea placeholder="Планируемый результат обучения (знать/уметь/владеть)" value={form.outcome_text} onChange={e => setForm(p => ({ ...p, outcome_text: e.target.value }))} style={{ width: "100%", minHeight: 60, padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, marginBottom: 8, resize: "vertical", boxSizing: "border-box" }} />
-          <input placeholder="Средство оценки (Экзамен / Защита лабораторной работы / …)" value={form.assessment_tool} onChange={e => setForm(p => ({ ...p, assessment_tool: e.target.value }))} style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, marginBottom: 8, boxSizing: "border-box" }} />
-          <div style={{ display: "flex", gap: 8 }}><Btn small primary onClick={add}>Добавить</Btn><Btn small onClick={() => setShowAdd(false)}>Отмена</Btn></div>
-        </div>}
-    </div>}
+    <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+      <colgroup>
+        <col style={{ width: 80 }} />
+        <col style={{ width: 90 }} />
+        <col />
+        <col style={{ width: "30%" }} />
+        <col style={{ width: 180 }} />
+      </colgroup>
+      <thead><tr>
+        <th style={th}>Компетенция</th>
+        <th style={th}>Индикатор</th>
+        <th style={th}>Описание индикатора</th>
+        <th style={th}>Планируемый результат обучения</th>
+        <th style={th}>Средство оценки</th>
+      </tr></thead>
+      <tbody>
+        {rows.map((r, idx) => (
+          <tr key={r.id_indicator}>
+            <td style={td}><b>{r.competency_code}</b></td>
+            <td style={td}>{r.indicator_code}</td>
+            <td style={td}>{r.indicator_description}</td>
+            <td style={{ ...td, padding: 4 }}>
+              <OutcomeTextarea
+                value={r.outcome_text || ""}
+                disabled={!isEdit || !canEdit}
+                onSave={v => saveRow(idx, { outcome_text: v })}
+              />
+            </td>
+            <td style={{ ...td, padding: 4 }}>
+              <AssessmentToolPicker
+                value={r.assessment_tool || ""}
+                tools={tools}
+                disabled={!isEdit || !canEdit}
+                onSave={v => saveRow(idx, { assessment_tool: v })}
+              />
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>;
+}
+
+
+function OutcomeTextarea({ value, disabled, onSave }) {
+  const [local, setLocal] = useState(value);
+  useEffect(() => { setLocal(value); }, [value]);
+  if (disabled) {
+    return <div style={{ padding: "6px 8px", whiteSpace: "pre-wrap", fontSize: 13, color: value ? T.text : T.textMuted, fontStyle: value ? "normal" : "italic" }}>{value || "—"}</div>;
+  }
+  return <textarea
+    value={local}
+    onChange={e => setLocal(e.target.value)}
+    onBlur={() => { if (local !== value) onSave(local); }}
+    placeholder="Знать… / Уметь… / Владеть…"
+    style={{ width: "100%", minHeight: 56, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, resize: "vertical", boxSizing: "border-box", background: T.surface, outline: "none" }}
+  />;
+}
+
+
+function AssessmentToolPicker({ value, tools, disabled, onSave }) {
+  const [open, setOpen] = useState(false);
+  const [local, setLocal] = useState(value);
+  const inputRef = useRef(null);
+  useEffect(() => { setLocal(value); }, [value]);
+  if (disabled) {
+    return <div style={{ padding: "6px 8px", fontSize: 13, color: value ? T.text : T.textMuted, fontStyle: value ? "normal" : "italic" }}>{value || "—"}</div>;
+  }
+  const filtered = local
+    ? tools.filter(t => t.name.toLowerCase().includes(local.toLowerCase()))
+    : tools;
+  function commit(v) {
+    setLocal(v);
+    setOpen(false);
+    if (v !== value) onSave(v);
+  }
+  return <div style={{ position: "relative" }}>
+    <input
+      ref={inputRef}
+      value={local}
+      onChange={e => { setLocal(e.target.value); setOpen(true); }}
+      onFocus={() => setOpen(true)}
+      onBlur={() => { setTimeout(() => setOpen(false), 150); if (local !== value) onSave(local); }}
+      placeholder="—"
+      style={{ width: "100%", padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, boxSizing: "border-box", background: T.surface, outline: "none" }}
+    />
+    {open && filtered.length > 0 && (
+      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: T.surface, border: "1px solid " + T.border, borderRadius: 4, boxShadow: "0 4px 12px rgba(0,0,0,.12)", zIndex: 50, maxHeight: 220, overflowY: "auto" }}>
+        {filtered.map(t => (
+          <div key={t.id_assessment_tool}
+            onMouseDown={() => commit(t.name)}
+            style={{ padding: "6px 10px", cursor: "pointer", fontSize: 13 }}
+            onMouseEnter={e => e.currentTarget.style.background = T.bg}
+            onMouseLeave={e => e.currentTarget.style.background = ""}>
+            {t.name}
+          </div>
+        ))}
+      </div>
+    )}
   </div>;
 }

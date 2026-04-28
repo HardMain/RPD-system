@@ -36,6 +36,7 @@ from app.schemas.rpd import (
     ApprovalAction, ApprovalOut,
     LlmGenerateRequest, LlmGenerateResponse,
     RpdListOut, RpdDetailOut,
+    OutcomeUpsert, OutcomeRowOut,
 )
 from app.schemas.notification import NotificationOut
 from app.schemas.admin import UserCreate, UserDetailOut, RoleOut, DepartmentOut
@@ -68,6 +69,7 @@ __all__ = [
     "ApprovalAction", "ApprovalOut",
     "LlmGenerateRequest", "LlmGenerateResponse",
     "RpdListOut", "RpdDetailOut",
+    "OutcomeUpsert", "OutcomeRowOut",
     # notification
     "NotificationOut",
     # admin

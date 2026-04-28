@@ -8,9 +8,41 @@ from datetime import datetime
 
 # ── RPD top-level ─────────────────────────────────────────────────────────────
 class RpdCreate(BaseModel):
-    id_discipline: int
+    """Создание РПД.
+
+    Поведение:
+    - Если передан `bup_discipline_ids` — РПД привязывается к этим БУП-дисциплинам;
+      `id_discipline` берётся автоматически из первой (для совместимости с FK).
+    - Если передан только `id_discipline` — РПД авто-привязывается ко всем
+      `BupDiscipline`, у которых эта же логическая дисциплина.
+    - Можно передать оба: тогда `bup_discipline_ids` имеет приоритет.
+    """
+    id_discipline: int | None = None
+    bup_discipline_ids: list[int] = []
     academic_year: str
     based_on_rpd_id: int | None = None
+
+
+class OutcomeUpsert(BaseModel):
+    """Upsert одной строки в таблице планируемых результатов.
+
+    `outcome_text == "" and assessment_tool == ""` означает «удалить запись»,
+    если она существовала."""
+    id_indicator: int
+    outcome_text: str = ""
+    assessment_tool: str = ""
+
+
+class OutcomeRowOut(BaseModel):
+    """Строка таблицы планируемых результатов: индикатор + (опц.) запись."""
+    id_indicator: int
+    indicator_code: str
+    indicator_description: str
+    competency_code: str
+    competency_name: str
+    id_outcome: int | None = None
+    outcome_text: str | None = None
+    assessment_tool: str | None = None
 
 
 class RpdUpdate(BaseModel):

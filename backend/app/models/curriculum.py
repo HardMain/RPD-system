@@ -55,3 +55,13 @@ class CompetencyIndicator(Base):
     description = Column(Text, nullable=False)
 
     competency = relationship("Competency", back_populates="indicators")
+
+
+class AssessmentTool(Base):
+    """Справочник «Средства оценки» (Экзамен, Зачёт, Защита лаб. работы и т.п.).
+
+    Используется как dropdown при заполнении РПД. Админ может расширять список.
+    """
+    __tablename__ = "assessment_tools"
+    id_assessment_tool = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(200), nullable=False, unique=True)

@@ -72,6 +72,12 @@ export const deleteDatabase = (dbId) => api.delete(`/rpd/databases/${dbId}`);
 export const addOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes`, data);
 export const updateOutcome = (outcomeId, data) => api.put(`/rpd/outcomes/${outcomeId}`, data);
 export const deleteOutcome = (outcomeId) => api.delete(`/rpd/outcomes/${outcomeId}`);
+export const getOutcomesTable = (rpdId) => api.get(`/rpd/${rpdId}/outcomes-table`);
+export const upsertOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes/upsert`, data);
+
+// Assessment tools (справочник средств оценки)
+export const getAssessmentTools = () => api.get('/assessment-tools/');
+export const createAssessmentTool = (name) => api.post('/assessment-tools/', { name });
 
 // Developers
 export const addDeveloper = (rpdId, userId) => api.post(`/rpd/${rpdId}/developers?user_id=${userId}`);

@@ -10,15 +10,43 @@ from app.core.database import async_session
 from app.core.auth import hash_password
 from app.models import (
     Role, Department, User, Direction, Discipline, Competency,
-    CompetencyIndicator, Rpd, RpdSection, RpdTopic,
+    CompetencyIndicator, AssessmentTool, Rpd, RpdSection, RpdTopic,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification,
     Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
 )
 
 
+async def seed_reference():
+    """Идемпотентно засеять справочники, не зависящие от демо-данных
+    (средства оценки и т.п.). Запускается при каждом старте."""
+    async with async_session() as db:
+        existing = await db.execute(select(AssessmentTool))
+        if existing.scalars().first():
+            return
+        for name in [
+            "Экзамен",
+            "Зачёт",
+            "Дифференцированный зачёт",
+            "Защита лабораторной работы",
+            "Защита практической работы",
+            "Защита курсовой работы",
+            "Защита курсового проекта",
+            "Защита практики",
+            "Контрольная работа",
+            "Реферат",
+            "Тест",
+            "Собеседование",
+            "Доклад",
+            "Эссе",
+        ]:
+            db.add(AssessmentTool(name=name))
+        await db.commit()
+
+
 async def seed_data():
     """Populate database with demo data matching the prototype."""
+    await seed_reference()
     async with async_session() as db:
         existing = await db.execute(select(Role))
         if existing.scalars().first():
