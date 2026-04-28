@@ -311,7 +311,6 @@ async def admin_download_bup_source(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    from fastapi.responses import FileResponse
     _require_admin(user)
     bup = await db.get(Bup, bup_id)
     if not bup or not bup.id_source_file:
@@ -320,7 +319,9 @@ async def admin_download_bup_source(
     if not sf:
         raise HTTPException(status_code=404)
     try:
-        path = storage_service.resolve_path(sf.storage_uri)
-    except FileNotFoundError:
-        raise HTTPException(status_code=404, detail="Файл отсутствует на диске")
-    return FileResponse(path, filename=sf.original_name)
+        return storage_service.file_response(
+            sf.storage_uri, filename=sf.original_name,
+            mime=sf.mime or "application/octet-stream",
+        )
+    except (FileNotFoundError, ValueError):
+        raise HTTPException(status_code=404, detail="Файл отсутствует в хранилище")

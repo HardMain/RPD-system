@@ -19,3 +19,4 @@ aiofiles==24.1.0
 pymupdf==1.24.10
 xlrd==2.0.2
 openpyxl==3.1.5
+minio==7.2.10

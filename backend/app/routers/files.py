@@ -1,6 +1,5 @@
 """Просмотр/скачивание файлов из stored_files. Доступно всем авторизованным."""
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
@@ -21,7 +20,9 @@ async def download_file(
     if not sf:
         raise HTTPException(status_code=404, detail="Файл не найден")
     try:
-        path = storage_service.resolve_path(sf.storage_uri)
+        return storage_service.file_response(
+            sf.storage_uri, filename=sf.original_name,
+            mime=sf.mime or "application/octet-stream",
+        )
     except (FileNotFoundError, ValueError):
-        raise HTTPException(status_code=404, detail="Файл отсутствует на диске")
-    return FileResponse(path, filename=sf.original_name, media_type=sf.mime or "application/octet-stream")
+        raise HTTPException(status_code=404, detail="Файл отсутствует в хранилище")

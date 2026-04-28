@@ -42,7 +42,7 @@ class BupDiscipline(Base):
 
     code = Column(String(30))                # Б1.Б.01, Б1.В.05 и т.п.
     semester = Column(String(30))            # «1», «1, 2», …
-    control_form = Column(String(80))        # «Экзамен», «Зачёт», «Экзамен, зачёт» и т.п.
+    control_form = Column(String(255))       # «Экзамен», «Зачёт», «Экзамен, зачёт» и т.п.
 
     total_hours = Column(Integer)            # Общая трудоёмкость, ак.час
     lecture_hours = Column(Integer)          # Лекции

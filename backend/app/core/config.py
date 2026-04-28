@@ -11,6 +11,15 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "/app/uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
 
+    # Файловое хранилище
+    STORAGE_BACKEND: str = "s3"  # 'local' | 's3' (MinIO / любой S3-совместимый)
+    S3_ENDPOINT: str = "minio:9000"
+    S3_BUCKET: str = "rpd-files"
+    S3_ACCESS_KEY: str = "rpd_minio"
+    S3_SECRET_KEY: str = "rpd_minio_secret"
+    S3_USE_SSL: bool = False
+    S3_REGION: str = "us-east-1"
+
     class Config:
         env_file = ".env"
 
