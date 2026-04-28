@@ -105,6 +105,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         status=r.status, goals_text=r.goals_text, tasks_text=r.tasks_text,
         objects_text=r.objects_text, requirements_text=r.requirements_text,
         educational_tech=r.educational_tech, methodical_recommendations=r.methodical_recommendations,
+        comment=r.comment,
         author_name=r.author.full_name,
         semester=bd.semester if bd else None,
         total_hours=bd.total_hours if bd else None,

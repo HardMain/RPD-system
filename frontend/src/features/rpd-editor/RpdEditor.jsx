@@ -24,6 +24,7 @@ import { TopicsEditor } from "./editors/TopicsEditor.jsx";
 import { DatabasesEditor } from "./editors/DatabasesEditor.jsx";
 import { MtechEditor } from "./editors/MtechEditor.jsx";
 import { DocsUpload } from "./editors/DocsUpload.jsx";
+import { MetaEditor } from "./editors/MetaEditor.jsx";
 
 export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
@@ -84,7 +85,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     setLoading(true);
     try {
       const res = await api.getRpd(rpdId); const r = res.data; setRpd(r);
-      setEditTexts({ goals: r.goals_text || "", tasks: r.tasks_text || "", objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
+      setEditTexts({ goals: r.goals_text || "", tasks: r.tasks_text || "", objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "", comment: r.comment || "" });
       // Первый load при монтировании компонента не помечает PDF грязным
       // (PDF и так ещё не загружен). Все последующие load() — это перечитывание
       // после изменений, поэтому PDF на сервере мог обновиться.
@@ -466,7 +467,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     setSaving(true);
     let ok = false;
     try {
-      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations });
+      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations, comment: editTexts.comment });
       await load();
       ok = true;
     } catch { }
@@ -594,6 +595,14 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
             {isEdit && canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.orangeLight, border: "1px solid " + T.orange, color: T.orange, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>✏ Режим редактирования — изменения сохраняются кнопкой «Сохранить»</div>}
             {isEdit && !canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 РПД нельзя редактировать в текущем статусе</div>}
             <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + (isEdit && canEdit ? T.orange : T.borderLight), borderRadius: 4, boxShadow: isEdit && canEdit ? "0 2px 16px rgba(217,115,32,.12)" : "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
+              {/* МЕТАИНФОРМАЦИЯ — данные РПД, не входящие в печатную форму */}
+              <div ref={refs.meta} style={{ marginBottom: 32, padding: "20px 24px", background: T.bg, borderRadius: 6, border: "1px dashed " + T.border }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 12 }}>
+                  Метаинформация · в печатную форму РПД не попадает
+                </div>
+                <MetaEditor />
+              </div>
+
               {/* ТИТУЛЬНИК */}
               <div ref={refs.title} style={{ marginBottom: 32, textAlign: "center", paddingTop: 20, paddingBottom: 20 }}>
                 <div style={{ fontSize: 11, marginBottom: 12, color: T.textMuted }}>Министерство науки и высшего образования Российской Федерации</div>

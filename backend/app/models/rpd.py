@@ -21,6 +21,7 @@ class Rpd(Base):
     requirements_text = Column(Text)
     educational_tech = Column(Text)
     methodical_recommendations = Column(Text)
+    comment = Column(Text)  # «Комментарий к РПД» из АРМ — произвольная заметка для разработчика
     based_on_rpd_id = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

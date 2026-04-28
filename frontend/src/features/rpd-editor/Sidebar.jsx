@@ -1,6 +1,6 @@
 import { T, F } from "../../theme.js";
 import { Badge } from "../../components/Badge.jsx";
-import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS } from "./constants.js";
+import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS } from "./constants.js";
 
 export function Sidebar({
   width, isEdit, hasPair, canEdit, isHead, status,
@@ -60,6 +60,9 @@ export function Sidebar({
     {isHead && status === "На согласовании" && <div style={{ padding: "4px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
 
     <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SIDEBAR_KEYS.map(k => {
+      // Не-PDF разделы (метаинформация и т.п.) видимы только в режиме редактирования —
+      // в печатной форме их нет.
+      if (!isEdit && NON_PDF_KEYS.has(k)) return null;
       // В режиме просмотра прячем 4.1 / 4.2, если в РПД нет соответствующих тем —
       // скроллить там не к чему, и в PDF этих разделов тоже нет.
       if (!isEdit && k === "4.1" && !hasLabTopics) return null;

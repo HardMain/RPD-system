@@ -52,6 +52,7 @@ class RpdUpdate(BaseModel):
     requirements_text: str | None = None
     educational_tech: str | None = None
     methodical_recommendations: str | None = None
+    comment: str | None = None
 
 
 # ── Sections / Topics ─────────────────────────────────────────────────────────
@@ -313,6 +314,7 @@ class RpdDetailOut(BaseModel):
     requirements_text: str | None = None
     educational_tech: str | None = None
     methodical_recommendations: str | None = None
+    comment: str | None = None
     author_name: str
     semester: str | None = None
     total_hours: int | None = None
