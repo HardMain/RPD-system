@@ -134,12 +134,12 @@ async def seed_data():
         db.add_all([ci1, ci2, ci3, ci4, ci4b, ci5, ci7a, ci7b, ci7c])
         await db.flush()
 
-        # ── Disciplines (логический справочник) ──
-        d_inf = Discipline(id_direction=dir1.id_direction, name="Информатика")
-        d_kg = Discipline(id_direction=dir1.id_direction, name="Компьютерная графика")
-        d_phys = Discipline(id_direction=dir1.id_direction, name="Физика")
-        d_db = Discipline(id_direction=dir1.id_direction, name="Базы данных")
-        d_algo = Discipline(id_direction=dir1.id_direction, name="Алгоритмы и структуры данных")
+        # ── Disciplines (логический справочник, независимый от направления) ──
+        d_inf = Discipline(name="Информатика")
+        d_kg = Discipline(name="Компьютерная графика")
+        d_phys = Discipline(name="Физика")
+        d_db = Discipline(name="Базы данных")
+        d_algo = Discipline(name="Алгоритмы и структуры данных")
         db.add_all([d_inf, d_kg, d_phys, d_db, d_algo])
         await db.flush()
 

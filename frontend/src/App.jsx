@@ -232,9 +232,9 @@ export default function App() {
     document.body.style.cursor = "col-resize";
   }
 
-  async function handleExportPdf(rpdId) {
+  async function handleExportPdf(rpdId, bdId) {
     try {
-      const r = await api.exportPdf(rpdId);
+      const r = await api.exportPdf(rpdId, bdId);
       const url = window.URL.createObjectURL(r.data);
       const a = document.createElement("a"); a.href = url; a.download = `RPD_${rpdId}.pdf`; a.click();
       window.URL.revokeObjectURL(url);

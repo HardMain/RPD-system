@@ -20,19 +20,25 @@ class Direction(Base):
     degree_level = Column(String(50))
     id_fgos_file = Column(Integer, ForeignKey("stored_files.id_file"), nullable=True)
 
-    disciplines = relationship("Discipline", back_populates="direction")
     competencies = relationship("Competency", back_populates="direction")
     bups = relationship("Bup", back_populates="direction", cascade="all, delete-orphan")
     fgos_file = relationship("StoredFile", foreign_keys=[id_fgos_file])
 
 
 class Discipline(Base):
+    """Логический справочник имён дисциплин — независимый от направления.
+
+    Одна и та же дисциплина (например, «Базы данных») может читаться на разных
+    направлениях, и преподаватель ведёт её как одну сущность. Контекст направления/
+    профиля/факультета хранится на уровне `BupDiscipline` (через её БУП), а не на
+    уровне самой дисциплины. Это нужно, чтобы один макет РПД мог покрывать одну
+    и ту же дисциплину сразу в нескольких направлениях с одинаковой нагрузкой,
+    но разными формируемыми компетенциями (как multi-БУП в АРМ ПНИПУ).
+    """
     __tablename__ = "disciplines"
     id_discipline = Column(Integer, primary_key=True, autoincrement=True)
-    id_direction = Column(Integer, ForeignKey("directions.id_direction"), nullable=False)
-    name = Column(String(200), nullable=False)
+    name = Column(String(200), nullable=False, unique=True)
 
-    direction = relationship("Direction", back_populates="disciplines")
     rpds = relationship("Rpd", back_populates="discipline")
     bup_disciplines = relationship("BupDiscipline", back_populates="discipline")
 

@@ -37,17 +37,34 @@ def _parse_semester(raw: Any) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def build_context(rpd) -> dict:
+def build_context(rpd, bd=None) -> dict:
     """rpd — объект ORM Rpd с подгруженными связями. Возвращает dict под docxtpl.
 
-    Часы и форма контроля берутся из «представительной» BupDiscipline (пока
-    multi-БУП не реализован в UI экспорта)."""
+    `bd` — конкретная привязанная BupDiscipline, для которой формируется печатная
+    форма (титульник, направление/профиль, часы раздела 3, фильтрация раздела 2
+    по её компетенциям). Если не передана — берётся первая привязанная
+    («представительная»), как было до multi-БУП. Так один макет даёт N печатных
+    форм — по одной на каждую привязку, отличающихся титульником и индикаторами,
+    но с общим содержимым (разделы, литература, методички, ПО, МТО, ФОС)."""
     d = rpd.discipline
-    direction = d.direction
-    bd = next(
-        (l.bup_discipline for l in (rpd.bup_links or []) if l.bup_discipline),
-        None,
-    )
+    if bd is None:
+        bd = next(
+            (l.bup_discipline for l in (rpd.bup_links or []) if l.bup_discipline),
+            None,
+        )
+    direction = bd.bup.direction if bd and bd.bup else None
+    bup_profile = bd.bup.profile if bd and bd.bup else None
+    # Множество индикаторов, которые относятся к компетенциям ВЫБРАННОЙ
+    # БУП-дисциплины (нужно для фильтрации раздела 2 в печатной форме).
+    bd_indicator_ids: set[int] | None = None
+    if bd is not None:
+        bd_competency_ids = {bdc.id_competency for bdc in (bd.competencies or [])}
+        if bd_competency_ids:
+            bd_indicator_ids = set()
+            for lo in (rpd.learning_outcomes or []):
+                ind = lo.indicator
+                if ind and ind.competency and ind.competency.id_competency in bd_competency_ids:
+                    bd_indicator_ids.add(ind.id_indicator)
 
     total_hours = _safe(bd.total_hours if bd else 0, 0)
     lec = _safe(bd.lecture_hours if bd else 0, 0)
@@ -91,9 +108,13 @@ def build_context(rpd) -> dict:
     }
 
     # ── Результаты обучения ────────────────────────────────────────────────
+    # Если нам передали конкретную БУП-дисциплину — печатаем только её
+    # индикаторы (раздел 2 в АРМ для каждой привязки свой).
     learning_outcomes = []
     for lo in (rpd.learning_outcomes or []):
         ind = lo.indicator
+        if bd_indicator_ids is not None and ind and ind.id_indicator not in bd_indicator_ids:
+            continue
         comp = ind.competency if ind else None
         learning_outcomes.append({
             "competency_code": comp.code if comp else "",
@@ -256,12 +277,13 @@ def build_context(rpd) -> dict:
         "rector_name": "И.Ю.Черникова",
         "discipline_name": d.name or "—",
         "study_form": "очная",
-        "level_higher_education": direction.degree_level or "бакалавриат",
+        "level_higher_education": (direction.degree_level if direction else None) or "бакалавриат",
         "total_hours": total_hours,
         "total_ze": _ze(total_hours),
-        "direction_code": direction.code or "—",
-        "direction_name": direction.name or "—",
-        "program_name": direction.profile or direction.name or "—",
+        "direction_code": (direction.code if direction else None) or "—",
+        "direction_name": (direction.name if direction else None) or "—",
+        # Профиль шапки печатной формы — приоритетно из БУПа (он точнее), fallback на профиль направления.
+        "program_name": bup_profile or (direction.profile if direction else None) or (direction.name if direction else None) or "—",
         "publish_year": (rpd.academic_year or str(datetime.now().year))[:4],
 
         "goals_text": _safe(rpd.goals_text, "—"),

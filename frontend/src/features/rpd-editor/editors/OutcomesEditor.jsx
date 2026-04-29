@@ -3,20 +3,35 @@ import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
+import { BupDropdown } from "../BupDropdown.jsx";
 
 export function OutcomesEditor() {
-  const { rpdId, isEdit, canEdit, reload } = useRpdEditor();
+  const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const [rows, setRows] = useState([]);
   const [tools, setTools] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  // Переключатель «текущая БУП-дисциплина». Без него при multi-БУП в таблице
+  // вперемешку оказываются индикаторы разных привязок — как в АРМ ПНИПУ это
+  // решено выпадающим списком сверху раздела 2.
+  const bds = rpd?.bup_disciplines || [];
+  const [currentBdId, setCurrentBdId] = useState(() => bds[0]?.id_bup_discipline || null);
+
+  // Если состав привязок поменялся (после reload), синхронизируем выбор: первая
+  // оставшаяся, либо null если ничего не привязано.
+  useEffect(() => {
+    if (bds.length === 0) { setCurrentBdId(null); return; }
+    if (!bds.some(b => b.id_bup_discipline === currentBdId)) {
+      setCurrentBdId(bds[0].id_bup_discipline);
+    }
+  }, [bds, currentBdId]);
 
   const reloadRows = useCallback(async () => {
     try {
-      const r = await api.getOutcomesTable(rpdId);
+      const r = await api.getOutcomesTable(rpdId, currentBdId);
       setRows(r.data);
       setLoaded(true);
     } catch { setLoaded(true); }
-  }, [rpdId]);
+  }, [rpdId, currentBdId]);
 
   useEffect(() => {
     reloadRows();
@@ -48,19 +63,53 @@ export function OutcomesEditor() {
 
   if (!loaded) return null;
 
-  if (rows.length === 0) {
+  if (bds.length === 0) {
     return <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>
-      Для этой РПД не закреплено ни одной компетенции с индикаторами. Это значит, что РПД не привязана к дисциплине БУПа, либо у компетенций ещё не заполнены индикаторы.
+      РПД не привязана ни к одной БУП-дисциплине — раздел 2 заполнить нечем. Привязка задаётся при создании РПД.
     </div>;
   }
 
-  // Без tableLayout:fixed — браузер сам распределяет ширину как в остальных таблицах
-  // редактора (раздел 3 и т.д.). Колонки сужаются ровно до самого длинного слова в столбце,
-  // не уже — то есть «Компетенция» / «Индикатор» не разваливаются на «Компетен / ция».
-  // colgroup с процентами — это подсказки для auto-layout, относительные веса при широком
-  // контейнере; min-content поведение (= ширина самого длинного слова) браузер обеспечит сам.
+  const currentBd = bds.find(b => b.id_bup_discipline === currentBdId) || bds[0];
+
   const wrap = { wordBreak: "normal", overflowWrap: "break-word" };
   return <div>
+    {/* Переключатель «текущая БУП-дисциплина»: даже если привязана одна — показываем
+        её реквизиты (БУП-код, направление), как в АРМ. Если несколько — выпадающим
+        списком переключаемся между привязками; таблица перерисовывается под её
+        компетенции. Outcomes хранятся per-индикатор, поэтому если у двух привязок
+        совпадают индикаторы (например, общая компетенция), заполненный текст там и
+        там одинаковый. */}
+    <div style={{ marginBottom: 14, padding: "10px 12px", background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", flexShrink: 0 }}>
+          Дисциплина БУП
+        </span>
+        {bds.length === 1 ? (
+          <span style={{ fontSize: 13, fontWeight: 600, minWidth: 0, wordBreak: "normal", overflowWrap: "break-word" }}>
+            {currentBd.bup_year ? currentBd.bup_year + " " : ""}{currentBd.bup_name || "БУП"}
+            {currentBd.code ? ` · ${currentBd.code}` : ""}
+          </span>
+        ) : (
+          <BupDropdown
+            bds={bds}
+            value={currentBdId}
+            onChange={setCurrentBdId}
+            title="Переключить текущую БУП-дисциплину"
+          />
+        )}
+      </div>
+      {currentBd && (
+        <div style={{ marginTop: 6, fontSize: 11, color: T.textMuted }}>
+          {currentBd.direction_code ? `${currentBd.direction_code} ${currentBd.direction_name || ""}` : (currentBd.direction_name || "—")}
+          {currentBd.direction_profile ? ` · ${currentBd.direction_profile}` : ""}
+        </div>
+      )}
+    </div>
+    {rows.length === 0 ? (
+      <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>
+        У выбранной БУП-дисциплины ({currentBd.code || "—"}, БУП «{currentBd.bup_name || "—"}») в базе нет привязанных компетенций или у её компетенций не заполнены индикаторы.
+      </div>
+    ) : (
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
         <col style={{ width: "12%" }} />
@@ -101,6 +150,7 @@ export function OutcomesEditor() {
         ))}
       </tbody>
     </table>
+    )}
   </div>;
 }
 

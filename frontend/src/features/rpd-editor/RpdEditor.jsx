@@ -14,6 +14,7 @@ import { RpdEditorProvider } from "./RpdEditorContext.jsx";
 import { Sidebar } from "./Sidebar.jsx";
 import { BottomBar } from "./BottomBar.jsx";
 import { SentModal, ErrorModal, ApprovedModal, RejectModal, ValidationModal } from "./EditorModals.jsx";
+import { BupDropdown } from "./BupDropdown.jsx";
 
 import { EditableBlock } from "./editors/EditableBlock.jsx";
 import { SectionEditor } from "./editors/SectionEditor.jsx";
@@ -24,15 +25,27 @@ import { TopicsEditor } from "./editors/TopicsEditor.jsx";
 import { DatabasesEditor } from "./editors/DatabasesEditor.jsx";
 import { MtechEditor } from "./editors/MtechEditor.jsx";
 import { DocsUpload } from "./editors/DocsUpload.jsx";
-import { MetaEditor } from "./editors/MetaEditor.jsx";
-import { ViewRpdEditor } from "./editors/ViewRpdEditor.jsx";
 import { FosEditor } from "./editors/FosEditor.jsx";
+import { RpdMetaModal } from "./RpdMetaModal.jsx";
 
 export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
+  const [showMeta, setShowMeta] = useState(false);
+  // Свёрнутые разделы в режиме редактирования (как стрелочки сворачивания
+  // заголовков в Word). Множество ключей: "1.1", "2", "4", "8", и т.д.
+  // По умолчанию все развёрнуты.
+  const [collapsedSet, setCollapsedSet] = useState(() => new Set());
+  const isCollapsed = useCallback((key) => collapsedSet.has(key), [collapsedSet]);
+  const toggleCollapse = useCallback((key) => {
+    setCollapsedSet(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }, []);
   // У каждого режима — своя «активная вкладка»: при переключении просмотр ↔ редактирование
   // в сайдбаре сразу подсвечивается последняя секция этого режима, а не «протекает» из другого.
   const [activeSecPdf, setActiveSecPdf] = useState("title");
@@ -40,6 +53,12 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const [saving, setSaving] = useState(false);
   const [pdfData, setPdfData] = useState(null); const [pdfLoading, setPdfLoading] = useState(false); const [pdfError, setPdfError] = useState(null);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
+  // Текущая БУП-дисциплина для рендера печатной формы. При multi-БУП (одна РПД
+  // покрывает несколько БУПов) каждой привязке соответствует своя печатная форма
+  // — отличается титульником и разделом 2 (отфильтрован по её компетенциям),
+  // содержимое (разделы, литература, методички) общее. По умолчанию — первая
+  // привязанная.
+  const [pdfBdId, setPdfBdId] = useState(null);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1.1);
@@ -107,6 +126,36 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   }, [rpdId]);
   useEffect(() => { load(); }, [load]);
 
+  // Синхронизация pdfBdId с реальным составом привязок: при первой загрузке
+  // ставим первую, при последующих изменениях rpd.bup_disciplines (например,
+  // после reload в парной вкладке) — если выбранная пропала, переключаемся на
+  // первую оставшуюся.
+  const bdsForPdf = rpd?.bup_disciplines || [];
+  useEffect(() => {
+    if (!rpd) return;
+    if (bdsForPdf.length === 0) { if (pdfBdId !== null) setPdfBdId(null); return; }
+    if (!bdsForPdf.some(b => b.id_bup_discipline === pdfBdId)) {
+      setPdfBdId(bdsForPdf[0].id_bup_discipline);
+    }
+  }, [rpd, bdsForPdf, pdfBdId]);
+  // При смене БУП-привязки — перерендер PDF (титульник и раздел 2 поменяются).
+  // Захватываем scrollTop ДО reload, чтобы tryRestore вернул его на место для
+  // новой печатной формы (актуально при «Сохранить» в парной edit-вкладке —
+  // если view показывает не первую привязку, скролл иначе сбрасывался в 0,
+  // потому что pendingScrollRestoreRef был пустым).
+  const initialPdfBdRef = useRef(true);
+  useEffect(() => {
+    if (initialPdfBdRef.current) { initialPdfBdRef.current = false; return; }
+    if (!showPdf) { pdfDirtyRef.current = true; return; }
+    const c = pdfScrollRef.current;
+    if (c) pendingScrollRestoreRef.current = { mode: "pdf", value: c.scrollTop };
+    pdfDirtyRef.current = true;
+    pdfNavTargetRef.current = null;
+    preferredActiveSecRef.current = null;
+    sidebarLockRef.current = true;
+    setPdfReloadKey(k => k + 1);
+  }, [pdfBdId]);
+
   const reloadPdf = useCallback(() => {
     // Захватываем актуальный scrollTop ДО setPdfData(null) → иначе автоклэмп схлопнувшегося
     // контейнера сбросит pdfScrollPosRef в 0 через onScroll-хендлер, и восстанавливать будет нечего.
@@ -168,7 +217,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     // фоллбэку с приблизительными координатами и моргает чужим разделом.
     // pdfPageRefs тоже не зачищаем вручную — старые page-узлы и так размонтируются при смене pdfData,
     // setPdfPageRef-callback при unmount удалит их из map.
-    api.fetchPdfInline(rpdId, { signal: controller.signal }).then(r => {
+    api.fetchPdfInline(rpdId, { signal: controller.signal }, pdfBdId).then(r => {
       if (cancelled) return;
       createdUrl = window.URL.createObjectURL(r.data);
       setPdfData(createdUrl);
@@ -591,7 +640,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const hasLabTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "lab"));
   const hasPracticeTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "practice"));
 
-  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: load, editTexts, setEditTexts, editing, setEditing };
+  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: load, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse };
 
   return <RpdEditorProvider value={ctxValue}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -610,6 +659,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           onToggleMode={onToggleMode}
           onOpenPair={onOpenPair}
           onGoTo={goTo}
+          onOpenMeta={() => setShowMeta(true)}
         />
         {/* RESIZER */}
         <div onMouseDown={startResize} title="Потяните, чтобы изменить ширину панели"
@@ -652,8 +702,21 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} style={pdfToolBtn(false)} title="Увеличить">+</button>
               <button onClick={() => setPdfScale(1.1)} style={{ ...pdfToolBtn(false), fontSize: 11, padding: "3px 8px" }} title="Сбросить масштаб">1:1</button>
               <div style={{ flex: 1 }} />
+              {/* При multi-БУП — селектор «текущая БУП-привязка для печатной формы».
+                  Меняет титульник и раздел 2 в PDF; содержимое разделов 1/4-7 общее. */}
+              {bdsForPdf.length > 1 && (
+                <div style={{ width: 240, flexShrink: 1, minWidth: 0 }}>
+                  <BupDropdown
+                    bds={bdsForPdf}
+                    value={pdfBdId}
+                    onChange={setPdfBdId}
+                    compact
+                    title="Печатная форма для конкретной БУП-привязки"
+                  />
+                </div>
+              )}
               <Btn small onClick={reloadPdf} disabled={pdfLoading}>↻ Обновить</Btn>
-              <Btn small onClick={() => onExportPdf(rpdId)}><DownloadIcon /> Скачать</Btn>
+              <Btn small onClick={() => onExportPdf(rpdId, pdfBdId)}><DownloadIcon /> Скачать</Btn>
             </div>
             <div ref={pdfScrollRef} onScroll={e => { pdfScrollPosRef.current = e.currentTarget.scrollTop; }} style={{ flex: 1, position: "relative", overflow: "auto", background: T.pdfBg, padding: "16px 0" }}>
               {pdfLoading && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12, zIndex: 2, pointerEvents: "none" }}><Spinner size={36} /><div style={{ fontSize: 13 }}>Формируется PDF из шаблона...</div></div>}
@@ -681,15 +744,10 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
             {isEdit && canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.orangeLight, border: "1px solid " + T.orange, color: T.orange, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>✏ Режим редактирования — изменения сохраняются кнопкой «Сохранить»</div>}
             {isEdit && !canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 РПД нельзя редактировать в текущем статусе</div>}
             <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + (isEdit && canEdit ? T.orange : T.borderLight), borderRadius: 4, boxShadow: isEdit && canEdit ? "0 2px 16px rgba(217,115,32,.12)" : "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
-              {/* МЕТАИНФОРМАЦИЯ — данные РПД, не входящие в печатную форму */}
-              <div ref={refs.meta} style={{ marginBottom: 32, padding: "20px 24px", background: T.bg, borderRadius: 6, border: "1px dashed " + T.border }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 12 }}>
-                  Метаинформация · в печатную форму РПД не попадает
-                </div>
-                <MetaEditor />
-              </div>
-
-              {/* ТИТУЛЬНИК */}
+              {/* ТИТУЛЬНИК. Содержимое РПД (цели/разделы/литература) — общее на все
+                  привязанные БУП-дисциплины. Реквизиты титульника (направление, профиль,
+                  индекс плана) могут отличаться у разных привязок — показываем все,
+                  чтобы автор видел, для скольких печатных форм он сейчас пишет. */}
               <div ref={refs.title} style={{ marginBottom: 32, textAlign: "center", paddingTop: 20, paddingBottom: 20 }}>
                 <div style={{ fontSize: 11, marginBottom: 12, color: T.textMuted }}>Министерство науки и высшего образования Российской Федерации</div>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Пермский национальный исследовательский</div>
@@ -697,36 +755,40 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <div style={{ marginTop: 40 }}>
                   <div style={{ fontSize: 18, fontWeight: 700, textTransform: "uppercase", marginBottom: 8 }}>Рабочая программа дисциплины</div>
                   <div style={{ fontSize: 16, fontWeight: 700, color: T.accent }}>{rpd.discipline_name}</div>
-                  <div style={{ fontSize: 13, color: T.textMuted, marginTop: 8 }}>Направление: {rpd.direction_code} {rpd.direction_name}</div>
-                  {rpd.direction_profile && <div style={{ fontSize: 13, color: T.textMuted }}>Профиль: {rpd.direction_profile}</div>}
-                  <div style={{ fontSize: 13, color: T.textMuted }}>Учебный год: {rpd.academic_year} · Семестр: {rpd.semester || "-"} · Контроль: {rpd.control_form || "-"}</div>
+                  <div style={{ fontSize: 13, color: T.textMuted, marginTop: 8 }}>Учебный год: {rpd.academic_year}</div>
                 </div>
+                <BupAttachmentsBlock bds={rpd.bup_disciplines || []} />
               </div>
               <HR />
-              {/* 1. Общие положения */}
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>1. Общие положения</div>
-              <div ref={refs["1.1"]} style={{ marginBottom: 32 }}>
-                <EditableBlock skey="goals" label="1.1. Цели дисциплины" fieldKey="goals" />
-                <div style={{ marginTop: 20 }}><EditableBlock skey="tasks" label="Задачи дисциплины" fieldKey="tasks" /></div>
-              </div>
-              <HR />
-              <div ref={refs["1.2"]} style={{ marginBottom: 32 }}>
-                <EditableBlock skey="objects" label="1.2. Изучаемые объекты дисциплины" fieldKey="objects" />
-              </div>
-              <HR />
-              <div ref={refs["1.3"]} style={{ marginBottom: 32 }}>
-                <EditableBlock skey="requirements" label="1.3. Входные требования" fieldKey="requirements" />
+              {/* 1. Общие положения — целый раздел сворачивается через шеврон-on-hover */}
+              <div>
+                <SectionHeading title="1. Общие положения" collapsed={isCollapsed("1")} onToggle={() => toggleCollapse("1")} />
+                {!isCollapsed("1") && <>
+                  <div ref={refs["1.1"]} style={{ marginBottom: 32 }}>
+                    <EditableBlock skey="goals" label="1.1. Цели дисциплины" fieldKey="goals" />
+                    <div style={{ marginTop: 20 }}><EditableBlock skey="tasks" label="Задачи дисциплины" fieldKey="tasks" /></div>
+                  </div>
+                  <HR />
+                  <div ref={refs["1.2"]} style={{ marginBottom: 32 }}>
+                    <EditableBlock skey="objects" label="1.2. Изучаемые объекты дисциплины" fieldKey="objects" />
+                  </div>
+                  <HR />
+                  <div ref={refs["1.3"]} style={{ marginBottom: 32 }}>
+                    <EditableBlock skey="requirements" label="1.3. Входные требования" fieldKey="requirements" />
+                  </div>
+                </>}
               </div>
               <HR />
               {/* 2. Результаты обучения */}
               <div ref={refs["2"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>2. Планируемые результаты обучения по дисциплине</div>
-                <OutcomesEditor />
+                <SectionHeading title="2. Планируемые результаты обучения по дисциплине" collapsed={isCollapsed("2")} onToggle={() => toggleCollapse("2")} />
+                {!isCollapsed("2") && <OutcomesEditor />}
               </div>
               <HR />
               {/* 3. Объём и виды учебной работы — read-only из БУП */}
               <div ref={refs["3"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>3. Объём и виды учебной работы</div>
+                <SectionHeading title="3. Объём и виды учебной работы" collapsed={isCollapsed("3")} onToggle={() => toggleCollapse("3")} marginBottom={8} />
+                {!isCollapsed("3") && <>
                 <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Заполняется автоматически из БУП</div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead><tr><th style={th}>Вид учебной работы</th><th style={th}>Всего часов</th></tr></thead>
@@ -741,79 +803,86 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                     <tr><td style={td}>Семестр(ы)</td><td style={{ ...td, textAlign: "center" }}>{rpd.semester || "—"}</td></tr>
                   </tbody>
                 </table>
+                </>}
               </div>
               <HR />
               {/* 4. Содержание */}
               <div ref={refs["4"]} style={{ marginBottom: 32 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
-                  <div style={{ fontSize: 15, fontWeight: 700 }}>4. Содержание дисциплины</div>
-                  {isEdit && canEdit && <Btn small primary onClick={() => autoFill("content")} disabled={!!generating}>{generating === "content" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: isCollapsed("4") ? 0 : 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <SectionHeading title="4. Содержание дисциплины" collapsed={isCollapsed("4")} onToggle={() => toggleCollapse("4")} marginBottom={0} />
+                  </div>
+                  {!isCollapsed("4") && isEdit && canEdit && <Btn small primary onClick={() => autoFill("content")} disabled={!!generating}>{generating === "content" ? "Генерация..." : "Сгенерировать"}</Btn>}
                 </div>
-                <SectionEditor />
-              </div>
-              <HR />
-              <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных лабораторных работ</div>
-                <TopicsEditor kind="lab" />
-              </div>
-              <HR />
-              <div ref={refs["4.2"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика практических занятий</div>
-                <TopicsEditor kind="practice" />
+                {!isCollapsed("4") && <SectionEditor />}
+                {!isCollapsed("4") && <div style={{ marginTop: 32 }}>
+                  <HR />
+                  <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных лабораторных работ</div>
+                    <TopicsEditor kind="lab" />
+                  </div>
+                  <HR />
+                  <div ref={refs["4.2"]} style={{ marginBottom: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика практических занятий</div>
+                    <TopicsEditor kind="practice" />
+                  </div>
+                </div>}
               </div>
               <HR />
               {/* 5. Орг.-пед. условия */}
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>5. Организационно-педагогические условия</div>
-              <div ref={refs["5.1"]} style={{ marginBottom: 32 }}>
-                <EditableBlock skey="educational_tech" label="5.1. Образовательные технологии" fieldKey="educational_tech" />
-              </div>
-              <HR />
-              <div ref={refs["5.2"]} style={{ marginBottom: 32 }}>
-                <EditableBlock skey="methodical_recommendations" label="5.2. Методические указания" fieldKey="methodical_recommendations" />
+              <div>
+                <SectionHeading title="5. Организационно-педагогические условия" collapsed={isCollapsed("5")} onToggle={() => toggleCollapse("5")} />
+                {!isCollapsed("5") && <>
+                  <div ref={refs["5.1"]} style={{ marginBottom: 32 }}>
+                    <EditableBlock skey="educational_tech" label="5.1. Образовательные технологии" fieldKey="educational_tech" />
+                  </div>
+                  <HR />
+                  <div ref={refs["5.2"]} style={{ marginBottom: 32 }}>
+                    <EditableBlock skey="methodical_recommendations" label="5.2. Методические указания" fieldKey="methodical_recommendations" />
+                  </div>
+                </>}
               </div>
               <HR />
               {/* 6. Учебно-методическое обеспечение */}
-              <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>6. Учебно-методическое и информационное обеспечение</div>
-              <div ref={refs["6.1"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.1. Печатная учебно-методическая литература</div>
-                <LiteratureEditor kind="printed" />
-              </div>
-              <HR />
-              <div ref={refs["6.2"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.2. Электронная учебно-методическая литература</div>
-                <LiteratureEditor kind="electronic" />
-              </div>
-              <HR />
-              <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.3. Лицензионное и свободно распространяемое программное обеспечение</div>
-                <SoftwareEditor />
-              </div>
-              <HR />
-              <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>6.4. Современные профессиональные базы данных и информационные справочные системы</div>
-                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Если оставить пустым — в шаблон вставится стандартный перечень ПНИПУ</div>
-                <DatabasesEditor />
+              <div>
+                <SectionHeading title="6. Учебно-методическое и информационное обеспечение" collapsed={isCollapsed("6")} onToggle={() => toggleCollapse("6")} />
+                {!isCollapsed("6") && <>
+                  <div ref={refs["6.1"]} style={{ marginBottom: 32 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.1. Печатная учебно-методическая литература</div>
+                    <LiteratureEditor kind="printed" />
+                  </div>
+                  <HR />
+                  <div ref={refs["6.2"]} style={{ marginBottom: 32 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.2. Электронная учебно-методическая литература</div>
+                    <LiteratureEditor kind="electronic" />
+                  </div>
+                  <HR />
+                  <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.3. Лицензионное и свободно распространяемое программное обеспечение</div>
+                    <SoftwareEditor />
+                  </div>
+                  <HR />
+                  <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>6.4. Современные профессиональные базы данных и информационные справочные системы</div>
+                    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Если оставить пустым — в шаблон вставится стандартный перечень ПНИПУ</div>
+                    <DatabasesEditor />
+                  </div>
+                </>}
               </div>
               <HR />
               {/* 7. МТО */}
               <div ref={refs["7"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 16 }}>7. Материально-техническое обеспечение образовательного процесса</div>
-                <MtechEditor />
+                <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} />
+                {!isCollapsed("7") && <MtechEditor />}
               </div>
               <HR />
               {/* 8. ФОС */}
               <div ref={refs["8"]} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>8. Фонд оценочных средств</div>
-                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Файл ФОС прикрепляется к печатной форме РПД, прочие файлы — справочные.</div>
-                <FosEditor />
-              </div>
-              <HR />
-              {/* ПРОСМОТР РПД — таблица БУП-дисциплин с ФГОС */}
-              <div ref={refs.view} style={{ marginBottom: 32, padding: "20px 24px", background: T.bg, borderRadius: 6, border: "1px dashed " + T.border }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 12 }}>
-                  Просмотр РПД · справочная информация, в печатную форму не попадает
-                </div>
-                <ViewRpdEditor />
+                <SectionHeading title="8. Фонд оценочных средств" collapsed={isCollapsed("8")} onToggle={() => toggleCollapse("8")} marginBottom={8} />
+                {!isCollapsed("8") && <>
+                  <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Файл ФОС прикрепляется к печатной форме РПД, прочие файлы — справочные.</div>
+                  <FosEditor />
+                </>}
               </div>
               <HR />
               {/* ДОКУМЕНТЫ для LLM */}
@@ -857,8 +926,108 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       {modal === "approved" && <ApprovedModal onClose={() => { setModal(null); onBack(); }} />}
       {modal === "reject" && <RejectModal comment={rejectComment} onChange={setRejectComment} onClose={() => setModal(null)} onSubmit={() => { handleReview("reject"); setModal(null); }} />}
       {modal === "validation" && <ValidationModal errors={validationErrors} onGoTo={(secKey) => { goTo(secKey); setModal(null); }} onClose={() => setModal(null)} />}
+      {showMeta && <RpdMetaModal
+        rpd={rpd}
+        rpdId={rpdId}
+        isEdit={isEdit}
+        canEdit={canEdit}
+        editTexts={editTexts}
+        setEditTexts={setEditTexts}
+        reload={load}
+        onClose={() => setShowMeta(false)}
+      />}
     </div>
   </RpdEditorProvider>;
 }
 
 function HR() { return <div style={{ borderTop: "1px solid " + T.borderLight, margin: "32px 0" }} />; }
+
+/** Заголовок целого раздела со стрелкой сворачивания (как в Word).
+ *  Стрелка скрыта по умолчанию — появляется при наведении на заголовок ИЛИ когда
+ *  раздел свёрнут (тогда видна постоянно, чтобы было понятно что и как раскрыть).
+ *  Стрелка позиционируется absolute слева от текста (отрицательный left), чтобы
+ *  заголовок текстуально стоял на той же позиции что и без неё. */
+function SectionHeading({ title, collapsed, onToggle, marginBottom = 16 }) {
+  const [hover, setHover] = useState(false);
+  const visible = collapsed || hover;
+  return <button
+    type="button"
+    onClick={onToggle}
+    onMouseEnter={() => setHover(true)}
+    onMouseLeave={() => setHover(false)}
+    style={{
+      position: "relative",
+      display: "block",
+      width: "100%",
+      border: "none",
+      background: "transparent",
+      padding: 0,
+      margin: 0,
+      cursor: "pointer",
+      fontFamily: F,
+      fontSize: 15,
+      fontWeight: 700,
+      color: T.text,
+      textAlign: "left",
+      marginBottom: collapsed ? 0 : marginBottom,
+    }}
+  >
+    <span aria-hidden style={{
+      position: "absolute",
+      left: -22, top: "50%",
+      width: 18, height: 18,
+      display: "inline-flex", alignItems: "center", justifyContent: "center",
+      fontSize: 14, color: T.textMuted, lineHeight: 1,
+      opacity: visible ? 1 : 0,
+      transform: `translateY(-50%) ${collapsed ? "rotate(-90deg)" : "rotate(0)"}`,
+      transition: "opacity .15s, transform .15s",
+      pointerEvents: "none",
+    }}>▾</span>
+    {title}
+  </button>;
+}
+
+/** Блок привязанных БУП-дисциплин на титульнике редактора.
+ *  Один БУП — обычная подпись «Направление / Профиль / БУП-код». Несколько —
+ *  список с пометкой «N печатных форм», по одной на привязку: содержимое РПД
+ *  одно, а титульники в напечатанных PDF получаются разные. */
+function BupAttachmentsBlock({ bds }) {
+  if (bds.length === 0) {
+    return <div style={{ marginTop: 12, fontSize: 12, color: T.red, fontStyle: "italic" }}>
+      Не привязана ни к одной дисциплине БУПа
+    </div>;
+  }
+  if (bds.length === 1) {
+    const b = bds[0];
+    return <div style={{ marginTop: 8 }}>
+      <div style={{ fontSize: 13, color: T.textMuted }}>
+        Направление: {b.direction_code || "—"} {b.direction_name || ""}
+      </div>
+      {b.direction_profile && (
+        <div style={{ fontSize: 13, color: T.textMuted }}>Профиль: {b.direction_profile}</div>
+      )}
+      <div style={{ fontSize: 13, color: T.textMuted }}>
+        {b.bup_name || "БУП"}{b.code ? ` · ${b.code}` : ""}
+        {b.semester ? ` · сем. ${b.semester}` : ""}
+        {b.control_form ? ` · контроль: ${b.control_form}` : ""}
+      </div>
+    </div>;
+  }
+  return <div style={{ marginTop: 16 }}>
+    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+      Привязки к БУПам · {bds.length} печатных форм
+    </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
+      {bds.map(b => (
+        <div key={b.id_bup_discipline} style={{ fontSize: 12, color: T.textMuted, lineHeight: 1.45 }}>
+          <span style={{ fontWeight: 600, color: T.text }}>
+            {b.direction_code || "—"} {b.direction_name || ""}
+          </span>
+          {b.direction_profile ? ` · ${b.direction_profile}` : ""}
+          {" · "}
+          {b.bup_name || "БУП"}{b.code ? ` · ${b.code}` : ""}
+        </div>
+      ))}
+    </div>
+  </div>;
+}

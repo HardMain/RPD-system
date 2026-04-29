@@ -12,10 +12,11 @@ import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency,
-    Direction, Discipline, Competency, Department,
+    Direction, Discipline, Competency, CompetencyIndicator, Department,
 )
 from app.services.bup_parser import ParsedBup, ParsedDiscipline
 
@@ -57,18 +58,62 @@ async def _get_or_create_direction(
     return d
 
 
-async def _get_or_create_discipline(
-    db: AsyncSession, name: str, id_direction: int
-) -> Discipline:
-    res = await db.execute(
-        select(Discipline)
-        .where(Discipline.name == name)
-        .where(Discipline.id_direction == id_direction)
-    )
+def _normalize_discipline_name(raw: str) -> str:
+    """Нормализуем имя дисциплины перед поиском/созданием. Без этого один и тот же
+    предмет в двух XLS-БУПах часто оказывается двумя разными записями: где-то
+    лишние пробелы, где-то неразрывный пробел (U+00A0), где-то перенос строки.
+    Тогда multi-БУП «не подхватывает» дисциплину как одну."""
+    if not raw:
+        return ""
+    # Заменяем неразрывный пробел на обычный, затем схлопываем все пробельные
+    # последовательности (включая табы и переносы) в одиночный пробел и обрезаем края.
+    s = raw.replace(" ", " ").replace(" ", " ").replace(" ", " ")
+    s = " ".join(s.split())
+    # Чиним латинские буквы-омоглифы среди кириллицы. Типичная очепятка в XLS:
+    # «Физическaя культура» — латинская `a` вместо русской `а», визуально
+    # идентично, но строки сравниваются по-разному и дисциплина задваивается.
+    s = _fix_latin_homoglyphs(s)
+    return s
+
+
+_LATIN_TO_CYRILLIC_HOMOGLYPHS = {
+    "A": "А", "a": "а", "B": "В", "C": "С", "c": "с", "E": "Е", "e": "е",
+    "H": "Н", "K": "К", "M": "М", "O": "О", "o": "о", "P": "Р", "p": "р",
+    "T": "Т", "X": "Х", "x": "х", "y": "у", "Y": "У",
+}
+
+
+def _fix_latin_homoglyphs(s: str) -> str:
+    """Заменяем латинские буквы-омоглифы на кириллические — но только там, где
+    соседняя буква уже кириллица. Не трогаем легитимные латинские слова
+    (`MS Office`, `C++`, `IDEF0`)."""
+    def is_cyr(ch: str) -> bool:
+        return "Ѐ" <= ch <= "ӿ"
+    out: list[str] = []
+    for i, ch in enumerate(s):
+        cyr = _LATIN_TO_CYRILLIC_HOMOGLYPHS.get(ch)
+        if cyr is not None:
+            left = s[i - 1] if i > 0 else ""
+            right = s[i + 1] if i + 1 < len(s) else ""
+            if is_cyr(left) or is_cyr(right):
+                out.append(cyr)
+                continue
+        out.append(ch)
+    return "".join(out)
+
+
+async def _get_or_create_discipline(db: AsyncSession, name: str) -> Discipline:
+    """Найти или создать логическую дисциплину по имени. Дисциплина больше не
+    привязана к направлению — одна и та же дисциплина может встречаться в БУПах
+    разных направлений (см. модель Discipline)."""
+    name = _normalize_discipline_name(name)
+    if not name:
+        raise ValueError("Имя дисциплины пустое после нормализации")
+    res = await db.execute(select(Discipline).where(Discipline.name == name))
     d = res.scalars().first()
     if d:
         return d
-    d = Discipline(name=name, id_direction=id_direction)
+    d = Discipline(name=name)
     db.add(d)
     await db.flush()
     return d
@@ -96,15 +141,38 @@ async def _get_or_create_competency(
         select(Competency)
         .where(Competency.code == code)
         .where(Competency.id_direction == id_direction)
+        .options(selectinload(Competency.indicators))
     )
     c = res.scalars().first()
     if c:
+        await _ensure_at_least_one_indicator(db, c)
         return c
     # Имя пока не знаем — placeholder; админ может дозаполнить вручную позже.
     c = Competency(code=code, name="(требуется заполнение)", id_direction=id_direction)
     db.add(c)
     await db.flush()
+    await _ensure_at_least_one_indicator(db, c)
     return c
+
+
+async def _ensure_at_least_one_indicator(db: AsyncSession, comp: Competency) -> None:
+    """Гарантируем, что у компетенции есть хотя бы один индикатор. Без этого
+    раздел 2 «Планируемые результаты» в РПД будет пустым: outcomes хранятся
+    per-индикатор, и при отсутствии индикаторов JOIN в `get_outcomes_table`
+    возвращает пустую таблицу. XLS-импорт о реальных индикаторах не знает,
+    поэтому создаём плейсхолдер `<КОД>.1` — админ сможет его переименовать или
+    добавить рядом настоящие индикаторы через админ-панель."""
+    res = await db.execute(
+        select(CompetencyIndicator).where(CompetencyIndicator.id_competency == comp.id_competency).limit(1)
+    )
+    if res.scalar_one_or_none() is not None:
+        return
+    db.add(CompetencyIndicator(
+        id_competency=comp.id_competency,
+        code=f"{comp.code}.1",
+        description="(требуется заполнение)",
+    ))
+    await db.flush()
 
 
 def _build_bup_name(parsed: ParsedBup, year: int | None) -> str:
@@ -169,7 +237,7 @@ async def import_parsed_bup(
     )
 
     for pd in parsed.disciplines:
-        disc = await _get_or_create_discipline(db, pd.name, direction.id_direction)
+        disc = await _get_or_create_discipline(db, pd.name)
         dept = (
             await _get_or_create_department(db, pd.department, parsed.faculty)
             if pd.department else fallback_dept

@@ -15,14 +15,14 @@ class DirectionOut(BaseModel):
 
 
 class DisciplineOut(BaseModel):
-    """Логическая дисциплина (справочник имён по направлению).
+    """Логическая дисциплина (справочник имён, независимый от направления).
 
-    Атрибуты часов/семестра/контроля живут в BupDiscipline. Здесь — только
-    справочные поля. Поля часов, оставленные ниже, опциональны: эндпоинты
-    могут их заполнять из «представительной» BupDiscipline для совместимости.
+    Контекст направления/часов/семестра живёт в BupDiscipline. Поля часов
+    остались опциональными — некоторые эндпоинты заполняют их из
+    «представительной» BupDiscipline для совместимости с UI, который
+    привык получать всё в одном объекте.
     """
     id_discipline: int
-    id_direction: int
     name: str
     code: str | None = None
     semester: str | None = None
@@ -32,8 +32,6 @@ class DisciplineOut(BaseModel):
     lab_hours: int | None = None
     self_study_hours: int | None = None
     control_form: str | None = None
-    direction_name: str | None = None
-    direction_code: str | None = None
 
     class Config:
         from_attributes = True

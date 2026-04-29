@@ -6,7 +6,7 @@ export function Sidebar({
   width, isEdit, hasPair, canEdit, isHead, status,
   validationErrors, activeSec,
   hasLabTopics, hasPracticeTopics,
-  onToggleMode, onOpenPair, onGoTo,
+  onToggleMode, onOpenPair, onGoTo, onOpenMeta,
 }) {
   const viewTakenByPair = hasPair && isEdit;     // мы edit, значит view — это сосед
   const editTakenByPair = hasPair && !isEdit;    // мы view, значит edit — это сосед
@@ -43,6 +43,22 @@ export function Sidebar({
           opacity: ((!canEdit && !isEdit) || editTakenByPair) ? 0.5 : 1,
         }}>✏ РЕДАКТИРОВАНИЕ</button>
     </div>
+
+    {/* «Свойства РПД» — открывает модалку со всем, что не относится к печатной форме:
+        основные данные, привязанные дисциплины БУПа с ФГОС, комментарий, разработчики. */}
+    {onOpenMeta && <button
+      onClick={onOpenMeta}
+      title="Дисциплина, наименование РПД, дисциплины БУПа, разработчики, комментарий"
+      style={{
+        display: "block", width: "100%", padding: "5px 8px",
+        border: "none", borderBottom: "1px solid " + T.border,
+        background: "transparent", color: T.textMuted,
+        fontSize: 10, fontWeight: 700, letterSpacing: ".3px", fontFamily: F,
+        cursor: "pointer", textAlign: "center", flexShrink: 0,
+      }}
+      onMouseEnter={e => e.currentTarget.style.background = T.bg}
+      onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+    >ⓘ Свойства РПД</button>}
 
     {/* Discoverable-кнопка для пары: «Открыть рядом в [противоположном режиме]».
         Прячем когда пара уже есть. Если редактировать нельзя в принципе — тоже не показываем. */}

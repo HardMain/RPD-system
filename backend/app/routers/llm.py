@@ -6,8 +6,8 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.models import (
-    User, Rpd, Discipline, Direction, LlmGenerationLog, UploadedDocument,
-    RpdBupDiscipline,
+    User, Rpd, Discipline, Direction, Bup, BupDiscipline, LlmGenerationLog,
+    UploadedDocument, RpdBupDiscipline,
 )
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
 from app.services.llm_service import generate_section, extract_text_from_file
@@ -25,8 +25,11 @@ async def generate(
     result = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
         .options(
-            selectinload(Rpd.discipline).selectinload(Discipline.direction),
-            selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
+            selectinload(Rpd.discipline),
+            selectinload(Rpd.bup_links)
+                .selectinload(RpdBupDiscipline.bup_discipline)
+                .selectinload(BupDiscipline.bup)
+                .selectinload(Bup.direction),
             selectinload(Rpd.uploaded_documents),
         )
     )
@@ -35,9 +38,10 @@ async def generate(
         raise HTTPException(status_code=404, detail="РПД не найдена")
 
     disc = rpd.discipline
-    direc = disc.direction
-    # Часы плана берутся из «представительной» БУП-дисциплины РПД
+    # Часы и контекст направления берутся из «представительной» БУП-дисциплины РПД
+    # (первой привязанной). Дисциплина больше не привязана к направлению напрямую.
     bd = next((l.bup_discipline for l in rpd.bup_links if l.bup_discipline), None)
+    direc = bd.bup.direction if bd and bd.bup else None
 
     # Build context from uploaded documents
     extra_context = data.context or ""
@@ -53,8 +57,8 @@ async def generate(
     gen = await generate_section(
         section=data.section,
         discipline=disc.name,
-        direction=direc.name,
-        profile=direc.profile or "",
+        direction=direc.name if direc else "",
+        profile=(bd.bup.profile if bd and bd.bup else None) or (direc.profile if direc else "") or "",
         total_hours=(bd.total_hours if bd else 0) or 0,
         lecture_hours=(bd.lecture_hours if bd else 0) or 0,
         practice_hours=(bd.practice_hours if bd else 0) or 0,

@@ -60,6 +60,44 @@ async def list_bups(
     return [_bup_out(b) for b in result.scalars().all()]
 
 
+@router.get("/disciplines", response_model=list[BupDisciplineOut])
+async def list_bup_disciplines_global(
+    id_discipline: int | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Список БУП-дисциплин, обогащённый контекстом БУПа (имя плана, год, профиль,
+    направление). С фильтром по логической дисциплине — для UI создания РПД,
+    где после выбора дисциплины нужно показать все её БУП-инстансы (одна и та же
+    дисциплина может встречаться в нескольких БУПах одного направления).
+
+    Объявлен ВЫШЕ `/{bup_id}`, иначе FastAPI разрулит `/disciplines` как `bup_id="disciplines"`.
+    """
+    q = (
+        select(BupDiscipline)
+        .options(
+            selectinload(BupDiscipline.discipline),
+            selectinload(BupDiscipline.department),
+            selectinload(BupDiscipline.bup).selectinload(Bup.direction),
+        )
+    )
+    if id_discipline is not None:
+        q = q.where(BupDiscipline.id_discipline == id_discipline)
+    q = q.order_by(BupDiscipline.id_bup, BupDiscipline.code)
+    result = await db.execute(q)
+    out: list[BupDisciplineOut] = []
+    for bd in result.scalars().all():
+        item = _bd_out(bd)
+        if bd.bup:
+            item.bup_name = bd.bup.name
+            item.bup_year = bd.bup.year
+            item.bup_profile = bd.bup.profile
+            if bd.bup.direction:
+                item.direction_code = bd.bup.direction.code
+                item.direction_name = bd.bup.direction.name
+        out.append(item)
+    return out
+
+
 @router.get("/{bup_id}", response_model=BupDetailOut)
 async def get_bup(bup_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(

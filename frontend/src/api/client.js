@@ -72,7 +72,10 @@ export const deleteDatabase = (dbId) => api.delete(`/rpd/databases/${dbId}`);
 export const addOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes`, data);
 export const updateOutcome = (outcomeId, data) => api.put(`/rpd/outcomes/${outcomeId}`, data);
 export const deleteOutcome = (outcomeId) => api.delete(`/rpd/outcomes/${outcomeId}`);
-export const getOutcomesTable = (rpdId) => api.get(`/rpd/${rpdId}/outcomes-table`);
+// bdId — опциональный фильтр по конкретной привязанной БУП-дисциплине (раздел 2
+// в АРМ имеет переключатель «Дисциплина БУП», показывающий её индикаторы).
+export const getOutcomesTable = (rpdId, bdId) =>
+  api.get(`/rpd/${rpdId}/outcomes-table`, { params: bdId ? { bd_id: bdId } : {} });
 export const upsertOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes/upsert`, data);
 
 // Assessment tools (справочник средств оценки)
@@ -128,15 +131,27 @@ export const uploadDocument = (rpdId, file) => {
 export const getDocuments = (rpdId) => api.get(`/upload/${rpdId}`);
 export const deleteDocument = (docId) => api.delete(`/upload/${docId}`);
 
-// Export
-export const exportPdf = (rpdId) =>
-  api.get(`/export/${rpdId}/pdf`, { responseType: 'blob' });
-export const fetchPdfInline = (rpdId, config = {}) =>
-  api.get(`/export/${rpdId}/pdf-inline`, { responseType: 'blob', ...config });
+// Export. bdId — опциональный ID привязанной БУП-дисциплины: при multi-БУП
+// для каждой привязки своя печатная форма (свой титульник + свой раздел 2).
+// Без параметра — печатается первая привязанная (как было до multi-БУП).
+export const exportPdf = (rpdId, bdId) =>
+  api.get(`/export/${rpdId}/pdf`, {
+    responseType: 'blob',
+    params: bdId ? { bd_id: bdId } : {},
+  });
+export const fetchPdfInline = (rpdId, config = {}, bdId) => {
+  const { params, ...rest } = config;
+  return api.get(`/export/${rpdId}/pdf-inline`, {
+    responseType: 'blob',
+    ...rest,
+    params: { ...(params || {}), ...(bdId ? { bd_id: bdId } : {}) },
+  });
+};
 
 // Directions & Disciplines
 export const getDirections = () => api.get('/rpd/directions');
-export const getDisciplines = (directionId) => api.get('/rpd/disciplines', { params: { direction_id: directionId } });
+// Дисциплины — независимый справочник имён, направление живёт на уровне БУПа.
+export const getDisciplines = () => api.get('/rpd/disciplines');
 
 // Notifications
 export const getNotifications = () => api.get('/notifications/');
@@ -162,6 +177,9 @@ export const getBups = (directionId) => api.get('/bups/', { params: { direction_
 export const getBup = (id) => api.get(`/bups/${id}`);
 export const getBupDisciplines = (bupId) => api.get(`/bups/${bupId}/disciplines`);
 export const getBupDiscipline = (bdId) => api.get(`/bups/disciplines/${bdId}`);
+// Все БУП-инстансы одной логической дисциплины (для UI создания РПД).
+export const getBupDisciplinesByDiscipline = (disciplineId) =>
+  api.get('/bups/disciplines', { params: { id_discipline: disciplineId } });
 export const getCompetenciesByBupDiscipline = (bdId) =>
   api.get(`/competencies/by-bup-discipline/${bdId}`);
 

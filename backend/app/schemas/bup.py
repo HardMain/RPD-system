@@ -29,6 +29,14 @@ class BupDisciplineOut(BaseModel):
     self_study_hours: int | None = None
     zet: int | None = None
     department_name: str | None = None
+    # Опциональный контекст БУПа — заполняется в эндпоинтах, где нужно показать,
+    # из какого учебного плана / направления / профиля пришла дисциплина (например,
+    # при выборе БУП-инстансов на этапе создания РПД).
+    bup_name: str | None = None
+    bup_year: int | None = None
+    bup_profile: str | None = None
+    direction_code: str | None = None
+    direction_name: str | None = None
 
     class Config:
         from_attributes = True

@@ -110,12 +110,19 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     fos_main = next((_fos_out(f) for f in (r.fos_files or []) if f.role == "main"), None)
     fos_other = [_fos_out(f) for f in (r.fos_files or []) if f.role == "other"]
 
+    # Направление и профиль теперь живут на уровне БУПа, не дисциплины. Берём из
+    # «представительной» БУП-дисциплины (первая привязанная) — для совместимости с UI,
+    # который ожидает одно направление в детали РПД. Per-БУП рендер титульника
+    # печатной формы — отдельный шаг (см. `services/rpd_template_context.py`).
+    rep_bup = bd.bup if bd else None
+    rep_dir = rep_bup.direction if rep_bup else None
     return RpdDetailOut(
         id_rpd=r.id_rpd, id_discipline=d.id_discipline,
         discipline_name=d.name,
         discipline_code=bd.code if bd else None,
-        direction_name=d.direction.name, direction_code=d.direction.code,
-        direction_profile=d.direction.profile,
+        direction_name=rep_dir.name if rep_dir else "",
+        direction_code=rep_dir.code if rep_dir else "",
+        direction_profile=rep_bup.profile if rep_bup else None,
         academic_year=r.academic_year,
         status=r.status, goals_text=r.goals_text, tasks_text=r.tasks_text,
         objects_text=r.objects_text, requirements_text=r.requirements_text,
@@ -147,7 +154,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
 
 def _rpd_select_options():
     return [
-        selectinload(Rpd.discipline).selectinload(Discipline.direction),
+        selectinload(Rpd.discipline),
         selectinload(Rpd.bup_links)
             .selectinload(RpdBupDiscipline.bup_discipline)
             .selectinload(BupDiscipline.bup)
@@ -186,25 +193,21 @@ async def list_directions(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/disciplines", response_model=list[DisciplineOut])
-async def list_disciplines(direction_id: int | None = None, db: AsyncSession = Depends(get_db)):
+async def list_disciplines(db: AsyncSession = Depends(get_db)):
     """Список логических дисциплин с агрегатными часами «представительной»
-    БУП-дисциплины (для совместимости с текущим UI)."""
-    q = select(Discipline).join(Direction)
-    if direction_id:
-        q = q.where(Discipline.id_direction == direction_id)
+    БУП-дисциплины (для совместимости с UI, который ожидает плоскую структуру).
+    Дисциплина больше не привязана к направлению — фильтр по направлению снят."""
     result = await db.execute(
-        q.order_by(Discipline.name)
-        .options(
-            selectinload(Discipline.direction),
-            selectinload(Discipline.bup_disciplines),
-        )
+        select(Discipline)
+        .order_by(Discipline.name)
+        .options(selectinload(Discipline.bup_disciplines))
     )
     rows = result.scalars().all()
     out: list[DisciplineOut] = []
     for d in rows:
         bd = d.bup_disciplines[0] if d.bup_disciplines else None
         out.append(DisciplineOut(
-            id_discipline=d.id_discipline, id_direction=d.id_direction,
+            id_discipline=d.id_discipline,
             name=d.name,
             code=bd.code if bd else None,
             semester=bd.semester if bd else None,
@@ -214,8 +217,6 @@ async def list_disciplines(direction_id: int | None = None, db: AsyncSession = D
             lab_hours=bd.lab_hours if bd else None,
             self_study_hours=bd.self_study_hours if bd else None,
             control_form=bd.control_form if bd else None,
-            direction_name=d.direction.name if d.direction else None,
-            direction_code=d.direction.code if d.direction else None,
         ))
     return out
 
@@ -232,8 +233,11 @@ async def list_rpds(
     q = (
         select(Rpd)
         .options(
-            selectinload(Rpd.discipline).selectinload(Discipline.direction),
-            selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
+            selectinload(Rpd.discipline),
+            selectinload(Rpd.bup_links)
+                .selectinload(RpdBupDiscipline.bup_discipline)
+                .selectinload(BupDiscipline.bup)
+                .selectinload(Bup.direction),
             selectinload(Rpd.author),
         )
     )
@@ -249,11 +253,12 @@ async def list_rpds(
     out: list[RpdListOut] = []
     for r in rows:
         bd = _representative_bup_disc(r)
+        rep_dir = bd.bup.direction if bd and bd.bup else None
         out.append(RpdListOut(
             id_rpd=r.id_rpd,
             discipline_name=r.discipline.name,
-            direction_name=r.discipline.direction.name,
-            direction_code=r.discipline.direction.code,
+            direction_name=rep_dir.name if rep_dir else "",
+            direction_code=rep_dir.code if rep_dir else "",
             academic_year=r.academic_year,
             status=r.status,
             author_name=r.author.full_name,
@@ -318,17 +323,57 @@ async def _autofill_outcomes_from_bup_disciplines(
 
 @router.post("/", response_model=RpdDetailOut, status_code=201)
 async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    # Если переданы bup_discipline_ids, нужно вытащить id_discipline из первой БУП-дисциплины
+    # Если переданы bup_discipline_ids — все они должны относиться к одной и той же
+    # логической дисциплине (Discipline). Это требование модели: у Rpd одно
+    # id_discipline, и все привязанные BupDiscipline-инстансы — это варианты ОДНОЙ
+    # и той же дисциплины в разных БУПах одного направления.
     id_discipline = data.id_discipline
     if data.bup_discipline_ids:
-        first_bd = await db.execute(
+        rows = await db.execute(
             select(BupDiscipline)
-            .where(BupDiscipline.id_bup_discipline == data.bup_discipline_ids[0])
+            .where(BupDiscipline.id_bup_discipline.in_(data.bup_discipline_ids))
         )
-        bd = first_bd.scalar_one_or_none()
-        if not bd:
-            raise HTTPException(status_code=400, detail="БУП-дисциплина не найдена")
-        id_discipline = bd.id_discipline
+        bds = rows.scalars().all()
+        if len(bds) != len(set(data.bup_discipline_ids)):
+            raise HTTPException(status_code=400, detail="Не все БУП-дисциплины найдены")
+        discipline_ids = {bd.id_discipline for bd in bds}
+        if len(discipline_ids) > 1:
+            raise HTTPException(
+                status_code=400,
+                detail="Все выбранные БУП-дисциплины должны относиться к одной и той же логической дисциплине",
+            )
+        # Multi-БУП имеет смысл, только когда выбранные БУП-дисциплины — это разные
+        # редакции одной и той же нагрузки (одинаковые часы, семестр, форма контроля).
+        # В АРМ-практике именно так: один макет покрывает БУПы, отличающиеся только
+        # годом/индексом плана. Если часы реально различаются — это разные РПД,
+        # содержимое можно скопировать через «На основе архивной РПД».
+        if len(bds) > 1:
+            param_labels = {
+                "total_hours": "общие часы",
+                "lecture_hours": "часы лекций",
+                "practice_hours": "часы практик",
+                "lab_hours": "часы лабораторных",
+                "ksr_hours": "часы КСР",
+                "self_study_hours": "часы СРС",
+                "zet": "ЗЕ",
+                "semester": "семестр",
+                "control_form": "форма контроля",
+            }
+            ref = bds[0]
+            for bd in bds[1:]:
+                for key, label in param_labels.items():
+                    a, b = getattr(ref, key), getattr(bd, key)
+                    if a != b:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=(
+                                f"У выбранных БУП-дисциплин различается «{label}» "
+                                f"({a if a is not None else '—'} ≠ {b if b is not None else '—'}). "
+                                "Один макет РПД может покрывать только БУПы с одинаковой нагрузкой. "
+                                "Для разной нагрузки создайте отдельные РПД (можно через «На основе архивной»)."
+                            ),
+                        )
+        id_discipline = bds[0].id_discipline
     if not id_discipline:
         raise HTTPException(status_code=400, detail="Не указана дисциплина или БУП-дисциплины")
 
@@ -787,12 +832,17 @@ async def detach_bup_discipline(
 @router.get("/{rpd_id}/outcomes-table", response_model=list[OutcomeRowOut])
 async def get_outcomes_table(
     rpd_id: int,
+    bd_id: int | None = Query(default=None, description="Если задан — фильтровать только индикаторы этой привязанной БУП-дисциплины"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Вернуть полную таблицу планируемых результатов:
-    все индикаторы из компетенций БУП-дисциплин этой РПД + текущий заполненный
-    текст и средство оценки (если есть)."""
+    """Вернуть таблицу планируемых результатов: индикаторы из компетенций БУП-дисциплин
+    этой РПД + текущий заполненный текст и средство оценки.
+
+    Если передан `bd_id` — возвращаются только индикаторы для компетенций этой
+    конкретной БУП-дисциплины (так АРМ работает: переключатель «Дисциплина БУП»
+    наверху раздела 2 фильтрует таблицу). Без параметра — все индикаторы всех
+    привязок (полезно для общего просмотра)."""
     rpd_res = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
         .options(
@@ -804,15 +854,22 @@ async def get_outcomes_table(
     if not rpd:
         raise HTTPException(status_code=404)
 
-    bd_ids = [link.id_bup_discipline for link in rpd.bup_links]
-    if not bd_ids:
+    rpd_bd_ids = [link.id_bup_discipline for link in rpd.bup_links]
+    if not rpd_bd_ids:
         return []
+
+    if bd_id is not None:
+        if bd_id not in rpd_bd_ids:
+            raise HTTPException(status_code=400, detail="БУП-дисциплина не привязана к этой РПД")
+        scope_bd_ids = [bd_id]
+    else:
+        scope_bd_ids = rpd_bd_ids
 
     inds_res = await db.execute(
         select(CompetencyIndicator, Competency)
         .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
         .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
-        .where(BupDisciplineCompetency.id_bup_discipline.in_(bd_ids))
+        .where(BupDisciplineCompetency.id_bup_discipline.in_(scope_bd_ids))
         .order_by(Competency.code, CompetencyIndicator.code)
     )
     seen: set[int] = set()
