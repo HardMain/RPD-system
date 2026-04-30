@@ -57,19 +57,43 @@ export default function App() {
   useEffect(() => {
     const t = localStorage.getItem("token");
     if (t) {
+      // .catch() ловит и 401 (токен протух / БД пересоздана), и сетевую ошибку
+      // (контейнеры ещё не поднялись). В обоих случаях токен снимаем — иначе
+      // последующие запросы будут уходить со старым Authorization-заголовком и
+      // пользователь не сможет залогиниться без F5.
       api.getMe().then(r => setUser(r.data))
         .catch(() => localStorage.removeItem("token"))
         .finally(() => setChecking(false));
     } else setChecking(false);
   }, []);
 
-  const loadRpds = useCallback(async () => { try { const r = await api.getRpds(); setRpds(r.data); } catch { } }, []);
-  useEffect(() => {
-    if (user) {
-      loadRpds();
-      api.getUnreadCount().then(r => setUnreadCount(r.data.count)).catch(() => { });
+  // Сразу после логина бэкенд иногда ещё дожимает БД (DB здоров, но первое
+  // подключение SQLAlchemy инициализируется не мгновенно). Раньше в случае
+  // сбоя список РПД оставался пустым, и пользователь думал, что ничего нет
+  // — пока сам не нажмёт F5. Теперь повторяем с экспоненциальным backoff'ом
+  // пока не получится. Полностью замолкаем после нескольких неудач —
+  // лучше тихо отстать, чем бесконечно дёргать сервер.
+  const loadRpds = useCallback(async () => {
+    const maxAttempts = 6;
+    for (let i = 0; i < maxAttempts; i++) {
+      try { const r = await api.getRpds(); setRpds(r.data); return; }
+      catch {
+        if (i === maxAttempts - 1) return;
+        await new Promise(res => setTimeout(res, 500 * Math.pow(2, i))); // 0.5s, 1s, 2s, 4s, 8s
+      }
     }
-  }, [user, loadRpds]);
+  }, []);
+  const loadUnread = useCallback(async () => {
+    for (let i = 0; i < 6; i++) {
+      try { const r = await api.getUnreadCount(); setUnreadCount(r.data.count); return; }
+      catch {
+        await new Promise(res => setTimeout(res, 500 * Math.pow(2, i)));
+      }
+    }
+  }, []);
+  useEffect(() => {
+    if (user) { loadRpds(); loadUnread(); }
+  }, [user, loadRpds, loadUnread]);
 
   function findPaneOf(tabId) {
     if (panes.left.tabs.includes(tabId)) return "left";
@@ -246,7 +270,24 @@ export default function App() {
     setUser(null); setOpenRpds([]);
     setPanes({ left: { tabs: [], activeId: null }, right: null });
     setTabReloadKeys({});
+    // Сбрасываем активную вкладку — иначе если админ был на «БУПы» и зашёл
+    // снова под преподавателем, conditional-рендер всё равно нарисовал бы
+    // AdminBupsPage, хотя в навбаре у преподавателя такой вкладки нет.
+    setActiveTab("my");
   };
+
+  // Защита: если activeTab указывает на вкладку, недоступную текущей роли
+  // (например, после смены пользователя через токен), мгновенно
+  // переключаемся на «Мои РПД».
+  useEffect(() => {
+    if (!user) return;
+    const r = user.role;
+    const allowed = new Set(["my", "archive", "system", "edit"]);
+    if (r === "Зав. кафедрой") allowed.add("approval");
+    else allowed.add("onApproval");
+    if (r === "Администратор") { allowed.add("adminBups"); allowed.add("adminDirections"); }
+    if (!allowed.has(activeTab)) setActiveTab("my");
+  }, [user, activeTab]);
 
   if (checking) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}><Spinner size={40} /></div>;
   if (!user) return <LoginPage onLogin={u => setUser(u)} />;
@@ -264,7 +305,7 @@ export default function App() {
   ].filter(Boolean);
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
-    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
+    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}"}</style>
 
     {/* TopBar */}
     <div style={{ flexShrink: 0, zIndex: 10 }}>

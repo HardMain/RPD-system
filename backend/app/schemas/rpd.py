@@ -130,35 +130,38 @@ class RpdSectionCreate(BaseModel):
 
 
 # ── Literature ────────────────────────────────────────────────────────────────
+# `availability` — список названий ЭБС, в которых доступна электронная литература
+# (multi-select на фронте). Передаётся как list[str], в БД хранится JSON-строкой.
 class LiteratureCreate(BaseModel):
     source_type: str
     title: str
-    authors: str | None = None
-    year: int | None = None
-    publisher: str | None = None
     url: str | None = None
     copies_count: int | None = None
+    availability: list[str] | None = None
 
 
 class LiteratureUpdate(BaseModel):
     source_type: str | None = None
     title: str | None = None
-    authors: str | None = None
-    year: int | None = None
-    publisher: str | None = None
     url: str | None = None
     copies_count: int | None = None
+    availability: list[str] | None = None
 
 
 class LiteratureOut(BaseModel):
     id_literature: int
     source_type: str
     title: str
+    url: str | None = None
+    copies_count: int | None = None
+    # JSONB-колонка может быть NULL для старых записей или для печатной литературы
+    # — в этом случае на фронт отдадим пустой массив.
+    availability: list[str] | None = None
+    # Legacy-поля — оставлены чтобы старые сохранённые РПД ещё открывались. UI
+    # их игнорирует.
     authors: str | None = None
     year: int | None = None
     publisher: str | None = None
-    url: str | None = None
-    copies_count: int | None = None
 
     class Config:
         from_attributes = True
@@ -167,14 +170,16 @@ class LiteratureOut(BaseModel):
 # ── Software ──────────────────────────────────────────────────────────────────
 class SoftwareCreate(BaseModel):
     name: str
+    # Вид ПО (бывшее license_type — переименовано на фронте, на бэке колонка
+    # сохраняет имя).
     license_type: str | None = None
-    purpose: str | None = None
 
 
 class SoftwareOut(BaseModel):
     id_software: int
     name: str
     license_type: str | None = None
+    # Legacy-поле, в UI больше не используется.
     purpose: str | None = None
 
     class Config:
@@ -201,12 +206,14 @@ class MaterialTechOut(BaseModel):
 # ── Databases ─────────────────────────────────────────────────────────────────
 class DatabaseCreate(BaseModel):
     name: str
-    url: str | None = None
+    db_type: str | None = None
 
 
 class DatabaseOut(BaseModel):
     id_database: int
     name: str
+    db_type: str | None = None
+    # Legacy-поле, в UI больше не используется.
     url: str | None = None
 
     class Config:

@@ -40,13 +40,14 @@ export function BupDropdown({ bds, value, onChange, compact = false, title }) {
   const labelOf = (b) =>
     `${b.bup_year ? b.bup_year + " " : ""}${b.bup_name || "БУП"}${b.code ? ` · ${b.code}` : ""}`;
 
-  const fontSize = compact ? 11 : 13;
-  // В compact-режиме (PDF-тулбар) высота должна совпадать с другими кнопками
-  // тулбара (24px у pdfToolBtn, ↻Обновить и Скачать). Фиксируем высоту и
-  // выставляем line-height близкий к высоте, чтобы текст центрировался по вертикали.
+  const fontSize = compact ? 12 : 13;
+  // В compact-режиме (PDF-тулбар) дропдаун визуально выравнивается с соседними
+  // Btn small («↻ Обновить», «Скачать»): шрифт 12/600, padding 4×12, скругление 5,
+  // высота определяется паддингом, а не fixed height, чтобы кнопка не выглядела
+  // мельче/толще соседей.
   const buttonStyle = compact
-    ? { height: 24, lineHeight: "22px", padding: "0 24px 0 10px" }
-    : { padding: "6px 26px 6px 10px" };
+    ? { padding: "4px 28px 4px 12px", fontWeight: 600, borderRadius: 5 }
+    : { padding: "6px 26px 6px 10px", borderRadius: 4 };
 
   return <div ref={ref} style={{ position: "relative", flex: 1, minWidth: 0 }} title={title}>
     <button
@@ -57,7 +58,6 @@ export function BupDropdown({ bds, value, onChange, compact = false, title }) {
         textAlign: "left",
         ...buttonStyle,
         border: "1px solid " + T.border,
-        borderRadius: 4,
         background: T.surface,
         fontSize,
         fontFamily: F,

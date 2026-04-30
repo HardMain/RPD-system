@@ -640,7 +640,14 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const hasLabTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "lab"));
   const hasPracticeTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "practice"));
 
-  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: load, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse };
+  // reload для дочерних редакторов — тихий: setLoading(true) схлопнул бы весь
+  // редактор в спиннер на каждом blur'е/добавлении/удалении (раздел 2 моргал
+  // именно из-за этого), а данные мы и так перечитываем через setRpd.
+  // Без useCallback — иначе пришлось бы объявлять хук после ранних return'ов
+  // выше, а это нарушение правил хуков. Идентичность функции дочерним редакторам
+  // не важна: они вызывают reload только из обработчиков, не подписаны на него
+  // через useEffect.
+  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: () => load(true), editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse };
 
   return <RpdEditorProvider value={ctxValue}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -705,7 +712,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               {/* При multi-БУП — селектор «текущая БУП-привязка для печатной формы».
                   Меняет титульник и раздел 2 в PDF; содержимое разделов 1/4-7 общее. */}
               {bdsForPdf.length > 1 && (
-                <div style={{ width: 240, flexShrink: 1, minWidth: 0 }}>
+                // flexShrink:0 + width:240 — поведение как у соседних Btn small:
+                // дропдаун не сжимается на маленькой ширине тулбара, толкая «↻ Обновить»
+                // и «Скачать» себе под низ/за край (тулбар обрезается общим overflow:hidden),
+                // а не схлопывается, позволяя соседям наезжать сверху.
+                <div style={{ width: 240, flexShrink: 0, display: "flex" }}>
                   <BupDropdown
                     bds={bdsForPdf}
                     value={pdfBdId}
@@ -790,6 +801,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <SectionHeading title="3. Объём и виды учебной работы" collapsed={isCollapsed("3")} onToggle={() => toggleCollapse("3")} marginBottom={8} />
                 {!isCollapsed("3") && <>
                 <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Заполняется автоматически из БУП</div>
+                <div className="table-scroll">
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <thead><tr><th style={th}>Вид учебной работы</th><th style={th}>Всего часов</th></tr></thead>
                   <tbody>
@@ -803,6 +815,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                     <tr><td style={td}>Семестр(ы)</td><td style={{ ...td, textAlign: "center" }}>{rpd.semester || "—"}</td></tr>
                   </tbody>
                 </table>
+                </div>
                 </>}
               </div>
               <HR />

@@ -1,9 +1,10 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { BupDropdown } from "../BupDropdown.jsx";
+import { Dropdown } from "../../../components/Dropdown.jsx";
 
 export function OutcomesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
@@ -110,6 +111,7 @@ export function OutcomesEditor() {
         У выбранной БУП-дисциплины ({currentBd.code || "—"}, БУП «{currentBd.bup_name || "—"}») в базе нет привязанных компетенций или у её компетенций не заполнены индикаторы.
       </div>
     ) : (
+    <div className="table-scroll">
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
         <col style={{ width: "12%" }} />
@@ -150,6 +152,7 @@ export function OutcomesEditor() {
         ))}
       </tbody>
     </table>
+    </div>
     )}
   </div>;
 }
@@ -172,43 +175,19 @@ function OutcomeTextarea({ value, disabled, onSave }) {
 
 
 function AssessmentToolPicker({ value, tools, disabled, onSave }) {
-  const [open, setOpen] = useState(false);
-  const [local, setLocal] = useState(value);
-  const inputRef = useRef(null);
-  useEffect(() => { setLocal(value); }, [value]);
   if (disabled) {
     return <div style={{ padding: "6px 8px", fontSize: 13, color: value ? T.text : T.textMuted, fontStyle: value ? "normal" : "italic" }}>{value || "—"}</div>;
   }
-  const filtered = local
-    ? tools.filter(t => t.name.toLowerCase().includes(local.toLowerCase()))
-    : tools;
-  function commit(v) {
-    setLocal(v);
-    setOpen(false);
-    if (v !== value) onSave(v);
-  }
-  return <div style={{ position: "relative" }}>
-    <input
-      ref={inputRef}
-      value={local}
-      onChange={e => { setLocal(e.target.value); setOpen(true); }}
-      onFocus={() => setOpen(true)}
-      onBlur={() => { setTimeout(() => setOpen(false), 150); if (local !== value) onSave(local); }}
-      placeholder="—"
-      style={{ width: "100%", padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, boxSizing: "border-box", background: T.surface, outline: "none" }}
-    />
-    {open && filtered.length > 0 && (
-      <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: T.surface, border: "1px solid " + T.border, borderRadius: 4, boxShadow: "0 4px 12px rgba(0,0,0,.12)", zIndex: 50, maxHeight: 220, overflowY: "auto" }}>
-        {filtered.map(t => (
-          <div key={t.id_assessment_tool}
-            onMouseDown={() => commit(t.name)}
-            style={{ padding: "6px 10px", cursor: "pointer", fontSize: 13 }}
-            onMouseEnter={e => e.currentTarget.style.background = T.bg}
-            onMouseLeave={e => e.currentTarget.style.background = ""}>
-            {t.name}
-          </div>
-        ))}
-      </div>
-    )}
-  </div>;
+  // Значения средств оценки уникальны по name (так же ключуем backend-список),
+  // поэтому value/label дропдауна — это просто name. clearLabel позволяет
+  // вернуться в «не выбрано», без отдельной кнопки X.
+  const options = tools.map(t => ({ value: t.name, label: t.name }));
+  return <Dropdown
+    value={value || ""}
+    options={options}
+    onChange={v => { if (v !== value) onSave(v); }}
+    placeholder="Выбрать средство оценки"
+    clearLabel="Не выбрано"
+    title="Средство оценки"
+  />;
 }

@@ -35,7 +35,7 @@ export function FosEditor() {
       </div>
       {other.length === 0
         ? <EmptyRow text="Прочих файлов нет" />
-        : <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
+        : <div className="table-scroll" style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflowY: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr>
                 <th style={head}>Наименование</th>

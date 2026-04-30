@@ -177,67 +177,78 @@ def build_context(rpd, bd=None) -> dict:
     ]
 
     # ── Литература ─────────────────────────────────────────────────────────
+    # На фронте источник литературы выбирается из фиксированного списка видов
+    # (см. frontend/src/features/rpd-editor/literatureTypes.js). По нему
+    # раскладываем записи по 5 группам печатных + одна группа электронных.
+    # Старые legacy-поля (authors/year/publisher) остались только для уже
+    # сохранённых до миграции РПД — при формировании ссылки они подмешиваются,
+    # если есть.
     def _mk_citation(l) -> str:
         parts = []
-        if l.authors:
+        if getattr(l, "authors", None):
             parts.append(l.authors)
         if l.title:
             parts.append(l.title)
-        ref = " ".join(parts)
+        ref = " ".join(parts) if parts else (l.title or "—")
         tail = []
-        if l.publisher:
+        if getattr(l, "publisher", None):
             tail.append(l.publisher)
-        if l.year:
+        if getattr(l, "year", None):
             tail.append(str(l.year))
         if tail:
             ref += " — " + ", ".join(tail)
         return (ref or "—").rstrip(".") + "."
 
-    lit_main, lit_extra, lit_el = [], [], []
+    PRINTED_BUCKETS = {
+        "Учебные и научные издания": "main",
+        "Периодические издания": "periodical",
+        "Нормативно-технические издания": "normative",
+        "Методические указания для студентов по освоению дисциплины": "methodical",
+        "Учебно-методическое обеспечение самостоятельной работы студента": "self_study",
+    }
+    buckets = {k: [] for k in ("main", "periodical", "normative", "methodical", "self_study")}
+    lit_el = []
     for l in (rpd.literature or []):
-        st = (l.source_type or "").lower()
         if l.url:
+            avail = l.availability or []
+            access = ", ".join(avail) if avail else "локальная сеть; свободный доступ"
             lit_el.append({
-                "els_type": l.source_type or "Дополнительная",
+                "els_type": l.source_type or "—",
                 "title": _mk_citation(l),
                 "url": l.url,
-                "access": "локальная сеть; свободный доступ",
+                "access": access,
             })
-        elif "осн" in st:
-            lit_main.append({
-                "number": len(lit_main) + 1,
-                "citation": _mk_citation(l),
-                "copies_count": _safe(l.copies_count, "—"),
-            })
-        else:
-            lit_extra.append({
-                "number": len(lit_extra) + 1,
-                "citation": _mk_citation(l),
-                "copies_count": _safe(l.copies_count, "—"),
-            })
+            continue
+        bucket = PRINTED_BUCKETS.get((l.source_type or "").strip())
+        if not bucket:
+            # Неизвестный/legacy-вид без url трактуем как «учебные и научные».
+            bucket = "main"
+        buckets[bucket].append({
+            "number": len(buckets[bucket]) + 1,
+            "citation": _mk_citation(l),
+            "copies_count": _safe(l.copies_count, "—"),
+        })
 
     not_used = [{"number": 1, "citation": "Не используется", "copies_count": "—"}]
 
     # ── ПО / БД / МТО ──────────────────────────────────────────────────────
-    # «Вид ПО» в шаблоне = назначение (Операционные системы, Офисные приложения, …);
-    # «Наименование ПО» = название с типом лицензии в скобках, как в эталонном РПД ПНИПУ.
+    # «Вид ПО» = license_type (репропс из формы 6.3); «Наименование ПО» = name.
     software = []
     for s in (rpd.software or []):
-        name = (s.name or "").strip()
-        license_ = (s.license_type or "").strip()
-        full_name = f"{name} ({license_})" if license_ else (name or "—")
         software.append({
-            "soft_type": _safe(s.purpose, "—"),
-            "name": full_name,
+            "soft_type": _safe((s.license_type or "").strip(), "—"),
+            "name": _safe((s.name or "").strip(), "—"),
         })
     if not software:
         software = [{"soft_type": "Не используется", "name": "—"}]
 
-    # Сначала берём из БД (что заполнил преподаватель). Если ничего нет — fallback
-    # на стандартный перечень ПНИПУ, чтобы шаблон не остался пустым.
+    # «Вид БД» = db_type; «Наименование» = name. URL больше не вводится в форме —
+    # для шаблона выводим в столбец url ссылку, если она была в legacy-данных,
+    # иначе — прочерк (шаблон ожидает строку).
     if rpd.databases:
         databases = [
-            {"db_type": _safe(d.name, "—"), "url": _safe(d.url, "—")}
+            {"db_type": _safe((d.db_type or "").strip(), "—"),
+             "url": _safe(d.name, "—")}
             for d in rpd.databases
         ]
     else:
@@ -301,12 +312,16 @@ def build_context(rpd, bd=None) -> dict:
         "educational_tech": _safe(rpd.educational_tech, "—"),
         "methodical_recommendations": _safe(rpd.methodical_recommendations, "—"),
 
-        "literature_main": lit_main or not_used,
-        "literature_additional_study": lit_extra or not_used,
-        "literature_periodical": not_used,
-        "literature_additional_normative": not_used,
-        "literature_methodical": not_used,
-        "literature_self_study": not_used,
+        "literature_main": buckets["main"] or not_used,
+        # Доп. учебная литература теперь не отдельная категория — преподаватель
+        # её вводит вместе с основной как «Учебные и научные издания». Шаблон
+        # пока ожидает отдельный список — отдаём «Не используется», чтобы он
+        # рендерился без падения. Можно будет убрать поле из шаблона позже.
+        "literature_additional_study": not_used,
+        "literature_periodical": buckets["periodical"] or not_used,
+        "literature_additional_normative": buckets["normative"] or not_used,
+        "literature_methodical": buckets["methodical"] or not_used,
+        "literature_self_study": buckets["self_study"] or not_used,
         "el_literature": lit_el or [{
             "els_type": "Не используется", "title": "—",
             "url": "—", "access": "—",

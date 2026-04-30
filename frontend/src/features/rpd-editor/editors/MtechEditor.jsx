@@ -16,7 +16,7 @@ export function MtechEditor() {
   const del = async (id) => { await api.deleteMaterialTech(id); await reload(); };
 
   return <div>
-    {rpd.material_tech?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
+    {rpd.material_tech?.length > 0 ? <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead><tr>{["Тип помещения", "Оборудование", "Кол-во", isEdit && canEdit ? "" : null].filter(Boolean).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
       <tbody>{rpd.material_tech.map(m => <tr key={m.id_material_tech}>
         <td style={td}>{m.room_type}</td>
@@ -24,7 +24,7 @@ export function MtechEditor() {
         <td style={{ ...td, textAlign: "center" }}>{m.quantity ?? "—"}</td>
         {isEdit && canEdit && <td style={{ ...td, textAlign: "center" }}><button onClick={() => del(m.id_material_tech)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button></td>}
       </tr>)}</tbody>
-    </table> : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>МТО не добавлено</div>}
+    </table></div> : <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>МТО не добавлено</div>}
     {isEdit && canEdit && <div style={{ marginTop: 8 }}>
       {!showAdd ? <Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить</Btn>
         : <div style={{ padding: 12, border: "1px solid " + T.accent, borderRadius: 8, background: T.accentLight + "33", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>

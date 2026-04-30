@@ -241,8 +241,10 @@ async def list_rpds(
             selectinload(Rpd.author),
         )
     )
-    if user.role and user.role.name == "Преподаватель":
-        q = q.where(Rpd.id_author == user.id_user)
+    # Все роли (преподаватель, зав.каф, админ) видят полный список РПД кафедры —
+    # как в АРМ ПНИПУ. Раньше преподавателю показывались только свои авторские
+    # РПД, из-за этого новые РПД от зав.каф/админа к нему не «доходили». Дальше
+    # вкладки фильтруют клиентски по статусу: «Мои» / «Согласование» / «Архив».
     if status:
         q = q.where(Rpd.status == status)
     if academic_year:
@@ -424,8 +426,8 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
             for lit in base.literature:
                 db.add(RpdLiterature(
                     id_rpd=rpd.id_rpd, source_type=lit.source_type,
-                    title=lit.title, authors=lit.authors, year=lit.year,
-                    publisher=lit.publisher, url=lit.url, copies_count=lit.copies_count,
+                    title=lit.title, url=lit.url, copies_count=lit.copies_count,
+                    availability=lit.availability,
                 ))
 
             # Copy software

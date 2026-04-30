@@ -26,6 +26,7 @@ export function PlanSummary({ bupDisciplines, sections }) {
     <div style={{ padding: "8px 12px", background: T.bg, fontSize: 12, fontWeight: 700, color: T.textMuted, letterSpacing: ".4px", textTransform: "uppercase" }}>
       Часы по плану и фактическое распределение по разделам
     </div>
+    <div className="table-scroll">
     <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
       <thead>
         <tr>
@@ -46,6 +47,7 @@ export function PlanSummary({ bupDisciplines, sections }) {
         {bupDisciplines.map((bd) => <PlanRows key={bd.id_bup_discipline} bd={bd} distributed={distributed} />)}
       </tbody>
     </table>
+    </div>
   </div>;
 }
 

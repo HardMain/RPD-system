@@ -15,7 +15,18 @@ export function LoginPage({ onLogin }) {
       const r = await api.login(u, p);
       localStorage.setItem("token", r.data.access_token);
       onLogin(r.data.user);
-    } catch { setErr("Неверные учётные данные"); }
+    } catch (e) {
+      // Раньше тут было `catch {}` — любой сбой выдавался как «неверные креды»,
+      // включая случай «контейнеры ещё не поднялись» (нет response → нет статуса).
+      // Различаем три случая.
+      if (!e.response) {
+        setErr("Сервер не отвечает. Подождите окончания запуска контейнеров и повторите.");
+      } else if (e.response.status === 401) {
+        setErr("Неверные учётные данные");
+      } else {
+        setErr(`Ошибка сервера (${e.response.status}). Повторите попытку.`);
+      }
+    }
     finally { setLd(false); }
   };
 

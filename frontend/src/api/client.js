@@ -9,11 +9,15 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-// 401 → redirect to login
+// 401 → redirect to login. Логин-эндпоинт исключаем: если ввели неверный пароль,
+// LoginPage сам покажет ошибку — не нужно дёргать reload, иначе пользователь
+// никогда не увидит сообщения, и при гонке (контейнеры ещё запускаются) страница
+// уйдёт в бесконечный цикл reload'ов.
 api.interceptors.response.use(
   (r) => r,
   (err) => {
-    if (err.response?.status === 401) {
+    const isLogin = err.config?.url?.includes('/auth/login');
+    if (err.response?.status === 401 && !isLogin) {
       localStorage.removeItem('token');
       window.location.reload();
     }

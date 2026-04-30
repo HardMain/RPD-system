@@ -403,69 +403,67 @@ async def seed_data():
                                 topic_type="lab", title=title))
 
         # ── Literature ──
+        # source_type — один из видов литературы из новой формы 6.1/6.2.
+        # Электронные записи (с url) могут содержать `availability` — список ЭБС.
+        UCH = "Учебные и научные издания"
+        METH = "Методические указания для студентов по освоению дисциплины"
         # КГ
         db.add_all([
-            RpdLiterature(id_rpd=rpd2.id_rpd, source_type="Основная", title="Компьютерная графика и геометрическое моделирование", authors="Никулин Е.А.", year=2021, publisher="БХВ-Петербург"),
-            RpdLiterature(id_rpd=rpd2.id_rpd, source_type="Основная", title="Основы компьютерной графики", authors="Шикин Е.В., Боресков А.В.", year=2020, publisher="Диалог-МИФИ"),
-            RpdLiterature(id_rpd=rpd2.id_rpd, source_type="Дополнительная", title="OpenGL. Программирование компьютерной графики", authors="Боресков А.В.", year=2019, publisher="Питер"),
+            RpdLiterature(id_rpd=rpd2.id_rpd, source_type=UCH, title="Компьютерная графика и геометрическое моделирование (Никулин Е.А., БХВ-Петербург, 2021)"),
+            RpdLiterature(id_rpd=rpd2.id_rpd, source_type=UCH, title="Основы компьютерной графики (Шикин Е.В., Боресков А.В., Диалог-МИФИ, 2020)"),
+            RpdLiterature(id_rpd=rpd2.id_rpd, source_type=UCH, title="OpenGL. Программирование компьютерной графики (Боресков А.В., Питер, 2019)"),
         ])
         # Физика
         db.add_all([
-            RpdLiterature(id_rpd=rpd3.id_rpd, source_type="Основная", title="Курс общей физики. Т. 1-3", authors="Савельев И.В.", year=2020, publisher="Лань"),
-            RpdLiterature(id_rpd=rpd3.id_rpd, source_type="Основная", title="Курс физики", authors="Трофимова Т.И.", year=2019, publisher="Академия"),
-            RpdLiterature(id_rpd=rpd3.id_rpd, source_type="Дополнительная", title="Задачи по общей физике", authors="Иродов И.Е.", year=2021, publisher="Бином"),
+            RpdLiterature(id_rpd=rpd3.id_rpd, source_type=UCH, title="Курс общей физики. Т. 1-3 (Савельев И.В., Лань, 2020)"),
+            RpdLiterature(id_rpd=rpd3.id_rpd, source_type=UCH, title="Курс физики (Трофимова Т.И., Академия, 2019)"),
+            RpdLiterature(id_rpd=rpd3.id_rpd, source_type=UCH, title="Задачи по общей физике (Иродов И.Е., Бином, 2021)"),
         ])
         # Информатика — по примеру из ПНИПУ
         db.add_all([
-            # Основная (печатная)
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Основная",
-                          title="Информатика. Базовый курс: учебное пособие для втузов. 3-е изд.",
-                          authors="Симонович С.В. и др.", year=2020, publisher="Санкт-Петербург: Питер",
+            # Печатная литература (с copies_count)
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="Информатика. Базовый курс: учебное пособие для втузов. 3-е изд. (Симонович С.В. и др., Питер, 2020)",
                           copies_count=30),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Основная",
-                          title="Информатика: учебник для вузов. 4-е изд., стер.",
-                          authors="Острейковский В.А.", year=2007, publisher="Москва: Высшая школа",
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="Информатика: учебник для вузов. 4-е изд., стер. (Острейковский В.А., Высшая школа, 2007)",
                           copies_count=24),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Основная",
-                          title="C/C++. Программирование на языке высокого уровня: учебник для вузов",
-                          authors="Павловская Т.А.", year=2020, publisher="Санкт-Петербург: Питер",
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="C/C++. Программирование на языке высокого уровня: учебник для вузов (Павловская Т.А., Питер, 2020)",
                           copies_count=50),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Основная",
-                          title="Информатика: учебное пособие",
-                          authors="Щапова И.Н., Щапов В.А.", year=2016, publisher="Пермь: ПНИПУ",
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=METH,
+                          title="Информатика: учебное пособие (Щапова И.Н., Щапов В.А., Пермь: ПНИПУ, 2016)",
                           copies_count=42),
-            # Дополнительная (печатная + электронная)
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Дополнительная",
-                          title="Компьютерные сети. Принципы, технологии, протоколы: учебное пособие для вузов. 4-е изд.",
-                          authors="Олифер В.Г., Олифер Н.А.", year=2011, publisher="Санкт-Петербург: Питер",
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="Компьютерные сети. Принципы, технологии, протоколы: учебное пособие для вузов. 4-е изд. (Олифер В.Г., Олифер Н.А., Питер, 2011)",
                           copies_count=46),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Дополнительная",
-                          title="C/C++. Структурное и объектно-ориентированное программирование: практикум",
-                          authors="Павловская Т.А., Щупак Ю.А.", year=2011, publisher="Санкт-Петербург: Питер",
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="C/C++. Структурное и объектно-ориентированное программирование: практикум (Павловская Т.А., Щупак Ю.А., Питер, 2011)",
                           copies_count=14),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Дополнительная",
-                          title="Язык программирования C [Электронный ресурс]",
-                          authors="Керниган Б.В.", year=2017, publisher="IPRsmart",
-                          url="http://www.iprbookshop.ru/73736.html"),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Дополнительная",
-                          title="Язык программирования C++ для профессионалов [Электронный ресурс]",
-                          authors="Страуструп Б.", year=2017, publisher="IPRsmart",
-                          url="http://www.iprbookshop.ru/73737.html"),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Дополнительная",
-                          title="Информатика. Базовый курс [Электронный ресурс]: учебное пособие",
-                          authors="Денисова Э.В.", year=2017, publisher="IPRsmart",
-                          url="http://www.iprbookshop.ru/66475.html"),
+            # Электронные (url + availability)
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="Язык программирования C (Керниган Б.В., 2017)",
+                          url="http://www.iprbookshop.ru/73736.html",
+                          availability=["IPRsmart"]),
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="Язык программирования C++ для профессионалов (Страуструп Б., 2017)",
+                          url="http://www.iprbookshop.ru/73737.html",
+                          availability=["IPRsmart"]),
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
+                          title="Информатика. Базовый курс: учебное пособие (Денисова Э.В., 2017)",
+                          url="http://www.iprbookshop.ru/66475.html",
+                          availability=["IPRsmart"]),
         ])
 
         # ── Software for rpd4 (Информатика) ──
+        # license_type — Вид ПО, name — Наименование ПО.
         db.add_all([
-            RpdSoftware(id_rpd=rpd4.id_rpd, name="Debian", license_type="GNU GPL", purpose="Операционные системы"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, name="Windows 10", license_type="Azure Dev Tools for Teaching", purpose="Операционные системы"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, name="LibreOffice 6.2.4", license_type="OpenSource, бесплатен", purpose="Офисные приложения"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, name="Protege", license_type="Свободное ПО", purpose="Системы управления проектами, исследованиями, проектированием, моделированием"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, name="Microsoft Visual Studio", license_type="Azure Dev Tools for Teaching", purpose="Среды разработки, тестирования и отладки"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, name="MS Visual Studio 2019 Community", license_type="Free", purpose="Среды разработки, тестирования и отладки"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, name="PostgreSQL", license_type="PostgreSQL License", purpose="Среды разработки, тестирования и отладки"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Операционные системы", name="Debian (GNU GPL)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Операционные системы", name="Windows 10 (Azure Dev Tools for Teaching)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Офисные приложения", name="LibreOffice 6.2.4 (OpenSource)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Среды разработки", name="Microsoft Visual Studio (Azure Dev Tools for Teaching)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Среды разработки", name="MS Visual Studio 2019 Community (Free)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="СУБД", name="PostgreSQL (PostgreSQL License)"),
         ])
 
         # ── Material-Tech for rpd4 ──
@@ -475,15 +473,16 @@ async def seed_data():
         ])
 
         # ── Базы данных и ИСС для rpd4 (стандартный перечень ПНИПУ) ──
+        # db_type — Вид БД, name — Наименование БД.
         db.add_all([
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="База данных Elsevier «Freedom Collection»", url="https://www.elsevier.com/"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="База данных Springer Nature e-books", url="http://link.springer.com/"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="База данных научной электронной библиотеки (eLIBRARY.RU)", url="https://elibrary.ru/"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="Научная библиотека Пермского национального исследовательского политехнического университета", url="https://elib.pstu.ru/"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="Электронно-библиотечная система «Лань»", url="https://e.lanbook.com/"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="Электронно-библиотечная система IPRsmart", url="http://www.iprbookshop.ru/"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="Информационные ресурсы Сети КонсультантПлюс", url="локальная сеть"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, name="Информационно-справочная система нормативно-технической документации «Техэксперт: нормы, правила, стандарты и законодательства России»", url="http://325290.inkip.ru/docs"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Полнотекстовая", name="Elsevier «Freedom Collection»"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Полнотекстовая", name="Springer Nature e-books"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Реферативная", name="Научная электронная библиотека (eLIBRARY.RU)"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="ЭБС", name="Научная библиотека ПНИПУ"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="ЭБС", name="ЭБС «Лань»"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="ЭБС", name="ЭБС IPRsmart"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Информационно-справочная", name="КонсультантПлюс"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Информационно-справочная", name="Техэксперт: нормы, правила, стандарты и законодательства России"),
         ])
 
         # ── Learning outcomes for rpd4 (ОПК-2, ОПК-7) ──

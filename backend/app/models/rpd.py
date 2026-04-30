@@ -2,6 +2,7 @@
 topics, literature, software, material-tech, databases, learning outcomes,
 developers, uploaded documents, LLM logs, approval stages)."""
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, SmallInteger
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -96,13 +97,23 @@ class RpdLiterature(Base):
     __tablename__ = "rpd_literature"
     id_literature = Column(Integer, primary_key=True, autoincrement=True)
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
-    source_type = Column(String(30), nullable=False)
+    # Вид литературы — одно из значений из constants на фронте: «Учебные и научные
+    # издания», «Периодические издания», «Нормативно-технические издания»,
+    # «Методические указания…», «Учебно-методическое обеспечение СРС».
+    source_type = Column(String(120), nullable=False)
     title = Column(Text, nullable=False)
+    # Печатная — экземпляры; электронная — URL + список ЭБС, в которых она доступна
+    # (JSON-массив строк).
+    copies_count = Column(Integer)
+    url = Column(String(500))
+    # ЭБС, в которых доступна электронная литература (multi-select на фронте).
+    # JSONB-массив строк; для печатной — пусто/None.
+    availability = Column(JSONB)
+    # Старые поля — оставлены для обратной совместимости с уже введёнными РПД,
+    # но в UI больше не показываются и в новых РПД не заполняются.
     authors = Column(String(500))
     year = Column(Integer)
     publisher = Column(String(200))
-    url = Column(String(500))
-    copies_count = Column(Integer)
     rpd = relationship("Rpd", back_populates="literature")
 
 
@@ -111,6 +122,9 @@ class RpdSoftware(Base):
     id_software = Column(Integer, primary_key=True, autoincrement=True)
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
     name = Column(String(300), nullable=False)
+    # Вид ПО — например «Лицензионное» / «Свободно распространяемое» / «Офисное» / …
+    # Колонка `license_type` исторически тут уже была — переиспользуем её под
+    # «Вид ПО», смысл совпадает. `purpose` оставлен как legacy-поле.
     license_type = Column(String(100))
     purpose = Column(String(200))
     rpd = relationship("Rpd", back_populates="software")
@@ -130,7 +144,11 @@ class RpdDatabase(Base):
     __tablename__ = "rpd_databases"
     id_database = Column(Integer, primary_key=True, autoincrement=True)
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    # Вид БД — например «Реферативная», «Полнотекстовая», «Информационно-справочная».
+    db_type = Column(String(120))
     name = Column(Text, nullable=False)
+    # url оставлен legacy-полем: в новых РПД не используется (по требованию убрать
+    # ввод URL из формы 6.4). Старые данные сохраняем.
     url = Column(String(500))
     rpd = relationship("Rpd", back_populates="databases")
 

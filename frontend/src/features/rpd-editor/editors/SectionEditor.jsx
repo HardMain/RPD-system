@@ -19,7 +19,7 @@ export function SectionEditor() {
 
   return <div>
     <PlanSummary bupDisciplines={rpd.bup_disciplines} sections={rpd.sections} />
-    {rpd.sections?.length > 0 ? <table style={{ width: "100%", borderCollapse: "collapse" }}>
+    {rpd.sections?.length > 0 ? <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead><tr>{["#", "Раздел", "Лек", "Пр", "Лаб", "СРС", "Содержание", isEdit && canEdit ? "" : null].filter(Boolean).map((h, i) => <th key={i} style={th}>{h}</th>)}</tr></thead>
       <tbody>{rpd.sections.map(s => <tr key={s.id_section}>
         <td style={{ ...td, textAlign: "center" }}>{s.section_number}</td>
@@ -31,7 +31,7 @@ export function SectionEditor() {
         <td style={{ ...td, fontSize: 11 }}>{s.brief_content || ""}</td>
         {isEdit && canEdit && <td style={{ ...td, textAlign: "center" }}><button onClick={() => delSec(s.id_section)} style={{ border: "none", background: "none", cursor: "pointer" }}><TrashIcon /></button></td>}
       </tr>)}</tbody>
-    </table> : <div style={{ padding: 16, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Разделы не добавлены</div>}
+    </table></div> : <div style={{ padding: 16, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>Разделы не добавлены</div>}
     {isEdit && canEdit && <div style={{ marginTop: 12 }}>
       {!showAdd ? <Btn small onClick={() => setShowAdd(true)}><PlusIcon /> Добавить раздел</Btn>
         : <div style={{ padding: 16, border: "1px solid " + T.accent, borderRadius: 8, background: T.accentLight + "33" }}>
