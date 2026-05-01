@@ -7,6 +7,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from sqlalchemy import text
+
 from app.core.database import engine, Base
 from app.routers import (
     auth, rpd, llm, notifications, competencies, upload, export,
@@ -15,10 +17,64 @@ from app.routers import (
 from app.seed import seed_data
 
 
+async def _apply_schema_patches() -> None:
+    """Лёгкий ad-hoc «миграционник» для новых колонок без alembic.
+    Идемпотентно добавляет недостающие столбцы — нужно для уже существующих БД,
+    где create_all() новые колонки не подтянет."""
+    async with engine.begin() as conn:
+        # Прошлые ревизии оставили эти артефакты — выкатываем чистый hard-delete.
+        await conn.execute(text("ALTER TABLE rpd DROP COLUMN IF EXISTS deleted_bup_names"))
+        await conn.execute(text("ALTER TABLE bups DROP COLUMN IF EXISTS deleted_at"))
+
+        # rpd_bup_disciplines: id_bup_discipline теперь nullable, добавлены snapshot-поля.
+        await conn.execute(text(
+            "ALTER TABLE rpd_bup_disciplines ALTER COLUMN id_bup_discipline DROP NOT NULL"
+        ))
+        for col, ddl in [
+            ("bup_name", "VARCHAR(300)"),
+            ("bup_year", "INTEGER"),
+            ("bup_profile", "VARCHAR(200)"),
+            ("direction_code", "VARCHAR(20)"),
+            ("direction_name", "VARCHAR(200)"),
+            ("direction_profile", "VARCHAR(200)"),
+            ("fgos_file_id", "INTEGER"),
+            ("fgos_file_name", "VARCHAR(300)"),
+            ("code", "VARCHAR(30)"),
+            ("semester", "VARCHAR(30)"),
+            ("control_form", "VARCHAR(255)"),
+            ("total_hours", "INTEGER"),
+            ("lecture_hours", "INTEGER"),
+            ("lab_hours", "INTEGER"),
+            ("practice_hours", "INTEGER"),
+            ("ksr_hours", "INTEGER"),
+            ("self_study_hours", "INTEGER"),
+            ("zet", "INTEGER"),
+            ("discipline_name", "VARCHAR(200)"),
+        ]:
+            await conn.execute(text(
+                f"ALTER TABLE rpd_bup_disciplines ADD COLUMN IF NOT EXISTS {col} {ddl}"
+            ))
+
+        # rpd_learning_outcomes: id_indicator nullable + snapshot.
+        await conn.execute(text(
+            "ALTER TABLE rpd_learning_outcomes ALTER COLUMN id_indicator DROP NOT NULL"
+        ))
+        for col, ddl in [
+            ("indicator_code", "VARCHAR(20)"),
+            ("indicator_description", "TEXT"),
+            ("competency_code", "VARCHAR(20)"),
+            ("competency_name", "TEXT"),
+        ]:
+            await conn.execute(text(
+                f"ALTER TABLE rpd_learning_outcomes ADD COLUMN IF NOT EXISTS {col} {ddl}"
+            ))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    await _apply_schema_patches()
     await seed_data()
     yield
 

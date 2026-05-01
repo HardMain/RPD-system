@@ -8,7 +8,7 @@ import { Spinner } from "../../components/Spinner.jsx";
 import { Badge } from "../../components/Badge.jsx";
 import { DownloadIcon } from "../../components/icons.jsx";
 
-import { SEC_KEYS, SIDEBAR_KEYS } from "./constants.js";
+import { SEC_KEYS, SIDEBAR_KEYS, PARENT_SECTION } from "./constants.js";
 import { PDF_PAGE_MAP_FALLBACK, scanPdfForSections } from "./pdfMap.js";
 import { RpdEditorProvider } from "./RpdEditorContext.jsx";
 import { Sidebar } from "./Sidebar.jsx";
@@ -115,7 +115,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (!silent) setLoading(true);
     try {
       const res = await api.getRpd(rpdId); const r = res.data; setRpd(r);
-      setEditTexts({ goals: r.goals_text || "", tasks: r.tasks_text || "", objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "", comment: r.comment || "" });
+      setEditTexts({ goals: r.goals_text || "", tasks: r.tasks_text || "", objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
       // Первый load при монтировании компонента не помечает PDF грязным
       // (PDF и так ещё не загружен). Все последующие load() — это перечитывание
       // после изменений, поэтому PDF на сервере мог обновиться.
@@ -539,18 +539,43 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       // Подсветку самой PDF-страницы (flash-рамку) намеренно не запускаем — нужна только в edit-режиме.
       return;
     }
-    const el = refs[key]?.current; const c = scrollRef.current; if (!el || !c) return;
-    // Подсветка вкладки слева — мгновенно. Flash-рамка вокруг раздела — только после прибытия скролла.
-    setActiveSecEdit(key);
-    preferredActiveSecRef.current = key;
-    const targetTop = Math.max(0, c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12);
-    if (Math.abs(c.scrollTop - targetTop) < 6) {
-      pendingFlashRef.current = null;
-      flashElement(el);
-    } else {
-      pendingFlashRef.current = { key, top: targetTop, deadline: Date.now() + 1500 };
-      c.scrollTo({ top: targetTop, behavior: "smooth" });
+    // Edit-режим. Если родительский раздел свёрнут — целевой узел не отрисован,
+    // refs[key].current === null. Сперва раскрываем родителя (синхронно вызовем
+    // setCollapsedSet), затем дожидаемся коммита (rAF×2) и выполняем тот же
+    // скролл-блок, что и обычно. Без рекурсивного вызова goTo — иначе stale
+    // closure: rAF-колбэк замыкается на старое `goTo` со старым `collapsedSet`,
+    // и условие «родитель свёрнут» всегда снова true → бесконечный rAF и зависшая
+    // подсветка.
+    const performScroll = () => {
+      const el = refs[key]?.current; const c = scrollRef.current;
+      if (!el || !c) return;
+      setActiveSecEdit(key);
+      preferredActiveSecRef.current = key;
+      const targetTop = Math.max(0, c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12);
+      if (Math.abs(c.scrollTop - targetTop) < 6) {
+        pendingFlashRef.current = null;
+        flashElement(el);
+      } else {
+        pendingFlashRef.current = { key, top: targetTop, deadline: Date.now() + 1500 };
+        c.scrollTo({ top: targetTop, behavior: "smooth" });
+      }
+    };
+    const parent = PARENT_SECTION[key];
+    if (parent && collapsedSet.has(parent)) {
+      setCollapsedSet(prev => {
+        if (!prev.has(parent)) return prev;
+        const next = new Set(prev);
+        next.delete(parent);
+        return next;
+      });
+      // Подсветку перебрасываем сразу — иначе между раскрытием родителя и
+      // фактическим скроллом sidebar мигнёт «нормальной» (без активной) строкой.
+      setActiveSecEdit(key);
+      preferredActiveSecRef.current = key;
+      requestAnimationFrame(() => requestAnimationFrame(performScroll));
+      return;
     }
+    performScroll();
   }
 
   function startResize(e) {
@@ -594,7 +619,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     sidebarLockRef.current = true;
     let ok = false;
     try {
-      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations, comment: editTexts.comment });
+      // comment не пишем — он живёт в модалке «Свойства РПД» со своей кнопкой
+      // «Сохранить». Эта кнопка пишет только текст печатной формы.
+      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations });
       // Тихая перезагрузка — форма не размонтируется в спиннер, скролл и состояние
       // дочерних редакторов сохраняются. PDF в парной view-вкладке обновится через
       // onAfterSave (там reloadKey, и мерцание PDF — это нормально).
@@ -663,6 +690,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           activeSec={activeSec}
           hasLabTopics={hasLabTopics}
           hasPracticeTopics={hasPracticeTopics}
+          isCollapsed={isCollapsed}
           onToggleMode={onToggleMode}
           onOpenPair={onOpenPair}
           onGoTo={goTo}
@@ -942,11 +970,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       {showMeta && <RpdMetaModal
         rpd={rpd}
         rpdId={rpdId}
-        isEdit={isEdit}
         canEdit={canEdit}
-        editTexts={editTexts}
-        setEditTexts={setEditTexts}
-        reload={load}
+        reload={() => load(true)}
         onClose={() => setShowMeta(false)}
       />}
     </div>

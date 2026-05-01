@@ -83,12 +83,28 @@ class RpdTopic(Base):
 
 
 class RpdLearningOutcome(Base):
+    """Строка раздела 2 «Планируемые результаты обучения».
+
+    `id_indicator` — FK на текущий индикатор компетенции. После hard-delete БУПа
+    индикатор может уехать вместе с осиротевшей компетенцией (если компетенция
+    использовалась только этим планом). Поэтому держим snapshot:
+    `indicator_code`, `indicator_description`, `competency_code`, `competency_name`.
+    Заполняется при создании; при чтении приоритет у snapshot, fallback — на FK.
+    """
     __tablename__ = "rpd_learning_outcomes"
     id_outcome = Column(Integer, primary_key=True, autoincrement=True)
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
-    id_indicator = Column(Integer, ForeignKey("competency_indicators.id_indicator"), nullable=False)
+    id_indicator = Column(
+        Integer, ForeignKey("competency_indicators.id_indicator", ondelete="SET NULL"),
+        nullable=True,
+    )
     outcome_text = Column(Text)
     assessment_tool = Column(String(200))
+    # Snapshot
+    indicator_code = Column(String(20))
+    indicator_description = Column(Text)
+    competency_code = Column(String(20))
+    competency_name = Column(Text)
     rpd = relationship("Rpd", back_populates="learning_outcomes")
     indicator = relationship("CompetencyIndicator")
 

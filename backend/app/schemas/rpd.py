@@ -229,7 +229,10 @@ class LearningOutcomeCreate(BaseModel):
 
 class LearningOutcomeOut(BaseModel):
     id_outcome: int
-    id_indicator: int
+    # `id_indicator` может быть None после hard-delete БУПа: компетенция и
+    # индикатор уехали, но snapshot (`indicator_code`, `competency_code`)
+    # сохранён в самой записи outcome.
+    id_indicator: int | None = None
     indicator_code: str | None = None
     competency_code: str | None = None
     outcome_text: str | None = None
@@ -310,9 +313,14 @@ class RpdListOut(BaseModel):
 
 
 class BupDisciplineRefOut(BaseModel):
-    """Краткие данные БУП-дисциплины, прикреплённой к РПД (для шапки часов)."""
-    id_bup_discipline: int
-    id_bup: int
+    """Краткие данные БУП-дисциплины, прикреплённой к РПД (для шапки часов).
+
+    `id_bup_discipline` / `id_bup` могут быть None, если БУП был hard-удалён —
+    данные тогда отдаются из snapshot самой привязки. `bup_deleted=true` в этом
+    случае.
+    """
+    id_bup_discipline: int | None = None
+    id_bup: int | None = None
     bup_name: str
     code: str | None = None
     semester: str | None = None
@@ -329,6 +337,9 @@ class BupDisciplineRefOut(BaseModel):
     direction_profile: str | None = None
     fgos_file_id: int | None = None
     fgos_file_name: str | None = None
+    # БУП был soft-удалён администратором: показываем bup-дисциплину как обычно,
+    # но рядом с именем плана можно подсказать пользователю «БУП удалён из БД».
+    bup_deleted: bool = False
 
 
 class RpdDetailOut(BaseModel):

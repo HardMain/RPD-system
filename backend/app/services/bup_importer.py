@@ -199,20 +199,26 @@ async def import_parsed_bup(
 ) -> Bup:
     """Импортировать ParsedBup в БД и вернуть созданный/обновлённый Bup.
 
-    Идемпотентность: ищем существующий БУП по (name, year, id_direction). Если
-    найден — пересоздаём его дисциплины (cascade удаляет старые links).
+    Идемпотентность: ищем существующий БУП по (name, year, id_direction).
+    Если найден — обновляем его дисциплины *по индексу* (Б1.Б.01 и т.п.):
+    существующие BupDiscipline остаются с теми же id (RpdBupDiscipline-ссылки
+    у уже созданных РПД не теряются), новые добавляются, лишние удаляются.
     """
     direction = await _get_or_create_direction(
         db, parsed.direction_code, parsed.direction_name, parsed.profile,
     )
     name = name_override or _build_bup_name(parsed, year)
 
-    # Идемпотентный поиск
+    # Идемпотентный поиск с eager-load существующих BupDiscipline (и их компетенций),
+    # чтобы дальше не упасть на async lazy-load при обращении к bup.disciplines.
     res = await db.execute(
         select(Bup)
         .where(Bup.id_direction == direction.id_direction)
         .where(Bup.name == name)
         .where(Bup.year == year if year is not None else Bup.year.is_(None))
+        .options(
+            selectinload(Bup.disciplines).selectinload(BupDiscipline.competencies),
+        )
     )
     bup = res.scalars().first()
     if bup is None:
@@ -224,41 +230,63 @@ async def import_parsed_bup(
         )
         db.add(bup)
         await db.flush()
+        existing_by_code: dict[str, BupDiscipline] = {}
     else:
-        # Сбросим существующие BupDiscipline (cascade подчистит competency-link).
-        for bd in list(bup.disciplines):
-            await db.delete(bd)
-        await db.flush()
         if id_source_file is not None:
             bup.id_source_file = id_source_file
+        existing_by_code = {(bd.code or ""): bd for bd in bup.disciplines}
 
     fallback_dept = await _get_or_create_department(
         db, parsed.department_name, parsed.faculty,
     )
 
+    seen_codes: set[str] = set()
     for pd in parsed.disciplines:
         disc = await _get_or_create_discipline(db, pd.name)
         dept = (
             await _get_or_create_department(db, pd.department, parsed.faculty)
             if pd.department else fallback_dept
         )
-        bd = BupDiscipline(
-            id_bup=bup.id_bup,
-            id_discipline=disc.id_discipline,
-            id_department=dept.id_department if dept else None,
-            code=pd.code,
-            semester=pd.semester,
-            control_form=pd.control_form,
-            total_hours=pd.total_hours,
-            lecture_hours=pd.lecture_hours,
-            lab_hours=pd.lab_hours,
-            practice_hours=pd.practice_hours,
-            ksr_hours=pd.ksr_hours,
-            self_study_hours=pd.self_study_hours,
-            zet=pd.zet,
-        )
-        db.add(bd)
-        await db.flush()
+        existing = existing_by_code.get(pd.code or "")
+        if existing is not None:
+            # Обновляем поля существующей строки — id_bup_discipline сохраняется,
+            # привязки RpdBupDiscipline у уже созданных РПД остаются валидны.
+            seen_codes.add(pd.code or "")
+            existing.id_discipline = disc.id_discipline
+            existing.id_department = dept.id_department if dept else None
+            existing.semester = pd.semester
+            existing.control_form = pd.control_form
+            existing.total_hours = pd.total_hours
+            existing.lecture_hours = pd.lecture_hours
+            existing.lab_hours = pd.lab_hours
+            existing.practice_hours = pd.practice_hours
+            existing.ksr_hours = pd.ksr_hours
+            existing.self_study_hours = pd.self_study_hours
+            existing.zet = pd.zet
+            # Перезагружаем компетенции: проще снести и собрать заново — это
+            # дочерняя коллекция, на неё никто извне не ссылается.
+            for link in list(existing.competencies):
+                await db.delete(link)
+            await db.flush()
+            bd = existing
+        else:
+            bd = BupDiscipline(
+                id_bup=bup.id_bup,
+                id_discipline=disc.id_discipline,
+                id_department=dept.id_department if dept else None,
+                code=pd.code,
+                semester=pd.semester,
+                control_form=pd.control_form,
+                total_hours=pd.total_hours,
+                lecture_hours=pd.lecture_hours,
+                lab_hours=pd.lab_hours,
+                practice_hours=pd.practice_hours,
+                ksr_hours=pd.ksr_hours,
+                self_study_hours=pd.self_study_hours,
+                zet=pd.zet,
+            )
+            db.add(bd)
+            await db.flush()
 
         for raw_code in pd.competency_codes:
             code = _normalize_competency_code(raw_code)
@@ -269,6 +297,15 @@ async def import_parsed_bup(
                 id_bup_discipline=bd.id_bup_discipline,
                 id_competency=comp.id_competency,
             ))
+
+    # Удаляем дисциплины, которых нет в новой версии xls (обычно ничего —
+    # реимпорт того же файла идентичен). Каскад снесёт competency-link и любой
+    # «сирота» RpdBupDiscipline у теоретически устаревших позиций.
+    if existing_by_code:
+        for code, bd in existing_by_code.items():
+            if code not in seen_codes:
+                await db.delete(bd)
+        await db.flush()
 
     await db.flush()
     return bup

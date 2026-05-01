@@ -9,17 +9,57 @@ import { TrashIcon } from "../../components/icons.jsx";
 /**
  * Модальное окно «Свойства РПД» — собирает в одно место всё, что не относится
  * к содержимому печатной формы РПД: основная информация, привязанные дисциплины
- * БУПа (с файлом ФГОС), комментарий разработчика и список разработчиков.
+ * БУПа (с ФГОС), комментарий разработчика и список разработчиков.
  *
- * Дисциплины БУПа задаются ТОЛЬКО при создании РПД (как в АРМ ПНИПУ — там макет
- * РПД создаётся начальником ОУП, и поле «Дисциплина» автоматически заполняется
- * и недоступно для редактирования). Поэтому здесь они отображаются read-only.
+ * Состояние всегда «редактируемое» (если статус РПД позволяет) — в отличие от
+ * самой печатной формы, у этой модалки нет смысла иметь отдельный режим
+ * «просмотра»: тут нет PDF, и переключатель Сайдбара edit/view сюда не должен
+ * протекать. Сохранение комментария — собственная кнопка снизу модалки;
+ * нижняя «Сохранить» в редакторе пишет только текст печатной формы.
+ *
+ * Дисциплины БУПа задаются ТОЛЬКО при создании РПД (как в АРМ) — здесь read-only.
  */
-export function RpdMetaModal({ rpd, rpdId, isEdit, canEdit, editTexts, setEditTexts, reload, onClose }) {
+export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
   const totalZet = (rpd.bup_disciplines || []).reduce((s, b) => s + (b.zet || 0), 0);
   const totalHours = (rpd.bup_disciplines || []).reduce((s, b) => s + (b.total_hours || 0), 0);
   const rpdName = `${rpd.academic_year} ${rpd.discipline_name}` + (totalHours ? ` (${totalHours} ч)` : "");
-  const editAllowed = isEdit && canEdit;
+
+  // Локальный буфер комментария — отделяем от editTexts родительского редактора,
+  // чтобы кнопка «Сохранить» в этой модалке писала только comment, а нижняя
+  // «Сохранить» в редакторе — только текст самой печатной формы.
+  const [comment, setComment] = useState(rpd.comment || "");
+  const initialCommentRef = useRef(rpd.comment || "");
+  const [saving, setSaving] = useState(false);
+  const [savedTick, setSavedTick] = useState(false);
+
+  // Если родитель перечитал РПД (например, после добавления разработчика),
+  // приходит новая версия rpd — синхронизируем буфер, если пользователь
+  // не успел внести правок (initial == current).
+  useEffect(() => {
+    const fresh = rpd.comment || "";
+    if (comment === initialCommentRef.current) {
+      setComment(fresh);
+    }
+    initialCommentRef.current = fresh;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rpd.comment]);
+
+  const dirty = comment !== (rpd.comment || "");
+
+  async function handleSave() {
+    if (!canEdit) return;
+    setSaving(true);
+    try {
+      await api.updateRpd(rpdId, { comment });
+      await reload();
+      setSavedTick(true);
+      setTimeout(() => setSavedTick(false), 1500);
+    } catch {
+      alert("Не удалось сохранить");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return <Modal width={760} onClose={onClose}>
     <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "center", gap: 12 }}>
@@ -52,24 +92,29 @@ export function RpdMetaModal({ rpd, rpdId, isEdit, canEdit, editTexts, setEditTe
       </Section>
 
       <Section title="Комментарий к РПД">
-        {editAllowed ? (
+        {canEdit ? (
           <textarea
-            value={editTexts.comment || ""}
-            onChange={e => setEditTexts(p => ({ ...p, comment: e.target.value }))}
+            value={comment}
+            onChange={e => setComment(e.target.value)}
             placeholder="Произвольная заметка для разработчика. В печатную форму не попадает."
             style={{ width: "100%", minHeight: 80, padding: "8px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, resize: "vertical", boxSizing: "border-box", outline: "none" }}
           />
         ) : <Ro placeholder="—">{rpd.comment}</Ro>}
-        {editAllowed && <Hint>Сохраняется по кнопке «Сохранить» в редакторе.</Hint>}
       </Section>
 
       <Section title="Разработчики">
-        <DeveloperEditor rpdId={rpdId} developers={rpd.developers || []} canEdit={editAllowed} reload={reload} />
+        <DeveloperEditor rpdId={rpdId} developers={rpd.developers || []} canEdit={canEdit} reload={reload} />
       </Section>
     </div>
 
-    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 20px", borderTop: "1px solid " + T.borderLight, position: "sticky", bottom: 0, background: T.surface }}>
+    <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: "12px 20px", borderTop: "1px solid " + T.borderLight, position: "sticky", bottom: 0, background: T.surface }}>
+      {savedTick && <span style={{ fontSize: 12, color: T.green }}>✓ Сохранено</span>}
       <Btn onClick={onClose}>Закрыть</Btn>
+      {canEdit && (
+        <Btn primary onClick={handleSave} disabled={saving || !dirty}>
+          {saving ? "Сохраняю…" : "Сохранить"}
+        </Btn>
+      )}
     </div>
   </Modal>;
 }
@@ -131,7 +176,14 @@ function BupDisciplinesTable({ bupDisciplines, disciplineName }) {
       <tbody>
         {bupDisciplines.map(b => (
           <tr key={b.id_bup_discipline}>
-            <td style={cell}>{b.bup_name}</td>
+            <td style={cell}>
+              {b.bup_name}
+              {b.bup_deleted && (
+                <div style={{ fontSize: 10, color: T.textLight, fontStyle: "italic", marginTop: 2 }}>
+                  БУП удалён из БД
+                </div>
+              )}
+            </td>
             <td style={cell}><b>{b.code || "—"}</b></td>
             <td style={cell}>{disciplineName}</td>
             <td style={cell}>{b.direction_code ? `${b.direction_code} ${b.direction_name || ""}` : (b.direction_name || "—")}</td>

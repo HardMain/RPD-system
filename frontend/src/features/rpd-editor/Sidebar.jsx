@@ -1,11 +1,12 @@
 import { T, F } from "../../theme.js";
 import { Badge } from "../../components/Badge.jsx";
-import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS } from "./constants.js";
+import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from "./constants.js";
 
 export function Sidebar({
   width, isEdit, hasPair, canEdit, isHead, status,
   validationErrors, activeSec,
   hasLabTopics, hasPracticeTopics,
+  isCollapsed,
   onToggleMode, onOpenPair, onGoTo, onOpenMeta,
 }) {
   const viewTakenByPair = hasPair && isEdit;     // мы edit, значит view — это сосед
@@ -85,20 +86,31 @@ export function Sidebar({
       if (!isEdit && k === "4.2" && !hasPracticeTopics) return null;
       const hasErr = validationErrors.length > 0 && validationErrors.some(e => e.secKey === k);
       const isSub = SUB_KEYS.has(k);
+      // В режиме редактирования отдельные разделы можно сворачивать (как в Word).
+      // Если родительский блок этого пункта свёрнут — подсвечиваем строку
+      // мягким приглушённым фоном и иконкой, чтобы было видно, что чтобы
+      // увидеть содержимое надо сначала раскрыть. Клик по такому пункту
+      // сам разворачивает родителя (этой логикой занимается onGoTo сверху).
+      const parentKey = PARENT_SECTION[k];
+      const parentCollapsed = isEdit && parentKey && isCollapsed && isCollapsed(parentKey);
+      const isActive = activeSec === k;
+      const baseBg = isActive ? T.accentLight : (parentCollapsed ? T.bg : "transparent");
+      const baseColor = hasErr ? T.red : isActive ? T.accent : parentCollapsed ? T.textMuted : isSub ? T.textMuted : T.text;
       return <button key={k} onClick={() => onGoTo(k)} style={{
         display: "flex", width: "100%",
         padding: isSub ? "6px 12px 6px 28px" : "8px 12px",
         border: "none",
-        borderLeft: hasErr ? "3px solid " + T.red : activeSec === k ? "3px solid " + T.accent : "3px solid transparent",
-        background: activeSec === k ? T.accentLight : "transparent",
+        borderLeft: hasErr ? "3px solid " + T.red : isActive ? "3px solid " + T.accent : "3px solid transparent",
+        background: baseBg,
         cursor: "pointer", fontSize: isSub ? 10 : 11, fontFamily: F,
         fontStyle: isSub ? "italic" : "normal",
-        fontWeight: activeSec === k ? 700 : 400,
-        color: hasErr ? T.red : activeSec === k ? T.accent : isSub ? T.textMuted : T.text,
+        fontWeight: isActive ? 700 : 400,
+        color: baseColor,
         alignItems: "center", gap: 6, boxSizing: "border-box", textAlign: "left",
       }}>
         {isSub && <span style={{ color: T.textLight, flexShrink: 0 }}>›</span>}
         <span style={{ flex: 1, textAlign: "left", lineHeight: 1.3, wordBreak: "break-word" }}>{SEC_LABELS[k]}</span>
+        {parentCollapsed && !hasErr && <span title="Раздел свёрнут — кликните, чтобы раскрыть" style={{ fontSize: 9, color: T.textLight, flexShrink: 0 }}>▸</span>}
         {hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
       </button>;
     })}</div>

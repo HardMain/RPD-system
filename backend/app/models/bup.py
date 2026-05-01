@@ -60,10 +60,12 @@ class BupDiscipline(Base):
         back_populates="bup_discipline",
         cascade="all, delete-orphan",
     )
+    # БЕЗ cascade: при hard-delete БУПа админ-эндпоинт сам нуллит
+    # `RpdBupDiscipline.id_bup_discipline` (предварительно записав снапшот),
+    # чтобы у уже созданных РПД сохранилась информация о плане.
     rpd_links = relationship(
         "RpdBupDiscipline",
         back_populates="bup_discipline",
-        cascade="all, delete-orphan",
     )
 
 
@@ -82,10 +84,45 @@ class BupDisciplineCompetency(Base):
 
 
 class RpdBupDiscipline(Base):
+    """Связка РПД ↔ дисциплина БУПа со снапшотом всех значимых полей плана.
+
+    Зачем снапшот: админ может удалить БУП. После hard-delete `id_bup_discipline`
+    зануляется (и сам ряд BupDiscipline уходит), но печатная форма РПД, часы,
+    направление и т.п. должны продолжать рендериться. Snapshot заполняется
+    в момент привязки/обновления; при чтении приоритет всегда у snapshot
+    (если он не пустой), иначе — резолв через `bup_discipline`.
+    """
     __tablename__ = "rpd_bup_disciplines"
     id_rpd_bup_discipline = Column(Integer, primary_key=True, autoincrement=True)
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
-    id_bup_discipline = Column(Integer, ForeignKey("bup_disciplines.id_bup_discipline"), nullable=False)
+    id_bup_discipline = Column(
+        Integer, ForeignKey("bup_disciplines.id_bup_discipline", ondelete="SET NULL"),
+        nullable=True,
+    )
+
+    # Snapshot БУПа и направления
+    bup_name = Column(String(300))
+    bup_year = Column(Integer)
+    bup_profile = Column(String(200))
+    direction_code = Column(String(20))
+    direction_name = Column(String(200))
+    direction_profile = Column(String(200))
+    fgos_file_id = Column(Integer)
+    fgos_file_name = Column(String(300))
+    # Snapshot самой BupDiscipline
+    code = Column(String(30))
+    semester = Column(String(30))
+    control_form = Column(String(255))
+    total_hours = Column(Integer)
+    lecture_hours = Column(Integer)
+    lab_hours = Column(Integer)
+    practice_hours = Column(Integer)
+    ksr_hours = Column(Integer)
+    self_study_hours = Column(Integer)
+    zet = Column(Integer)
+    # Имя логической дисциплины — на случай, если её тоже удалят (например когда
+    # она использовалась только этим планом).
+    discipline_name = Column(String(200))
 
     __table_args__ = (
         UniqueConstraint("id_rpd", "id_bup_discipline", name="uq_rpd_bup_disc"),

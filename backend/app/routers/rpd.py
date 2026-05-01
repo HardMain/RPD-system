@@ -32,26 +32,29 @@ router = APIRouter(prefix="/api/rpd", tags=["rpd"])
 
 # ── Helpers ──
 
-def _representative_bup_disc(r: Rpd) -> BupDiscipline | None:
-    """«Представительная» БУП-дисциплина для отображения часов/семестра в
-    UI, который пока не знает про мульти-БУП. Берём первую."""
+
+def _representative_link(r: Rpd):
+    """Первая bup-привязка РПД (источник часов/семестра/направления для UI,
+    который ещё не умеет в multi-БУП). При hard-delete БУПа `bup_discipline` у
+    линка может быть None — данные в этом случае берутся из snapshot самого
+    линка, поэтому возвращаем сам link, а не bd."""
     for link in r.bup_links or []:
-        if link.bup_discipline is not None:
-            return link.bup_discipline
+        return link
     return None
 
 
 def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     d = r.discipline
-    bd = _representative_bup_disc(r)
+    rep_link = _representative_link(r)
+    rep_bd = rep_link.bup_discipline if rep_link else None
     outcomes = []
     for lo in r.learning_outcomes:
         ind = lo.indicator
         outcomes.append(LearningOutcomeOut(
             id_outcome=lo.id_outcome,
             id_indicator=lo.id_indicator,
-            indicator_code=ind.code if ind else None,
-            competency_code=ind.competency.code if ind and ind.competency else None,
+            indicator_code=lo.indicator_code or (ind.code if ind else None),
+            competency_code=lo.competency_code or (ind.competency.code if ind and ind.competency else None),
             outcome_text=lo.outcome_text,
             assessment_tool=lo.assessment_tool,
         ))
@@ -77,27 +80,42 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         uploaded_at=doc.uploaded_at,
     ) for doc in r.uploaded_documents]
 
+    def _pick(link_value, fk_value):
+        """Если в snapshot пусто — берём live FK, иначе snapshot. Snapshot имеет
+        приоритет, потому что он специально заполняется на момент привязки и
+        переживает hard-delete БУПа."""
+        return link_value if link_value not in (None, "") else fk_value
+
     def _bd_ref(link) -> BupDisciplineRefOut:
         bd = link.bup_discipline
-        bup = bd.bup
+        bup = bd.bup if bd else None
         direc = bup.direction if bup else None
         fgos = direc.fgos_file if direc and direc.fgos_file else None
         return BupDisciplineRefOut(
-            id_bup_discipline=bd.id_bup_discipline,
-            id_bup=bd.id_bup,
-            bup_name=bup.name if bup else "",
-            code=bd.code, semester=bd.semester, control_form=bd.control_form,
-            total_hours=bd.total_hours, lecture_hours=bd.lecture_hours,
-            lab_hours=bd.lab_hours, practice_hours=bd.practice_hours,
-            ksr_hours=bd.ksr_hours, self_study_hours=bd.self_study_hours,
-            zet=bd.zet,
-            direction_code=direc.code if direc else None,
-            direction_name=direc.name if direc else None,
-            direction_profile=direc.profile if direc else None,
-            fgos_file_id=fgos.id_file if fgos else None,
-            fgos_file_name=fgos.original_name if fgos else None,
+            id_bup_discipline=bd.id_bup_discipline if bd else None,
+            id_bup=bd.id_bup if bd else None,
+            bup_name=_pick(link.bup_name, bup.name if bup else ""),
+            code=_pick(link.code, bd.code if bd else None),
+            semester=_pick(link.semester, bd.semester if bd else None),
+            control_form=_pick(link.control_form, bd.control_form if bd else None),
+            total_hours=_pick(link.total_hours, bd.total_hours if bd else None),
+            lecture_hours=_pick(link.lecture_hours, bd.lecture_hours if bd else None),
+            lab_hours=_pick(link.lab_hours, bd.lab_hours if bd else None),
+            practice_hours=_pick(link.practice_hours, bd.practice_hours if bd else None),
+            ksr_hours=_pick(link.ksr_hours, bd.ksr_hours if bd else None),
+            self_study_hours=_pick(link.self_study_hours, bd.self_study_hours if bd else None),
+            zet=_pick(link.zet, bd.zet if bd else None),
+            direction_code=_pick(link.direction_code, direc.code if direc else None),
+            direction_name=_pick(link.direction_name, direc.name if direc else None),
+            direction_profile=_pick(link.direction_profile, direc.profile if direc else None),
+            fgos_file_id=_pick(link.fgos_file_id, fgos.id_file if fgos else None),
+            fgos_file_name=_pick(link.fgos_file_name, fgos.original_name if fgos else None),
+            # bup_deleted = у линка нет живого bd-FK. Snapshot ещё есть — рендерим как обычно,
+            # просто с маленькой пометкой «БУП удалён из БД».
+            bup_deleted=bd is None,
         )
-    bup_disciplines = [_bd_ref(link) for link in (r.bup_links or []) if link.bup_discipline]
+    # Показываем все привязки, даже если bd-FK == None: snapshot держит данные.
+    bup_disciplines = [_bd_ref(link) for link in (r.bup_links or [])]
 
     def _fos_out(link) -> FosFileOut:
         sf = link.file
@@ -110,32 +128,30 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     fos_main = next((_fos_out(f) for f in (r.fos_files or []) if f.role == "main"), None)
     fos_other = [_fos_out(f) for f in (r.fos_files or []) if f.role == "other"]
 
-    # Направление и профиль теперь живут на уровне БУПа, не дисциплины. Берём из
-    # «представительной» БУП-дисциплины (первая привязанная) — для совместимости с UI,
-    # который ожидает одно направление в детали РПД. Per-БУП рендер титульника
-    # печатной формы — отдельный шаг (см. `services/rpd_template_context.py`).
-    rep_bup = bd.bup if bd else None
+    # «Представительная» привязка для top-level полей detail. Snapshot первичен.
+    rep_bup = rep_bd.bup if rep_bd else None
     rep_dir = rep_bup.direction if rep_bup else None
+    rep_link_pick = lambda val, fk: val if val not in (None, "") else fk
     return RpdDetailOut(
         id_rpd=r.id_rpd, id_discipline=d.id_discipline,
         discipline_name=d.name,
-        discipline_code=bd.code if bd else None,
-        direction_name=rep_dir.name if rep_dir else "",
-        direction_code=rep_dir.code if rep_dir else "",
-        direction_profile=rep_bup.profile if rep_bup else None,
+        discipline_code=rep_link_pick(rep_link.code if rep_link else None, rep_bd.code if rep_bd else None),
+        direction_name=rep_link_pick(rep_link.direction_name if rep_link else None, rep_dir.name if rep_dir else "") or "",
+        direction_code=rep_link_pick(rep_link.direction_code if rep_link else None, rep_dir.code if rep_dir else "") or "",
+        direction_profile=rep_link_pick(rep_link.direction_profile if rep_link else None, rep_bup.profile if rep_bup else None),
         academic_year=r.academic_year,
         status=r.status, goals_text=r.goals_text, tasks_text=r.tasks_text,
         objects_text=r.objects_text, requirements_text=r.requirements_text,
         educational_tech=r.educational_tech, methodical_recommendations=r.methodical_recommendations,
         comment=r.comment,
         author_name=r.author.full_name,
-        semester=bd.semester if bd else None,
-        total_hours=bd.total_hours if bd else None,
-        lecture_hours=bd.lecture_hours if bd else None,
-        practice_hours=bd.practice_hours if bd else None,
-        lab_hours=bd.lab_hours if bd else None,
-        self_study_hours=bd.self_study_hours if bd else None,
-        control_form=bd.control_form if bd else None,
+        semester=rep_link_pick(rep_link.semester if rep_link else None, rep_bd.semester if rep_bd else None),
+        total_hours=rep_link_pick(rep_link.total_hours if rep_link else None, rep_bd.total_hours if rep_bd else None),
+        lecture_hours=rep_link_pick(rep_link.lecture_hours if rep_link else None, rep_bd.lecture_hours if rep_bd else None),
+        practice_hours=rep_link_pick(rep_link.practice_hours if rep_link else None, rep_bd.practice_hours if rep_bd else None),
+        lab_hours=rep_link_pick(rep_link.lab_hours if rep_link else None, rep_bd.lab_hours if rep_bd else None),
+        self_study_hours=rep_link_pick(rep_link.self_study_hours if rep_link else None, rep_bd.self_study_hours if rep_bd else None),
+        control_form=rep_link_pick(rep_link.control_form if rep_link else None, rep_bd.control_form if rep_bd else None),
         bup_disciplines=bup_disciplines,
         fos_main=fos_main,
         fos_other=fos_other,
@@ -194,9 +210,13 @@ async def list_directions(db: AsyncSession = Depends(get_db)):
 
 @router.get("/disciplines", response_model=list[DisciplineOut])
 async def list_disciplines(db: AsyncSession = Depends(get_db)):
-    """Список логических дисциплин с агрегатными часами «представительной»
-    БУП-дисциплины (для совместимости с UI, который ожидает плоскую структуру).
-    Дисциплина больше не привязана к направлению — фильтр по направлению снят."""
+    """Список логических дисциплин для модалки «Создать РПД».
+
+    Показываем только те, у которых есть хотя бы одна BupDiscipline (= хотя бы
+    один живой БУП их использует). Дисциплины, к которым уже привязаны РПД,
+    но БУП был удалён — физически остаются в БД (FK у РПД), но в этом списке
+    не появляются: создать новую РПД на них нельзя, прикреплять не к чему.
+    """
     result = await db.execute(
         select(Discipline)
         .order_by(Discipline.name)
@@ -205,7 +225,9 @@ async def list_disciplines(db: AsyncSession = Depends(get_db)):
     rows = result.scalars().all()
     out: list[DisciplineOut] = []
     for d in rows:
-        bd = d.bup_disciplines[0] if d.bup_disciplines else None
+        if not d.bup_disciplines:
+            continue
+        bd = d.bup_disciplines[0]
         out.append(DisciplineOut(
             id_discipline=d.id_discipline,
             name=d.name,
@@ -254,18 +276,20 @@ async def list_rpds(
     rows = result.scalars().all()
     out: list[RpdListOut] = []
     for r in rows:
-        bd = _representative_bup_disc(r)
+        link = _representative_link(r)
+        bd = link.bup_discipline if link else None
         rep_dir = bd.bup.direction if bd and bd.bup else None
+        pick = lambda val, fk: val if val not in (None, "") else fk
         out.append(RpdListOut(
             id_rpd=r.id_rpd,
             discipline_name=r.discipline.name,
-            direction_name=rep_dir.name if rep_dir else "",
-            direction_code=rep_dir.code if rep_dir else "",
+            direction_name=pick(link.direction_name if link else None, rep_dir.name if rep_dir else "") or "",
+            direction_code=pick(link.direction_code if link else None, rep_dir.code if rep_dir else "") or "",
             academic_year=r.academic_year,
             status=r.status,
             author_name=r.author.full_name,
-            semester=bd.semester if bd else None,
-            total_hours=bd.total_hours if bd else None,
+            semester=pick(link.semester if link else None, bd.semester if bd else None),
+            total_hours=pick(link.total_hours if link else None, bd.total_hours if bd else None),
             updated_at=r.updated_at,
         ))
     return out
@@ -281,24 +305,72 @@ async def get_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = 
 
 # ── Create RPD ──
 
+def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> None:
+    """Скопировать значимые поля из BupDiscipline+Bup+Direction+ФГОС в snapshot
+    у RpdBupDiscipline. Делаем при привязке и после правок плана. Нужно, чтобы
+    после hard-delete БУПа РПД продолжали корректно отображать свои часы/
+    направление и т.п.
+    """
+    bup = bd.bup
+    direc = bup.direction if bup else None
+    fgos = direc.fgos_file if direc and direc.fgos_file else None
+    link.bup_name = bup.name if bup else None
+    link.bup_year = bup.year if bup else None
+    link.bup_profile = bup.profile if bup else None
+    link.direction_code = direc.code if direc else None
+    link.direction_name = direc.name if direc else None
+    link.direction_profile = direc.profile if direc else None
+    link.fgos_file_id = fgos.id_file if fgos else None
+    link.fgos_file_name = fgos.original_name if fgos else None
+    link.code = bd.code
+    link.semester = bd.semester
+    link.control_form = bd.control_form
+    link.total_hours = bd.total_hours
+    link.lecture_hours = bd.lecture_hours
+    link.lab_hours = bd.lab_hours
+    link.practice_hours = bd.practice_hours
+    link.ksr_hours = bd.ksr_hours
+    link.self_study_hours = bd.self_study_hours
+    link.zet = bd.zet
+    link.discipline_name = bd.discipline.name if bd.discipline else None
+
+
+def _fill_outcome_snapshot(lo: RpdLearningOutcome, ind: CompetencyIndicator) -> None:
+    comp = ind.competency if ind else None
+    lo.indicator_code = ind.code if ind else None
+    lo.indicator_description = ind.description if ind else None
+    lo.competency_code = comp.code if comp else None
+    lo.competency_name = comp.name if comp else None
+
+
 async def _attach_rpd_to_bup_disciplines(
     rpd: Rpd, db: AsyncSession, *, bup_discipline_ids: list[int] | None = None,
 ) -> None:
-    """Привязать РПД к BupDiscipline.
+    """Привязать РПД к BupDiscipline и снять snapshot.
 
     Если передан явный `bup_discipline_ids` — используем его. Иначе берём все
     BupDiscipline той же логической дисциплины (поведение АРМ-fallback).
     """
+    options = (
+        selectinload(BupDiscipline.discipline),
+        selectinload(BupDiscipline.bup).selectinload(Bup.direction).selectinload(Direction.fgos_file),
+    )
     if bup_discipline_ids:
         rows = await db.execute(
-            select(BupDiscipline).where(BupDiscipline.id_bup_discipline.in_(bup_discipline_ids))
+            select(BupDiscipline)
+            .where(BupDiscipline.id_bup_discipline.in_(bup_discipline_ids))
+            .options(*options)
         )
     else:
         rows = await db.execute(
-            select(BupDiscipline).where(BupDiscipline.id_discipline == rpd.id_discipline)
+            select(BupDiscipline)
+            .where(BupDiscipline.id_discipline == rpd.id_discipline)
+            .options(*options)
         )
     for bd in rows.scalars().all():
-        db.add(RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=bd.id_bup_discipline))
+        link = RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=bd.id_bup_discipline)
+        _fill_rpd_bup_disc_snapshot(link, bd)
+        db.add(link)
 
 
 async def _autofill_outcomes_from_bup_disciplines(
@@ -314,13 +386,16 @@ async def _autofill_outcomes_from_bup_disciplines(
         .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
         .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
         .where(BupDisciplineCompetency.id_bup_discipline.in_(bd_ids))
+        .options(selectinload(CompetencyIndicator.competency))
         .distinct()
     )
     for ind in res.scalars().all():
-        db.add(RpdLearningOutcome(
+        lo = RpdLearningOutcome(
             id_rpd=rpd.id_rpd, id_indicator=ind.id_indicator,
             outcome_text=None, assessment_tool=None,
-        ))
+        )
+        _fill_outcome_snapshot(lo, ind)
+        db.add(lo)
 
 
 @router.post("/", response_model=RpdDetailOut, status_code=201)
@@ -443,11 +518,16 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
                     id_rpd=rpd.id_rpd, room_type=mt.room_type, equipment=mt.equipment,
                 ))
 
-            # Copy learning outcomes
+            # Copy learning outcomes (вместе со snapshot — у архивной РПД он тоже
+            # уже мог быть заполнен, и индикатор-FK мог быть null)
             for lo in base.learning_outcomes:
                 db.add(RpdLearningOutcome(
                     id_rpd=rpd.id_rpd, id_indicator=lo.id_indicator,
                     outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
+                    indicator_code=lo.indicator_code,
+                    indicator_description=lo.indicator_description,
+                    competency_code=lo.competency_code,
+                    competency_name=lo.competency_name,
                 ))
         else:
             db.add(rpd)
@@ -707,15 +787,19 @@ async def delete_database(db_id: int, db: AsyncSession = Depends(get_db), user: 
 async def add_outcome(rpd_id: int, data: LearningOutcomeCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     lo = RpdLearningOutcome(id_rpd=rpd_id, **data.model_dump())
     db.add(lo)
-    await db.commit()
-    await db.refresh(lo)
-    # Load indicator and competency
+    await db.flush()
+    # Подгрузим индикатор+компетенцию и заполним snapshot — на случай, если
+    # БУП этой компетенции потом удалят, индикатор уйдёт, но в РПД останется
+    # текстовый снимок.
     result = await db.execute(
         select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == lo.id_outcome)
         .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
     )
     lo = result.scalar_one()
     ind = lo.indicator
+    if ind is not None:
+        _fill_outcome_snapshot(lo, ind)
+    await db.commit()
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
         indicator_code=ind.code if ind else None,
@@ -785,7 +869,18 @@ async def attach_bup_discipline(
         .where(RpdBupDiscipline.id_bup_discipline == bd_id)
     )
     if not exists.scalar_one_or_none():
-        db.add(RpdBupDiscipline(id_rpd=rpd_id, id_bup_discipline=bd_id))
+        # Догружаем bd с цепочкой Bup→Direction→FGOS, чтобы заполнить snapshot.
+        bd_full = await db.execute(
+            select(BupDiscipline).where(BupDiscipline.id_bup_discipline == bd_id)
+            .options(
+                selectinload(BupDiscipline.discipline),
+                selectinload(BupDiscipline.bup).selectinload(Bup.direction).selectinload(Direction.fgos_file),
+            )
+        )
+        bd_obj = bd_full.scalar_one()
+        link = RpdBupDiscipline(id_rpd=rpd_id, id_bup_discipline=bd_id)
+        _fill_rpd_bup_disc_snapshot(link, bd_obj)
+        db.add(link)
         await db.flush()
 
     # Достраиваем outcomes: создаём пустые записи для индикаторов, которых
@@ -798,15 +893,18 @@ async def attach_bup_discipline(
         .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
         .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
         .where(BupDisciplineCompetency.id_bup_discipline == bd_id)
+        .options(selectinload(CompetencyIndicator.competency))
     )
     for ind in new_inds_res.scalars().all():
         if ind.id_indicator in existing_inds:
             continue
         existing_inds.add(ind.id_indicator)
-        db.add(RpdLearningOutcome(
+        lo = RpdLearningOutcome(
             id_rpd=rpd_id, id_indicator=ind.id_indicator,
             outcome_text=None, assessment_tool=None,
-        ))
+        )
+        _fill_outcome_snapshot(lo, ind)
+        db.add(lo)
     await db.commit()
     return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
 
@@ -856,9 +954,7 @@ async def get_outcomes_table(
     if not rpd:
         raise HTTPException(status_code=404)
 
-    rpd_bd_ids = [link.id_bup_discipline for link in rpd.bup_links]
-    if not rpd_bd_ids:
-        return []
+    rpd_bd_ids = [link.id_bup_discipline for link in rpd.bup_links if link.id_bup_discipline is not None]
 
     if bd_id is not None:
         if bd_id not in rpd_bd_ids:
@@ -867,31 +963,58 @@ async def get_outcomes_table(
     else:
         scope_bd_ids = rpd_bd_ids
 
-    inds_res = await db.execute(
-        select(CompetencyIndicator, Competency)
-        .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
-        .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
-        .where(BupDisciplineCompetency.id_bup_discipline.in_(scope_bd_ids))
-        .order_by(Competency.code, CompetencyIndicator.code)
-    )
-    seen: set[int] = set()
-    outcome_by_ind = {lo.id_indicator: lo for lo in rpd.learning_outcomes}
     rows: list[OutcomeRowOut] = []
-    for ind, comp in inds_res.all():
-        if ind.id_indicator in seen:
-            continue
-        seen.add(ind.id_indicator)
-        lo = outcome_by_ind.get(ind.id_indicator)
-        rows.append(OutcomeRowOut(
-            id_indicator=ind.id_indicator,
-            indicator_code=ind.code,
-            indicator_description=ind.description,
-            competency_code=comp.code,
-            competency_name=comp.name,
-            id_outcome=lo.id_outcome if lo else None,
-            outcome_text=lo.outcome_text if lo else None,
-            assessment_tool=lo.assessment_tool if lo else None,
-        ))
+    seen_keys: set[tuple] = set()  # (indicator_id) или ("snap", competency_code, indicator_code)
+    outcome_by_ind = {lo.id_indicator: lo for lo in rpd.learning_outcomes if lo.id_indicator}
+
+    if scope_bd_ids:
+        inds_res = await db.execute(
+            select(CompetencyIndicator, Competency)
+            .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
+            .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+            .where(BupDisciplineCompetency.id_bup_discipline.in_(scope_bd_ids))
+            .order_by(Competency.code, CompetencyIndicator.code)
+        )
+        for ind, comp in inds_res.all():
+            key = ("ind", ind.id_indicator)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            lo = outcome_by_ind.get(ind.id_indicator)
+            rows.append(OutcomeRowOut(
+                id_indicator=ind.id_indicator,
+                indicator_code=ind.code,
+                indicator_description=ind.description,
+                competency_code=comp.code,
+                competency_name=comp.name,
+                id_outcome=lo.id_outcome if lo else None,
+                outcome_text=lo.outcome_text if lo else None,
+                assessment_tool=lo.assessment_tool if lo else None,
+            ))
+
+    # Если bd_id не задан — добавляем «осиротевшие» outcomes (без живого индикатора)
+    # из snapshot. Это обычно случай, когда БУП был удалён, но РПД сохранила свои
+    # результаты обучения. В per-bd режиме их нельзя отобразить — нет привязки.
+    if bd_id is None:
+        for lo in rpd.learning_outcomes:
+            if lo.id_indicator is not None:
+                continue
+            if not lo.indicator_code:
+                continue
+            key = ("snap", lo.competency_code or "", lo.indicator_code)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            rows.append(OutcomeRowOut(
+                id_indicator=0,
+                indicator_code=lo.indicator_code,
+                indicator_description=lo.indicator_description or "",
+                competency_code=lo.competency_code or "",
+                competency_name=lo.competency_name or "",
+                id_outcome=lo.id_outcome,
+                outcome_text=lo.outcome_text,
+                assessment_tool=lo.assessment_tool,
+            ))
     return rows
 
 
@@ -939,19 +1062,22 @@ async def upsert_outcome(
             outcome_text=text or None, assessment_tool=tool or None,
         )
         db.add(lo)
-    await db.commit()
+    await db.flush()
 
-    # Reload with indicator+competency
+    # Reload with indicator+competency и снимаем snapshot (если индикатор живой).
     res = await db.execute(
         select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == lo.id_outcome)
         .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
     )
     lo = res.scalar_one()
     ind = lo.indicator
+    if ind is not None:
+        _fill_outcome_snapshot(lo, ind)
+    await db.commit()
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
-        indicator_code=ind.code if ind else None,
-        competency_code=ind.competency.code if ind and ind.competency else None,
+        indicator_code=lo.indicator_code or (ind.code if ind else None),
+        competency_code=lo.competency_code or (ind.competency.code if ind and ind.competency else None),
         outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
     )
 

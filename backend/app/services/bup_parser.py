@@ -166,15 +166,19 @@ def _semesters_used(row_vals: list) -> list[int]:
 def parse_bup_xls(content: bytes) -> ParsedBup:
     """Принимает байты xls-файла, возвращает ParsedBup."""
     wb = xlrd.open_workbook(file_contents=content)
-    # Целевой лист — первый, чьё имя начинается на «Дисциплины», но НЕ
-    # «Дисциплины по выбору» (тот тоже подгрузим, если будет необходимость).
+    # Целевой лист с дисциплинами. В разных формах БУПа лист называется по-разному:
+    # «Дисциплины» (БУПы 2015 г.), «План» (БУПы 2019 г.). Структура внутри одинаковая.
+    # «Дисциплины по выбору» — отдельный список, не берём.
     target_sheet = None
     for name in wb.sheet_names():
-        if name.strip().lower().startswith("дисциплины") and "выбор" not in name.lower():
+        low = name.strip().lower()
+        if "выбор" in low:
+            continue
+        if low.startswith("дисциплины") or low == "план":
             target_sheet = wb.sheet_by_name(name)
             break
     if target_sheet is None:
-        raise ValueError("В файле не найден лист «Дисциплины»")
+        raise ValueError("В файле не найден лист «Дисциплины» / «План»")
 
     sh = target_sheet
     faculty, dcode, dname, dept_name, profile = _parse_meta(sh)

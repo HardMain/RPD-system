@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F } from "../theme.js";
+import { hdr, tcell } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
 import { Spinner } from "../components/Spinner.jsx";
-
-const cellStyle = { padding: "10px 12px", borderBottom: "1px solid " + T.borderLight, fontSize: 13, verticalAlign: "top" };
-const headStyle = { ...cellStyle, fontWeight: 700, color: T.textMuted, fontSize: 12, textTransform: "uppercase", letterSpacing: ".4px", background: T.bg };
 
 export function AdminBupsPage() {
   const [bups, setBups] = useState([]);
@@ -22,7 +20,7 @@ export function AdminBupsPage() {
   useEffect(() => { reload(); }, []);
 
   async function handleDelete(b) {
-    if (!confirm(`Удалить БУП «${b.name}»? Это удалит все его дисциплины и связки. РПД, привязанные к нему, потеряют автозаполнение часов и компетенций.`)) return;
+    if (!confirm(`Удалить БУП «${b.name}»? БУП и все его данные будут стёрты из базы (дисциплины, компетенции и индикаторы — те, что использовались только этим планом). Уже созданные РПД не изменятся: их часы, компетенции и направление сохранены в самих РПД.`)) return;
     try { await api.adminDeleteBup(b.id_bup); reload(); }
     catch { alert("Не удалось удалить"); }
   }
@@ -39,22 +37,22 @@ export function AdminBupsPage() {
         : bups.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13 }}>
             БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины.
           </div>
-        : <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>
-              <th style={headStyle}>Год</th>
-              <th style={headStyle}>Наименование</th>
-              <th style={headStyle}>Направление</th>
-              <th style={headStyle}>Факультет</th>
-              <th style={headStyle} />
+        : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+            <thead><tr style={{ background: T.bg }}>
+              <th style={{ ...hdr, textAlign: "center", width: 80 }}>Год</th>
+              <th style={hdr}>Наименование</th>
+              <th style={hdr}>Направление</th>
+              <th style={hdr}>Факультет</th>
+              <th style={{ ...hdr, width: 1 }} />
             </tr></thead>
             <tbody>
               {bups.map(b => <tr key={b.id_bup} style={{ cursor: "pointer" }}
                   onClick={() => setOpenBup(b.id_bup)}>
-                <td style={cellStyle}>{b.year ?? "—"}</td>
-                <td style={cellStyle}><span style={{ fontWeight: 600 }}>{b.name}</span></td>
-                <td style={cellStyle}>{b.direction_code ? `${b.direction_code} ${b.direction_name}` : (b.direction_name || "—")}</td>
-                <td style={cellStyle}>{b.faculty || "—"}</td>
-                <td style={{ ...cellStyle, textAlign: "right", whiteSpace: "nowrap" }}>
+                <td style={{ ...tcell, textAlign: "center" }}>{b.year ?? "—"}</td>
+                <td style={{ ...tcell, fontWeight: 600 }}>{b.name}</td>
+                <td style={tcell}>{b.direction_code ? `${b.direction_code} ${b.direction_name}` : (b.direction_name || "—")}</td>
+                <td style={tcell}>{b.faculty || "—"}</td>
+                <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap", width: 1 }}>
                   <Btn small danger onClick={(e) => { e.stopPropagation(); handleDelete(b); }}>Удалить</Btn>
                 </td>
               </tr>)}
@@ -155,27 +153,27 @@ function BupDetailModal({ bupId, onClose }) {
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Дисциплины БУПа ({data.disciplines.length})</div>
         <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "auto", maxHeight: "55vh" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontFamily: F }}>
-            <thead><tr>
-              <th style={headStyle}>Индекс</th>
-              <th style={headStyle}>Кафедра</th>
-              <th style={headStyle}>Дисциплина</th>
-              <th style={headStyle}>Сем.</th>
-              <th style={headStyle}>Контроль</th>
-              <th style={headStyle}>Часы (Л/Лаб/Пр/КСР/СРС)</th>
-              <th style={headStyle}>Всего</th>
-              <th style={headStyle}>ЗЕ</th>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "auto" }}>
+            <thead><tr style={{ background: T.bg }}>
+              <th style={hdr}>Индекс</th>
+              <th style={hdr}>Кафедра</th>
+              <th style={hdr}>Дисциплина</th>
+              <th style={{ ...hdr, textAlign: "center" }}>Сем.</th>
+              <th style={hdr}>Контроль</th>
+              <th style={{ ...hdr, textAlign: "center" }}>Часы (Л/Лаб/Пр/КСР/СРС)</th>
+              <th style={{ ...hdr, textAlign: "center" }}>Всего</th>
+              <th style={{ ...hdr, textAlign: "center" }}>ЗЕ</th>
             </tr></thead>
             <tbody>
               {data.disciplines.map(d => <tr key={d.id_bup_discipline}>
-                <td style={cellStyle}>{d.code || "—"}</td>
-                <td style={cellStyle}>{d.department_name || "—"}</td>
-                <td style={cellStyle}>{d.discipline_name}</td>
-                <td style={cellStyle}>{d.semester || "—"}</td>
-                <td style={cellStyle}>{d.control_form || "—"}</td>
-                <td style={cellStyle}>{[d.lecture_hours, d.lab_hours, d.practice_hours, d.ksr_hours, d.self_study_hours].map(v => v ?? "—").join("/")}</td>
-                <td style={cellStyle}>{d.total_hours ?? "—"}</td>
-                <td style={cellStyle}>{d.zet ?? "—"}</td>
+                <td style={tcell}>{d.code || "—"}</td>
+                <td style={tcell}>{d.department_name || "—"}</td>
+                <td style={{ ...tcell, fontWeight: 600 }}>{d.discipline_name}</td>
+                <td style={{ ...tcell, textAlign: "center" }}>{d.semester || "—"}</td>
+                <td style={tcell}>{d.control_form || "—"}</td>
+                <td style={{ ...tcell, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{[d.lecture_hours, d.lab_hours, d.practice_hours, d.ksr_hours, d.self_study_hours].map(v => v ?? "—").join("/")}</td>
+                <td style={{ ...tcell, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{d.total_hours ?? "—"}</td>
+                <td style={{ ...tcell, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{d.zet ?? "—"}</td>
               </tr>)}
             </tbody>
           </table>

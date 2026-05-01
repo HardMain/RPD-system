@@ -60,34 +60,36 @@ async def _load_rpd(db: AsyncSession, rpd_id: int) -> Rpd:
     return rpd
 
 
-def _resolve_bd(rpd: Rpd, bd_id: int | None) -> BupDiscipline | None:
-    """Возвращает БУП-дисциплину, для которой формируется печатная форма.
-    Если `bd_id` передан, проверяет что она привязана к этой РПД, иначе — 400.
-    Если не передан — возвращает первую («представительную»)."""
-    attached = [l.bup_discipline for l in (rpd.bup_links or []) if l.bup_discipline]
-    if not attached:
+def _resolve_link(rpd: Rpd, bd_id: int | None) -> RpdBupDiscipline | None:
+    """Возвращает RpdBupDiscipline-привязку, для которой формируется печатная форма.
+    После hard-delete БУПа `link.id_bup_discipline` может быть None, но snapshot
+    у link заполнен — этого достаточно для рендера."""
+    links = list(rpd.bup_links or [])
+    if not links:
         return None
     if bd_id is None:
-        return attached[0]
-    for bd in attached:
-        if bd.id_bup_discipline == bd_id:
-            return bd
+        return links[0]
+    for link in links:
+        if link.id_bup_discipline == bd_id:
+            return link
     raise HTTPException(status_code=400, detail="Эта БУП-дисциплина не привязана к РПД")
 
 
-async def _render(rpd: Rpd, bd: BupDiscipline | None) -> bytes:
+async def _render(rpd: Rpd, link: RpdBupDiscipline | None) -> bytes:
     if not os.path.exists(_TEMPLATE_DOCX):
         raise HTTPException(status_code=500, detail=f"Шаблон не найден: {_TEMPLATE_DOCX}")
-    context = build_context(rpd, bd=bd)
+    bd = link.bup_discipline if link else None
+    context = build_context(rpd, bd=bd, link=link)
     try:
         return await asyncio.to_thread(render_rpd_pdf_bytes, _TEMPLATE_DOCX, context)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Ошибка рендера PDF: {exc}")
 
 
-def _filename(rpd: Rpd, bd: BupDiscipline | None) -> str:
+def _filename(rpd: Rpd, link: RpdBupDiscipline | None) -> str:
     d = rpd.discipline
-    code = (bd.code if bd else None) or "no_code"
+    bd = link.bup_discipline if link else None
+    code = (link.code if link and link.code else (bd.code if bd else None)) or "no_code"
     return (
         f"RPD_{code}_{d.name}_{rpd.academic_year}.pdf"
         .replace("/", "_").replace(" ", "_")
@@ -103,9 +105,9 @@ async def export_pdf(
 ):
     """Скачать PDF (attachment)."""
     rpd = await _load_rpd(db, rpd_id)
-    bd = _resolve_bd(rpd, bd_id)
-    pdf_bytes = await _render(rpd, bd)
-    encoded = quote(_filename(rpd, bd), safe="")
+    link = _resolve_link(rpd, bd_id)
+    pdf_bytes = await _render(rpd, link)
+    encoded = quote(_filename(rpd, link), safe="")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -122,9 +124,9 @@ async def export_pdf_inline(
 ):
     """Отрисовать PDF inline — для встраивания в <iframe>/<embed> в режиме просмотра."""
     rpd = await _load_rpd(db, rpd_id)
-    bd = _resolve_bd(rpd, bd_id)
-    pdf_bytes = await _render(rpd, bd)
-    encoded = quote(_filename(rpd, bd), safe="")
+    link = _resolve_link(rpd, bd_id)
+    pdf_bytes = await _render(rpd, link)
+    encoded = quote(_filename(rpd, link), safe="")
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

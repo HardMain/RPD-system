@@ -37,25 +37,34 @@ def _parse_semester(raw: Any) -> int:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def build_context(rpd, bd=None) -> dict:
+def build_context(rpd, bd=None, link=None) -> dict:
     """rpd — объект ORM Rpd с подгруженными связями. Возвращает dict под docxtpl.
 
-    `bd` — конкретная привязанная BupDiscipline, для которой формируется печатная
-    форма (титульник, направление/профиль, часы раздела 3, фильтрация раздела 2
-    по её компетенциям). Если не передана — берётся первая привязанная
-    («представительная»), как было до multi-БУП. Так один макет даёт N печатных
-    форм — по одной на каждую привязку, отличающихся титульником и индикаторами,
-    но с общим содержимым (разделы, литература, методички, ПО, МТО, ФОС)."""
+    `link` — конкретная RpdBupDiscipline-привязка, для которой формируется
+    печатная форма. У линка есть snapshot всех значимых полей плана (часы,
+    направление, профиль, ФГОС), который заполняется при привязке и переживает
+    hard-delete БУПа. Если линк передан — приоритет у snapshot. `bd` оставлен
+    для обратной совместимости. Если не передано ничего — берём первый
+    привязанный link («представительный»)."""
     d = rpd.discipline
-    if bd is None:
-        bd = next(
-            (l.bup_discipline for l in (rpd.bup_links or []) if l.bup_discipline),
-            None,
-        )
+    if link is None:
+        link = next((l for l in (rpd.bup_links or [])), None)
+    if bd is None and link is not None:
+        bd = link.bup_discipline  # может быть None после hard-delete БУПа
+
+    def _pick(snap, live):
+        return snap if snap not in (None, "") else live
+
     direction = bd.bup.direction if bd and bd.bup else None
-    bup_profile = bd.bup.profile if bd and bd.bup else None
+    direction_code = _pick(link.direction_code if link else None, direction.code if direction else None)
+    direction_name = _pick(link.direction_name if link else None, direction.name if direction else None)
+    direction_profile = _pick(link.direction_profile if link else None, direction.profile if direction else None)
+    bup_profile = _pick(link.bup_profile if link else None, bd.bup.profile if bd and bd.bup else None)
+
     # Множество индикаторов, которые относятся к компетенциям ВЫБРАННОЙ
     # БУП-дисциплины (нужно для фильтрации раздела 2 в печатной форме).
+    # Без живой bd-FK фильтрация по индикаторам невозможна — печатаем все
+    # outcomes РПД (snapshot их сохраняет).
     bd_indicator_ids: set[int] | None = None
     if bd is not None:
         bd_competency_ids = {bdc.id_competency for bdc in (bd.competencies or [])}
@@ -66,15 +75,15 @@ def build_context(rpd, bd=None) -> dict:
                 if ind and ind.competency and ind.competency.id_competency in bd_competency_ids:
                     bd_indicator_ids.add(ind.id_indicator)
 
-    total_hours = _safe(bd.total_hours if bd else 0, 0)
-    lec = _safe(bd.lecture_hours if bd else 0, 0)
-    pr = _safe(bd.practice_hours if bd else 0, 0)
-    lab = _safe(bd.lab_hours if bd else 0, 0)
-    srs = _safe(bd.self_study_hours if bd else 0, 0)
+    total_hours = _safe(_pick(link.total_hours if link else None, bd.total_hours if bd else 0), 0)
+    lec = _safe(_pick(link.lecture_hours if link else None, bd.lecture_hours if bd else 0), 0)
+    pr = _safe(_pick(link.practice_hours if link else None, bd.practice_hours if bd else 0), 0)
+    lab = _safe(_pick(link.lab_hours if link else None, bd.lab_hours if bd else 0), 0)
+    srs = _safe(_pick(link.self_study_hours if link else None, bd.self_study_hours if bd else 0), 0)
     contact = lec + pr + lab
 
     # Контрольная форма: распределение часов по типу контроля
-    control = ((bd.control_form if bd else "") or "").lower()
+    control = (_pick(link.control_form if link else None, bd.control_form if bd else "") or "").lower()
     exam_h = 9 if "экз" in control else 0
     diff_credit_h = 0
     credit_h = 0
@@ -83,7 +92,7 @@ def build_context(rpd, bd=None) -> dict:
     elif "зач" in control:
         credit_h = 0
 
-    sem_num = _parse_semester(bd.semester if bd else None)
+    sem_num = _parse_semester(_pick(link.semester if link else None, bd.semester if bd else None))
 
     # ── Workload: текущий семестр + 7 пустых слотов = всего 8 столбцов ─────
     semester_block = {
@@ -117,10 +126,10 @@ def build_context(rpd, bd=None) -> dict:
             continue
         comp = ind.competency if ind else None
         learning_outcomes.append({
-            "competency_code": comp.code if comp else "",
-            "indicator_code": ind.code if ind else "",
+            "competency_code": _pick(lo.competency_code, comp.code if comp else "") or "",
+            "indicator_code": _pick(lo.indicator_code, ind.code if ind else "") or "",
             "outcome_text": _safe(lo.outcome_text, "—"),
-            "indicator_description": ind.description if ind else "",
+            "indicator_description": _pick(lo.indicator_description, ind.description if ind else "") or "",
             "assessment_tool": _safe(lo.assessment_tool, "—"),
         })
 
@@ -291,10 +300,10 @@ def build_context(rpd, bd=None) -> dict:
         "level_higher_education": (direction.degree_level if direction else None) or "бакалавриат",
         "total_hours": total_hours,
         "total_ze": _ze(total_hours),
-        "direction_code": (direction.code if direction else None) or "—",
-        "direction_name": (direction.name if direction else None) or "—",
+        "direction_code": (direction_code or (direction.code if direction else None)) or "—",
+        "direction_name": (direction_name or (direction.name if direction else None)) or "—",
         # Профиль шапки печатной формы — приоритетно из БУПа (он точнее), fallback на профиль направления.
-        "program_name": bup_profile or (direction.profile if direction else None) or (direction.name if direction else None) or "—",
+        "program_name": bup_profile or direction_profile or (direction.profile if direction else None) or direction_name or "—",
         "publish_year": (rpd.academic_year or str(datetime.now().year))[:4],
 
         "goals_text": _safe(rpd.goals_text, "—"),

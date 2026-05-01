@@ -15,7 +15,9 @@ from app.core.auth import get_current_user
 from app.core.database import get_db
 from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency,
-    Direction, Discipline, Competency, Department, StoredFile, User,
+    Direction, Discipline, Competency, CompetencyIndicator,
+    Department, StoredFile, User,
+    Rpd, RpdBupDiscipline, RpdLearningOutcome,
 )
 from app.routers.bups import _bup_out, _bd_out
 from app.schemas import (
@@ -131,17 +133,144 @@ async def admin_delete_bup(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    """Hard-delete БУПа со «вшиванием» данных в привязанные РПД.
+
+    Алгоритм:
+      1) Для каждой `RpdBupDiscipline`, привязанной к BD этого БУПа: убеждаемся,
+         что snapshot заполнен (если не был — заполняем сейчас) и зануляем FK.
+         RPD продолжит видеть тот же ряд в своём списке `bup_disciplines`,
+         просто с пометкой «БУП удалён из БД».
+      2) Для outcomes у этих РПД, чей индикатор принадлежит компетенции,
+         используемой ТОЛЬКО этим БУПом, фиксируем snapshot индикатора и зануляем
+         FK. Outcomes у компетенций, разделяемых с другими БУПами, не трогаем.
+      3) Удаляем сам Bup. Каскад чистит BupDiscipline → BupDisciplineCompetency.
+      4) Чистим осиротевшие компетенции (без оставшихся BDC), их индикаторы,
+         и логические дисциплины, которые больше нигде не используются и не
+         привязаны ни к одной РПД. Direction / Department не трогаем — они
+         общие для других БУПов и долгоживут.
+    """
     _require_admin(user)
-    bup = await db.get(Bup, bup_id)
+    bup = await db.get(
+        Bup, bup_id,
+        options=[
+            selectinload(Bup.disciplines)
+                .selectinload(BupDiscipline.competencies)
+                .selectinload(BupDisciplineCompetency.competency),
+        ],
+    )
     if not bup:
         raise HTTPException(status_code=404)
-    # Удалим исходный файл, если был
-    if bup.id_source_file:
-        sf = await db.get(StoredFile, bup.id_source_file)
-        if sf:
-            storage_service.delete(sf.storage_uri)
-            await db.delete(sf)
+
+    bd_ids = [bd.id_bup_discipline for bd in bup.disciplines]
+    discipline_ids = {bd.id_discipline for bd in bup.disciplines}
+    comp_ids_in_bup = {
+        link.id_competency for bd in bup.disciplines for link in bd.competencies
+    }
+
+    # 1) Snapshot + null FK у RpdBupDiscipline.
+    if bd_ids:
+        rbd_res = await db.execute(
+            select(RpdBupDiscipline)
+            .where(RpdBupDiscipline.id_bup_discipline.in_(bd_ids))
+            .options(
+                selectinload(RpdBupDiscipline.bup_discipline)
+                    .selectinload(BupDiscipline.discipline),
+                selectinload(RpdBupDiscipline.bup_discipline)
+                    .selectinload(BupDiscipline.bup)
+                    .selectinload(Bup.direction)
+                    .selectinload(Direction.fgos_file),
+            )
+        )
+        from app.routers.rpd import _fill_rpd_bup_disc_snapshot  # локальный импорт — избежать циклов
+        for link in rbd_res.scalars().all():
+            if link.bup_discipline is not None and not link.bup_name:
+                _fill_rpd_bup_disc_snapshot(link, link.bup_discipline)
+            link.id_bup_discipline = None
+        await db.flush()
+
+    # 2) Какие компетенции точно «уйдут» — те, что использовались только этим БУПом.
+    if comp_ids_in_bup:
+        other_use_res = await db.execute(
+            select(BupDisciplineCompetency.id_competency)
+            .where(BupDisciplineCompetency.id_competency.in_(comp_ids_in_bup))
+            .where(BupDisciplineCompetency.id_bup_discipline.notin_(bd_ids or [-1]))
+            .distinct()
+        )
+        still_used = {row for row in other_use_res.scalars().all()}
+        comp_ids_to_drop = comp_ids_in_bup - still_used
+    else:
+        comp_ids_to_drop = set()
+
+    # У outcomes, чей индикатор принадлежит уходящей компетенции — снимаем snapshot и нуллим FK.
+    if comp_ids_to_drop:
+        from app.routers.rpd import _fill_outcome_snapshot
+        outcomes_to_detach = await db.execute(
+            select(RpdLearningOutcome)
+            .join(CompetencyIndicator, CompetencyIndicator.id_indicator == RpdLearningOutcome.id_indicator)
+            .where(CompetencyIndicator.id_competency.in_(comp_ids_to_drop))
+            .options(
+                selectinload(RpdLearningOutcome.indicator)
+                    .selectinload(CompetencyIndicator.competency),
+            )
+        )
+        for lo in outcomes_to_detach.scalars().all():
+            if lo.indicator is not None and not lo.indicator_code:
+                _fill_outcome_snapshot(lo, lo.indicator)
+            lo.id_indicator = None
+        await db.flush()
+
+    # 3) Удалить сам БУП. Каскад: BupDiscipline → BupDisciplineCompetency.
+    src_id = bup.id_source_file
+    if src_id:
+        bup.id_source_file = None
+        await db.flush()
     await db.delete(bup)
+    await db.flush()
+
+    # 3.5) Удалить исходный xls.
+    if src_id:
+        sf = await db.get(StoredFile, src_id)
+        if sf:
+            try:
+                storage_service.delete(sf.storage_uri)
+            except Exception:  # noqa: BLE001
+                pass
+            await db.delete(sf)
+            await db.flush()
+
+    # 4а) Удаляем индикаторы и компетенции, которые более не нужны.
+    if comp_ids_to_drop:
+        await db.execute(
+            CompetencyIndicator.__table__.delete().where(
+                CompetencyIndicator.id_competency.in_(comp_ids_to_drop)
+            )
+        )
+        await db.execute(
+            Competency.__table__.delete().where(
+                Competency.id_competency.in_(comp_ids_to_drop)
+            )
+        )
+
+    # 4б) Удаляем логические дисциплины, которые осиротели окончательно: ни в одной
+    # BupDiscipline и ни в одной Rpd. Если хотя бы одна РПД на дисциплину ещё
+    # ссылается, оставляем — РПД не должна сломать FK.
+    if discipline_ids:
+        for disc_id in discipline_ids:
+            still_in_bd = await db.execute(
+                select(BupDiscipline.id_bup_discipline)
+                .where(BupDiscipline.id_discipline == disc_id).limit(1)
+            )
+            if still_in_bd.scalar_one_or_none() is not None:
+                continue
+            still_in_rpd = await db.execute(
+                select(Rpd.id_rpd).where(Rpd.id_discipline == disc_id).limit(1)
+            )
+            if still_in_rpd.scalar_one_or_none() is not None:
+                continue
+            await db.execute(
+                Discipline.__table__.delete().where(Discipline.id_discipline == disc_id)
+            )
+
     await db.commit()
 
 
