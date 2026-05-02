@@ -61,19 +61,19 @@ def build_context(rpd, bd=None, link=None) -> dict:
     direction_profile = _pick(link.direction_profile if link else None, direction.profile if direction else None)
     bup_profile = _pick(link.bup_profile if link else None, bd.bup.profile if bd and bd.bup else None)
 
-    # Множество индикаторов, которые относятся к компетенциям ВЫБРАННОЙ
-    # БУП-дисциплины (нужно для фильтрации раздела 2 в печатной форме).
-    # Без живой bd-FK фильтрация по индикаторам невозможна — печатаем все
-    # outcomes РПД (snapshot их сохраняет).
-    bd_indicator_ids: set[int] | None = None
+    # Раздел 2 в печатной форме строится так же, как таблица в OutcomesEditor
+    # (см. router rpd.get_outcomes_table): идём по живым индикаторам компетенций
+    # выбранной БУП-привязки и для каждого подкладываем outcome_text/средство
+    # оценки из rpd.learning_outcomes (если есть). Так строки с заполненными
+    # снапшотами (competency_code/indicator_code/indicator_description) попадают
+    # в PDF, даже если пользователь ещё не ввёл текст результата.
     if bd is not None:
-        bd_competency_ids = {bdc.id_competency for bdc in (bd.competencies or [])}
-        if bd_competency_ids:
-            bd_indicator_ids = set()
-            for lo in (rpd.learning_outcomes or []):
-                ind = lo.indicator
-                if ind and ind.competency and ind.competency.id_competency in bd_competency_ids:
-                    bd_indicator_ids.add(ind.id_indicator)
+        bds_for_indicators = [bd]
+    else:
+        bds_for_indicators = [
+            link.bup_discipline for link in (rpd.bup_links or [])
+            if link.bup_discipline is not None
+        ]
 
     total_hours = _safe(_pick(link.total_hours if link else None, bd.total_hours if bd else 0), 0)
     lec = _safe(_pick(link.lecture_hours if link else None, bd.lecture_hours if bd else 0), 0)
@@ -117,26 +117,64 @@ def build_context(rpd, bd=None, link=None) -> dict:
     }
 
     # ── Результаты обучения ────────────────────────────────────────────────
-    # Если нам передали конкретную БУП-дисциплину — печатаем только её
-    # индикаторы (раздел 2 в АРМ для каждой привязки свой).
+    # Идём по индикаторам всех bds_for_indicators (одна БУП-привязка или все
+    # сразу). Для каждого индикатора строка ВСЕГДА в печатной форме — даже
+    # если пользователь ещё не заполнил outcome_text / средство оценки.
     learning_outcomes = []
-    for lo in (rpd.learning_outcomes or []):
-        ind = lo.indicator
-        if bd_indicator_ids is not None and ind and ind.id_indicator not in bd_indicator_ids:
-            continue
-        comp = ind.competency if ind else None
-        learning_outcomes.append({
-            "competency_code": _pick(lo.competency_code, comp.code if comp else "") or "",
-            "indicator_code": _pick(lo.indicator_code, ind.code if ind else "") or "",
-            "outcome_text": _safe(lo.outcome_text, "—"),
-            "indicator_description": _pick(lo.indicator_description, ind.description if ind else "") or "",
-            "assessment_tool": _safe(lo.assessment_tool, "—"),
-        })
+    seen_indicator_ids: set[int] = set()
+    outcome_by_ind = {
+        lo.id_indicator: lo
+        for lo in (rpd.learning_outcomes or [])
+        if lo.id_indicator is not None
+    }
+    for bdisc in bds_for_indicators:
+        for bdc in (bdisc.competencies or []):
+            comp = bdc.competency
+            if comp is None:
+                continue
+            for ind in (comp.indicators or []):
+                if ind.id_indicator in seen_indicator_ids:
+                    continue
+                seen_indicator_ids.add(ind.id_indicator)
+                lo = outcome_by_ind.get(ind.id_indicator)
+                learning_outcomes.append({
+                    "competency_code": comp.code or "",
+                    "indicator_code": ind.code or "",
+                    "outcome_text": (lo.outcome_text if lo else "") or "",
+                    "indicator_description": ind.description or "",
+                    "assessment_tool": (lo.assessment_tool if lo else "") or "",
+                })
+
+    # «Осиротевшие» outcomes — те, что были автодобавлены при привязке БУПа,
+    # а потом БУП хард-удалили: индикатор уехал, а snapshot в РПД остался.
+    # В PDF их добавляем только если печатаем «общую» форму (bd не выбран),
+    # как делает OutcomesEditor в режиме «без bd_id».
+    if bd is None:
+        for lo in (rpd.learning_outcomes or []):
+            if lo.id_indicator and lo.id_indicator in seen_indicator_ids:
+                continue
+            if not (lo.indicator_code or "").strip():
+                continue
+            learning_outcomes.append({
+                "competency_code": lo.competency_code or "",
+                "indicator_code": lo.indicator_code or "",
+                "outcome_text": lo.outcome_text or "",
+                "indicator_description": lo.indicator_description or "",
+                "assessment_tool": lo.assessment_tool or "",
+            })
+
+    # Сортируем по коду компетенции и индикатора — стабильный порядок и тот же,
+    # что у OutcomesEditor (тоже сортируется по Competency.code, Indicator.code).
+    learning_outcomes.sort(key=lambda r: (r["competency_code"], r["indicator_code"]))
 
     # ── Содержание дисциплины (разделы по семестрам) ──────────────────────
+    # Разделы без названия пропускаем: пользователь добавил пустую строку и не
+    # успел/не стал её заполнить — в печатной форме её быть не должно. Это же
+    # правило фильтрует темы 4.1/4.2 (frontend TopicsEditor делает то же).
+    rpd_sections = [s for s in (rpd.sections or []) if (s.title or "").strip()]
     sections = []
     tot_lec = tot_lab = tot_pr = tot_srs = 0
-    for s in (rpd.sections or []):
+    for s in rpd_sections:
         sl = _safe(s.lecture_hours, 0)
         sp = _safe(s.practice_hours, 0)
         slb = _safe(s.lab_hours, 0)
@@ -169,8 +207,9 @@ def build_context(rpd, bd=None, link=None) -> dict:
     }
 
     # ── Темы лабораторных и практических ──────────────────────────────────
+    # Источник тем — те же отфильтрованные «осмысленные» разделы.
     lab_topics, prac_topics = [], []
-    for s in (rpd.sections or []):
+    for s in rpd_sections:
         for t in (s.topics or []):
             tt = (t.topic_type or "").lower()
             if tt in ("lab", "лр", "лаб", "laboratory"):
@@ -196,9 +235,14 @@ def build_context(rpd, bd=None, link=None) -> dict:
         parts = []
         if getattr(l, "authors", None):
             parts.append(l.authors)
-        if l.title:
+        if (l.title or "").strip():
             parts.append(l.title)
-        ref = " ".join(parts) if parts else (l.title or "—")
+        if not parts:
+            # Пользователь заполнил какое-то поле строки (например, copies_count
+            # или вид ЭБС), но title не ввёл — в ячейке цитирования просто пусто,
+            # а не «—.» как раньше.
+            return ""
+        ref = " ".join(parts)
         tail = []
         if getattr(l, "publisher", None):
             tail.append(l.publisher)
@@ -206,7 +250,7 @@ def build_context(rpd, bd=None, link=None) -> dict:
             tail.append(str(l.year))
         if tail:
             ref += " — " + ", ".join(tail)
-        return (ref or "—").rstrip(".") + "."
+        return ref.rstrip(".") + "."
 
     PRINTED_BUCKETS = {
         "Учебные и научные издания": "main",
@@ -217,16 +261,36 @@ def build_context(rpd, bd=None, link=None) -> dict:
     }
     buckets = {k: [] for k in ("main", "periodical", "normative", "methodical", "self_study")}
     lit_el = []
+    # Дискриминатор «электронная» — наличие URL (truthy). Согласовано с
+    # frontend/LiteratureEditor: новой строке 6.2 он кладёт URL=" " (sentinel),
+    # чтобы запись не «утекала» в 6.1 до ввода настоящей ссылки. После .strip()
+    # этот пробел становится пустым — значит «реальной ссылки нет» в фильтре.
+    #
+    # Правило фильтра: строка попадает в печатную форму, если ХОТЯ БЫ ОДНО поле
+    # заполнено пользователем. Для 6.1 source_type выставляется автоматически
+    # по группе («+ Добавить запись» в «Основной литературе» сразу пишет тип) —
+    # значит сам по себе не считается «пользовательским заполнением». Для 6.2
+    # источник литературы пользователь выбирает в выпадашке вручную, и любая
+    # выбранная позиция уже делает строку «непустой».
     for l in (rpd.literature or []):
-        if l.url:
+        if l.url:  # электронная (включая sentinel " ")
+            url_clean = (l.url or "").strip()
+            type_clean = (l.source_type or "").strip()
+            title_clean = (l.title or "").strip()
             avail = l.availability or []
-            access = ", ".join(avail) if avail else "локальная сеть; свободный доступ"
+            if not (title_clean or url_clean or type_clean or avail):
+                continue
+            access = ", ".join(avail) if avail else ""
             lit_el.append({
-                "els_type": l.source_type or "—",
+                "els_type": type_clean,
                 "title": _mk_citation(l),
-                "url": l.url,
+                "url": url_clean,
                 "access": access,
             })
+            continue
+        # 6.1 печатная — source_type сам по себе пустоту не отменяет (его выбрал
+        # не пользователь, а кнопка «+» в группе).
+        if not (l.title or "").strip() and l.copies_count is None:
             continue
         bucket = PRINTED_BUCKETS.get((l.source_type or "").strip())
         if not bucket:
@@ -235,61 +299,60 @@ def build_context(rpd, bd=None, link=None) -> dict:
         buckets[bucket].append({
             "number": len(buckets[bucket]) + 1,
             "citation": _mk_citation(l),
-            "copies_count": _safe(l.copies_count, "—"),
+            "copies_count": "" if l.copies_count is None else l.copies_count,
         })
 
-    not_used = [{"number": 1, "citation": "Не используется", "copies_count": "—"}]
+    # Шаблон 6.1 имеет встроенную ветку:
+    #   {%tr if lo.citation == 'Не используется' %} {{lo.citation}} {%tr else %} ...
+    # «Не используется» — это фраза ИЗ ШАБЛОНА, нам надо просто отдать тот ровно
+    # этот sentinel в citation, чтобы шаблон сам нарисовал свою компактную строку.
+    empty_printed = [{"number": "", "citation": "Не используется", "copies_count": ""}]
 
     # ── ПО / БД / МТО ──────────────────────────────────────────────────────
-    # «Вид ПО» = license_type (репропс из формы 6.3); «Наименование ПО» = name.
+    # Правило для всех трёх таблиц: строка попадает в печатную форму, если
+    # пользователь ввёл/выбрал ХОТЯ БЫ одно поле. Все поля пустые → пропускаем.
     software = []
     for s in (rpd.software or []):
-        software.append({
-            "soft_type": _safe((s.license_type or "").strip(), "—"),
-            "name": _safe((s.name or "").strip(), "—"),
-        })
+        soft_type = (s.license_type or "").strip()
+        name = (s.name or "").strip()
+        if not soft_type and not name:
+            continue
+        software.append({"soft_type": soft_type, "name": name})
     if not software:
-        software = [{"soft_type": "Не используется", "name": "—"}]
+        software = [{"soft_type": "", "name": ""}]
 
-    # «Вид БД» = db_type; «Наименование» = name. URL больше не вводится в форме —
-    # для шаблона выводим в столбец url ссылку, если она была в legacy-данных,
-    # иначе — прочерк (шаблон ожидает строку).
-    if rpd.databases:
-        databases = [
-            {"db_type": _safe((d.db_type or "").strip(), "—"),
-             "url": _safe(d.name, "—")}
-            for d in rpd.databases
-        ]
-    else:
-        databases = [
-            {"db_type": "База данных Elsevier «Freedom Collection»",
-             "url": "https://www.elsevier.com/"},
-            {"db_type": "База данных Springer Nature e-books",
-             "url": "http://link.springer.com/"},
-            {"db_type": "База данных научной электронной библиотеки (eLIBRARY.RU)",
-             "url": "https://elibrary.ru/"},
-            {"db_type": "Научная библиотека Пермского национального исследовательского политехнического университета",
-             "url": "https://elib.pstu.ru/"},
-            {"db_type": "Электронно-библиотечная система «Лань»",
-             "url": "https://e.lanbook.com/"},
-            {"db_type": "Электронно-библиотечная система IPRsmart",
-             "url": "http://www.iprbookshop.ru/"},
-            {"db_type": "Информационные ресурсы Сети КонсультантПлюс",
-             "url": "локальная сеть"},
-            {"db_type": "Информационно-справочная система нормативно-технической документации «Техэксперт: нормы, правила, стандарты и законодательства России»",
-             "url": "http://325290.inkip.ru/docs"},
-        ]
+    # «Вид БД» = db_type; «Наименование БД» = name (шаблонный ключ называется
+    # `url` исторически — переиспользуется под наименование). Пустые строки
+    # пропускаем; стандартный перечень ПНИПУ больше НЕ подставляется по
+    # умолчанию (это была активная подстановка, которой в АРМ нет; пользователь
+    # хотел убрать — теперь пусто = одна пустая строка).
+    # ВАЖНО: цикл-переменная — `db`, не `d`. Имя `d` уже занято объектом
+    # дисциплины (см. `d = rpd.discipline` выше) и используется ниже в контексте
+    # `discipline_name=d.name`. Раньше тут было `for d in ...`, и d затирался —
+    # из-за чего на печатной форме имя дисциплины подменялось именем последней БД
+    # (или вовсе пустотой, если БД пользователь не добавлял).
+    databases = []
+    for db in (rpd.databases or []):
+        db_type = (db.db_type or "").strip()
+        name = (db.name or "").strip()
+        if not db_type and not name:
+            continue
+        databases.append({"db_type": db_type, "url": name})
+    if not databases:
+        databases = [{"db_type": "", "url": ""}]
 
-    material_tech = [
-        {
-            "lesson_type": _safe(m.room_type, "—"),
-            "equipment": _safe(m.equipment, "—"),
-            "quantity": _safe(m.quantity, "—"),
-        }
-        for m in (rpd.material_tech or [])
-    ]
+    material_tech = []
+    for m in (rpd.material_tech or []):
+        # «Пусто» для МТО — нет ни вида занятий, ни оборудования, ни количества.
+        if not (m.room_type or "").strip() and not (m.equipment or "").strip() and m.quantity is None:
+            continue
+        material_tech.append({
+            "lesson_type": (m.room_type or "").strip(),
+            "equipment": (m.equipment or "").strip(),
+            "quantity": "" if m.quantity is None else m.quantity,
+        })
     if not material_tech:
-        material_tech = [{"lesson_type": "Не используется", "equipment": "—", "quantity": "—"}]
+        material_tech = [{"lesson_type": "", "equipment": "", "quantity": ""}]
 
     # ── Контекст ───────────────────────────────────────────────────────────
     context: dict[str, Any] = {
@@ -321,19 +384,17 @@ def build_context(rpd, bd=None, link=None) -> dict:
         "educational_tech": _safe(rpd.educational_tech, "—"),
         "methodical_recommendations": _safe(rpd.methodical_recommendations, "—"),
 
-        "literature_main": buckets["main"] or not_used,
-        # Доп. учебная литература теперь не отдельная категория — преподаватель
-        # её вводит вместе с основной как «Учебные и научные издания». Шаблон
-        # пока ожидает отдельный список — отдаём «Не используется», чтобы он
-        # рендерился без падения. Можно будет убрать поле из шаблона позже.
-        "literature_additional_study": not_used,
-        "literature_periodical": buckets["periodical"] or not_used,
-        "literature_additional_normative": buckets["normative"] or not_used,
-        "literature_methodical": buckets["methodical"] or not_used,
-        "literature_self_study": buckets["self_study"] or not_used,
+        "literature_main": buckets["main"] or empty_printed,
+        # Доп. учебная литература — отдельной категории на фронте нет (вводится
+        # как «Учебные и научные»). Шаблон ждёт отдельный список — отдаём пустую
+        # строку, чтобы он рендерился без подстановок.
+        "literature_additional_study": empty_printed,
+        "literature_periodical": buckets["periodical"] or empty_printed,
+        "literature_additional_normative": buckets["normative"] or empty_printed,
+        "literature_methodical": buckets["methodical"] or empty_printed,
+        "literature_self_study": buckets["self_study"] or empty_printed,
         "el_literature": lit_el or [{
-            "els_type": "Не используется", "title": "—",
-            "url": "—", "access": "—",
+            "els_type": "", "title": "", "url": "", "access": "",
         }],
 
         "databases": databases,

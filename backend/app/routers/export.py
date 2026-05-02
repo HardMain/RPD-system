@@ -18,6 +18,9 @@ from app.models import (
     RpdDeveloper, ApprovalStage, CompetencyIndicator, Competency, UploadedDocument,
     RpdBupDiscipline,
 )
+# noqa импорты для удобства: build_context вытаскивает competency/indicator
+# через цепочку bup_links → bup_discipline → competencies → competency → indicators,
+# поэтому загружаем эту цепочку явно (см. _load_rpd ниже).
 from app.services.docx_renderer import render_rpd_pdf_bytes
 from app.services.rpd_template_context import build_context
 
@@ -37,11 +40,15 @@ async def _load_rpd(db: AsyncSession, rpd_id: int) -> Rpd:
                 .selectinload(RpdBupDiscipline.bup_discipline)
                 .selectinload(BupDiscipline.bup)
                 .selectinload(Bup.direction),
-            # competencies на BupDiscipline нужны для фильтрации раздела 2
-            # печатной формы по выбранной БУП-привязке.
+            # competencies на BupDiscipline нужны для раздела 2 печатной формы:
+            # build_context итерирует ВСЕ индикаторы выбранной БУП-привязки
+            # (а не только те, по которым пользователь сохранил текст результата),
+            # — те же индикаторы, что показывает OutcomesEditor в режиме edit.
             selectinload(Rpd.bup_links)
                 .selectinload(RpdBupDiscipline.bup_discipline)
-                .selectinload(BupDiscipline.competencies),
+                .selectinload(BupDiscipline.competencies)
+                .selectinload(BupDisciplineCompetency.competency)
+                .selectinload(Competency.indicators),
             selectinload(Rpd.author),
             selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
             selectinload(Rpd.sections).selectinload(RpdSection.topics),

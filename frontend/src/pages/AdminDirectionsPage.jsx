@@ -44,7 +44,7 @@ export function AdminDirectionsPage() {
           ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
           : items.length === 0
             ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13 }}>Направлений нет.</div>
-            : <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            : <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr>
                 <th style={headStyle}>Код</th>
                 <th style={headStyle}>Наименование</th>
@@ -77,7 +77,7 @@ export function AdminDirectionsPage() {
                   </tr>
                 ))}
               </tbody>
-            </table>}
+            </table></div>}
       </div>
     </div>
   </div>;

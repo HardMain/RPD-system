@@ -33,11 +33,22 @@ class Rpd(Base):
     developers = relationship("RpdDeveloper", back_populates="rpd", cascade="all, delete-orphan")
     sections = relationship("RpdSection", back_populates="rpd", cascade="all, delete-orphan",
                             order_by="RpdSection.section_number")
-    literature = relationship("RpdLiterature", back_populates="rpd", cascade="all, delete-orphan")
-    software = relationship("RpdSoftware", back_populates="rpd", cascade="all, delete-orphan")
-    material_tech = relationship("RpdMaterialTech", back_populates="rpd", cascade="all, delete-orphan")
-    databases = relationship("RpdDatabase", back_populates="rpd", cascade="all, delete-orphan")
-    learning_outcomes = relationship("RpdLearningOutcome", back_populates="rpd", cascade="all, delete-orphan")
+    # Везде явный order_by по PK — иначе после UPDATE строки могут «всплывать»
+    # в произвольной позиции (MVCC в postgres), и при inline-редактировании в
+    # таблицах разделов 6.1/6.2 / 7 / 4 визуально кажется, что строки меняются
+    # местами (React по key корректно держит данные внутри строк, но строки
+    # переезжают). Стабильный порядок чтения чинит это и для всех аналогичных
+    # «таблиц-редакторов».
+    literature = relationship("RpdLiterature", back_populates="rpd", cascade="all, delete-orphan",
+                              order_by="RpdLiterature.id_literature")
+    software = relationship("RpdSoftware", back_populates="rpd", cascade="all, delete-orphan",
+                            order_by="RpdSoftware.id_software")
+    material_tech = relationship("RpdMaterialTech", back_populates="rpd", cascade="all, delete-orphan",
+                                 order_by="RpdMaterialTech.id_material_tech")
+    databases = relationship("RpdDatabase", back_populates="rpd", cascade="all, delete-orphan",
+                             order_by="RpdDatabase.id_database")
+    learning_outcomes = relationship("RpdLearningOutcome", back_populates="rpd", cascade="all, delete-orphan",
+                                     order_by="RpdLearningOutcome.id_outcome")
     fos_files = relationship("RpdFosFile", back_populates="rpd", cascade="all, delete-orphan")
     uploaded_documents = relationship("UploadedDocument", back_populates="rpd", cascade="all, delete-orphan")
     llm_logs = relationship("LlmGenerationLog", back_populates="rpd", cascade="all, delete-orphan")
@@ -68,7 +79,8 @@ class RpdSection(Base):
     self_study_hours = Column(Integer, default=0)
 
     rpd = relationship("Rpd", back_populates="sections")
-    topics = relationship("RpdTopic", back_populates="section", cascade="all, delete-orphan")
+    topics = relationship("RpdTopic", back_populates="section", cascade="all, delete-orphan",
+                          order_by="RpdTopic.id_topic")
 
 
 class RpdTopic(Base):

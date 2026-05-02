@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Document, Page } from "react-pdf";
 import * as api from "../../api/client.js";
 import { T, F } from "../../theme.js";
-import { pdfToolBtn, td, th } from "../../styles.js";
+import { pdfToolBtn } from "../../styles.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Spinner } from "../../components/Spinner.jsx";
 import { Badge } from "../../components/Badge.jsx";
@@ -24,11 +24,12 @@ import { OutcomesEditor } from "./editors/OutcomesEditor.jsx";
 import { TopicsEditor } from "./editors/TopicsEditor.jsx";
 import { DatabasesEditor } from "./editors/DatabasesEditor.jsx";
 import { MtechEditor } from "./editors/MtechEditor.jsx";
+import { WorkloadTable } from "./editors/WorkloadTable.jsx";
 import { DocsUpload } from "./editors/DocsUpload.jsx";
 import { FosEditor } from "./editors/FosEditor.jsx";
 import { RpdMetaModal } from "./RpdMetaModal.jsx";
 
-export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onExportPdf, onToggleMode, isActive = true }) {
+export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
@@ -115,7 +116,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (!silent) setLoading(true);
     try {
       const res = await api.getRpd(rpdId); const r = res.data; setRpd(r);
-      setEditTexts({ goals: r.goals_text || "", tasks: r.tasks_text || "", objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
+      // 1.1 «Цели и задачи дисциплины» — единый текстовый блок. Старые РПД могли
+      // иметь раздельные goals_text/tasks_text — на загрузку склеиваем их через
+      // пустую строку, в шаблон и далее отдаётся только goals_text.
+      const mergedGoals = [r.goals_text, r.tasks_text].map(s => (s || "").trim()).filter(Boolean).join("\n\n");
+      setEditTexts({ goals: mergedGoals, objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
       // Первый load при монтировании компонента не помечает PDF грязным
       // (PDF и так ещё не загружен). Все последующие load() — это перечитывание
       // после изменений, поэтому PDF на сервере мог обновиться.
@@ -606,7 +611,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     try {
       const res = await api.generateSection(rpdId, { section: key });
       const text = res.data.generated_text;
-      const fieldMap = { goals: "goals", tasks: "tasks", objects: "objects", requirements: "requirements", educational_tech: "educational_tech", methodical_recommendations: "methodical_recommendations" };
+      const fieldMap = { goals: "goals", objects: "objects", requirements: "requirements", educational_tech: "educational_tech", methodical_recommendations: "methodical_recommendations" };
       if (fieldMap[key]) setEditTexts(p => ({ ...p, [fieldMap[key]]: text }));
     } catch { } setGenerating(null);
   }
@@ -621,7 +626,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     try {
       // comment не пишем — он живёт в модалке «Свойства РПД» со своей кнопкой
       // «Сохранить». Эта кнопка пишет только текст печатной формы.
-      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: editTexts.tasks, objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations });
+      // tasks_text всегда чистим — раздел 1.1 теперь единый блок, его текст
+      // полностью лежит в goals_text. Так же подчищаем легаси-данные старых РПД.
+      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: "", objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations });
       // Тихая перезагрузка — форма не размонтируется в спиннер, скролл и состояние
       // дочерних редакторов сохраняются. PDF в парной view-вкладке обновится через
       // onAfterSave (там reloadKey, и мерцание PDF — это нормально).
@@ -641,14 +648,16 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
   function getValidationErrors() {
     const e = [];
-    if (!editTexts.goals?.trim()) e.push({ secKey: "1.1", label: "1.1 Цели дисциплины" });
-    if (!editTexts.tasks?.trim()) e.push({ secKey: "1.1", label: "1.1 Задачи дисциплины" });
+    if (!editTexts.goals?.trim()) e.push({ secKey: "1.1", label: "1.1 Цели и задачи дисциплины" });
     if (!editTexts.objects?.trim()) e.push({ secKey: "1.2", label: "1.2 Изучаемые объекты" });
     if (!editTexts.requirements?.trim()) e.push({ secKey: "1.3", label: "1.3 Входные требования" });
     if (!editTexts.educational_tech?.trim()) e.push({ secKey: "5.1", label: "5.1 Образовательные технологии" });
     if (!editTexts.methodical_recommendations?.trim()) e.push({ secKey: "5.2", label: "5.2 Методические указания" });
-    if (!rpd.sections?.length) e.push({ secKey: "4", label: "4. Содержание (нет ни одного раздела)" });
-    if (!rpd.literature?.length) e.push({ secKey: "6.1", label: "6.1 Литература (нет ни одного источника)" });
+    // Пустые строки (без названия) автодобавляются для удобства редактора, но
+    // не считаются «настоящим» разделом — фильтр совпадает с тем, что в
+    // backend/services/rpd_template_context.py исключает их из печатной формы.
+    if (!rpd.sections?.some(s => (s.title || "").trim())) e.push({ secKey: "4", label: "4. Содержание (нет ни одного заполненного раздела)" });
+    if (!rpd.literature?.some(l => (l.title || "").trim())) e.push({ secKey: "6.1", label: "6.1 Литература (нет ни одного заполненного источника)" });
     return e;
   }
   async function handleSendApproval() {
@@ -804,8 +813,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <SectionHeading title="1. Общие положения" collapsed={isCollapsed("1")} onToggle={() => toggleCollapse("1")} />
                 {!isCollapsed("1") && <>
                   <div ref={refs["1.1"]} style={{ marginBottom: 32 }}>
-                    <EditableBlock skey="goals" label="1.1. Цели дисциплины" fieldKey="goals" />
-                    <div style={{ marginTop: 20 }}><EditableBlock skey="tasks" label="Задачи дисциплины" fieldKey="tasks" /></div>
+                    <EditableBlock skey="goals" label="1.1. Цели и задачи дисциплины" fieldKey="goals" />
                   </div>
                   <HR />
                   <div ref={refs["1.2"]} style={{ marginBottom: 32 }}>
@@ -829,21 +837,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <SectionHeading title="3. Объём и виды учебной работы" collapsed={isCollapsed("3")} onToggle={() => toggleCollapse("3")} marginBottom={8} />
                 {!isCollapsed("3") && <>
                 <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Заполняется автоматически из БУП</div>
-                <div className="table-scroll">
-                <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                  <thead><tr><th style={th}>Вид учебной работы</th><th style={th}>Всего часов</th></tr></thead>
-                  <tbody>
-                    <tr><td style={td}>Контактная аудиторная работа</td><td style={{ ...td, textAlign: "center" }}>{(rpd.lecture_hours || 0) + (rpd.practice_hours || 0) + (rpd.lab_hours || 0)}</td></tr>
-                    <tr><td style={td}>— лекции (Л)</td><td style={{ ...td, textAlign: "center" }}>{rpd.lecture_hours || 0}</td></tr>
-                    <tr><td style={td}>— лабораторные работы (ЛР)</td><td style={{ ...td, textAlign: "center" }}>{rpd.lab_hours || 0}</td></tr>
-                    <tr><td style={td}>— практические занятия (ПЗ)</td><td style={{ ...td, textAlign: "center" }}>{rpd.practice_hours || 0}</td></tr>
-                    <tr><td style={td}>Самостоятельная работа (СРС)</td><td style={{ ...td, textAlign: "center" }}>{rpd.self_study_hours || 0}</td></tr>
-                    <tr><td style={{ ...td, fontWeight: 700 }}>Общая трудоёмкость</td><td style={{ ...td, textAlign: "center", fontWeight: 700 }}>{rpd.total_hours || 0}</td></tr>
-                    <tr><td style={td}>Форма итогового контроля</td><td style={{ ...td, textAlign: "center" }}>{rpd.control_form || "—"}</td></tr>
-                    <tr><td style={td}>Семестр(ы)</td><td style={{ ...td, textAlign: "center" }}>{rpd.semester || "—"}</td></tr>
-                  </tbody>
-                </table>
-                </div>
+                <WorkloadTable rpd={rpd} />
                 </>}
               </div>
               <HR />
@@ -858,14 +852,16 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 {!isCollapsed("4") && <SectionEditor />}
                 {!isCollapsed("4") && <div style={{ marginTop: 32 }}>
                   <HR />
+                  {/* Порядок 4.1 / 4.2 как в rpd_template.docx: сначала практические
+                       (TABLE 7), потом лабораторные (TABLE 8). */}
                   <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных лабораторных работ</div>
-                    <TopicsEditor kind="lab" />
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных практических занятий</div>
+                    <TopicsEditor kind="practice" />
                   </div>
                   <HR />
                   <div ref={refs["4.2"]} style={{ marginBottom: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика практических занятий</div>
-                    <TopicsEditor kind="practice" />
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных лабораторных работ</div>
+                    <TopicsEditor kind="lab" />
                   </div>
                 </div>}
               </div>
@@ -898,22 +894,24 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                     <LiteratureEditor kind="electronic" />
                   </div>
                   <HR />
+                  {/* Порядок 6.3/6.4 — как в rpd_template.docx: 6.3 — БД и ИСС,
+                       6.4 — ПО (раньше у нас было перепутано; шапки/смысл должны
+                       совпадать с печатной формой). */}
                   <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.3. Лицензионное и свободно распространяемое программное обеспечение</div>
-                    <SoftwareEditor />
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.3. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
+                    <DatabasesEditor />
                   </div>
                   <HR />
                   <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>6.4. Современные профессиональные базы данных и информационные справочные системы</div>
-                    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Если оставить пустым — в шаблон вставится стандартный перечень ПНИПУ</div>
-                    <DatabasesEditor />
+                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.4. Лицензионное и свободно распространяемое программное обеспечение, используемое при осуществлении образовательного процесса по дисциплине</div>
+                    <SoftwareEditor />
                   </div>
                 </>}
               </div>
               <HR />
               {/* 7. МТО */}
               <div ref={refs["7"]} style={{ marginBottom: 32 }}>
-                <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} />
+                <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса по дисциплине" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} />
                 {!isCollapsed("7") && <MtechEditor />}
               </div>
               <HR />
@@ -964,7 +962,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
       {modal === "sent" && <SentModal onClose={() => setModal(null)} />}
       {modal === "error" && <ErrorModal onClose={() => setModal(null)} />}
-      {modal === "approved" && <ApprovedModal onClose={() => { setModal(null); onBack(); }} />}
+      {modal === "approved" && <ApprovedModal onClose={() => { setModal(null); (onCloseTab || onBack)(); }} />}
       {modal === "reject" && <RejectModal comment={rejectComment} onChange={setRejectComment} onClose={() => setModal(null)} onSubmit={() => { handleReview("reject"); setModal(null); }} />}
       {modal === "validation" && <ValidationModal errors={validationErrors} onGoTo={(secKey) => { goTo(secKey); setModal(null); }} onClose={() => setModal(null)} />}
       {showMeta && <RpdMetaModal

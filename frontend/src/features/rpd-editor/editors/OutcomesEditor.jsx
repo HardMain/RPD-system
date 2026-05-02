@@ -112,27 +112,29 @@ export function OutcomesEditor() {
       </div>
     ) : (
     <div className="table-scroll">
+    {/* Шапка и порядок колонок 1:1 с шаблоном rpd_template.docx (TABLE 4):
+         Компетенция | Индекс индикатора | Планируемые результаты обучения...
+         | Индикатор достижения компетенции... | Средства оценки */}
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
-        <col style={{ width: "12%" }} />
         <col style={{ width: "10%" }} />
-        <col style={{ width: "26%" }} />
+        <col style={{ width: "10%" }} />
         <col style={{ width: "30%" }} />
-        <col style={{ width: "22%" }} />
+        <col style={{ width: "30%" }} />
+        <col style={{ width: "20%" }} />
       </colgroup>
       <thead><tr>
         <th style={{ ...th, ...wrap }}>Компетенция</th>
-        <th style={{ ...th, ...wrap }}>Индикатор</th>
-        <th style={{ ...th, ...wrap }}>Описание индикатора</th>
-        <th style={{ ...th, ...wrap }}>Планируемый результат обучения</th>
-        <th style={{ ...th, ...wrap }}>Средство оценки</th>
+        <th style={{ ...th, ...wrap }}>Индекс индикатора</th>
+        <th style={{ ...th, ...wrap }}>Планируемые результаты обучения по дисциплине (знать, уметь, владеть)</th>
+        <th style={{ ...th, ...wrap }}>Индикатор достижения компетенции, с которым соотнесены планируемые результаты обучения</th>
+        <th style={{ ...th, ...wrap }}>Средства оценки</th>
       </tr></thead>
       <tbody>
         {rows.map((r, idx) => (
           <tr key={r.id_indicator}>
             <td style={{ ...td, ...wrap }}><b>{r.competency_code}</b></td>
             <td style={{ ...td, ...wrap }}>{r.indicator_code}</td>
-            <td style={{ ...td, ...wrap }}>{r.indicator_description}</td>
             <td style={{ ...td, padding: 4, ...wrap }}>
               <OutcomeTextarea
                 value={r.outcome_text || ""}
@@ -140,6 +142,7 @@ export function OutcomesEditor() {
                 onSave={v => saveRow(idx, { outcome_text: v })}
               />
             </td>
+            <td style={{ ...td, ...wrap }}>{r.indicator_description}</td>
             <td style={{ ...td, padding: 4, ...wrap }}>
               <AssessmentToolPicker
                 value={r.assessment_tool || ""}

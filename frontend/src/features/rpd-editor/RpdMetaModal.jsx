@@ -25,12 +25,14 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
   const rpdName = `${rpd.academic_year} ${rpd.discipline_name}` + (totalHours ? ` (${totalHours} ч)` : "");
 
   // Локальный буфер комментария — отделяем от editTexts родительского редактора,
-  // чтобы кнопка «Сохранить» в этой модалке писала только comment, а нижняя
-  // «Сохранить» в редакторе — только текст самой печатной формы.
+  // чтобы автосейв в этой модалке писал только comment, а нижняя «Сохранить»
+  // в редакторе — только текст самой печатной формы.
   const [comment, setComment] = useState(rpd.comment || "");
   const initialCommentRef = useRef(rpd.comment || "");
   const [saving, setSaving] = useState(false);
   const [savedTick, setSavedTick] = useState(false);
+  const debounceRef = useRef(null);
+  const lastSavedRef = useRef(rpd.comment || "");
 
   // Если родитель перечитал РПД (например, после добавления разработчика),
   // приходит новая версия rpd — синхронизируем буфер, если пользователь
@@ -39,29 +41,52 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
     const fresh = rpd.comment || "";
     if (comment === initialCommentRef.current) {
       setComment(fresh);
+      lastSavedRef.current = fresh;
     }
     initialCommentRef.current = fresh;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rpd.comment]);
 
-  const dirty = comment !== (rpd.comment || "");
-
-  async function handleSave() {
+  // Автосейв комментария: 600мс после последнего нажатия. Кнопки «Сохранить»
+  // намеренно нет — поведение такое же, как у списка разработчиков ниже,
+  // где добавление/удаление пишется в БД сразу.
+  useEffect(() => {
     if (!canEdit) return;
-    setSaving(true);
-    try {
-      await api.updateRpd(rpdId, { comment });
-      await reload();
-      setSavedTick(true);
-      setTimeout(() => setSavedTick(false), 1500);
-    } catch {
-      alert("Не удалось сохранить");
-    } finally {
-      setSaving(false);
+    if (comment === lastSavedRef.current) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      debounceRef.current = null;
+      const value = comment;
+      setSaving(true);
+      try {
+        await api.updateRpd(rpdId, { comment: value });
+        lastSavedRef.current = value;
+        await reload();
+        setSavedTick(true);
+        setTimeout(() => setSavedTick(false), 1500);
+      } catch {
+        // тихо — если сеть прыгнула, юзер увидит, что отметка «Сохранено» не появилась
+      } finally {
+        setSaving(false);
+      }
+    }, 600);
+    return () => { if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; } };
+  }, [comment, canEdit, rpdId, reload]);
+
+  // На закрытие модалки — если ещё ждём дебаунс, дожимаем синхронно, чтобы
+  // правки не потерялись.
+  async function handleClose() {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+      if (canEdit && comment !== lastSavedRef.current) {
+        try { await api.updateRpd(rpdId, { comment }); lastSavedRef.current = comment; await reload(); } catch {}
+      }
     }
+    onClose();
   }
 
-  return <Modal width={760} onClose={onClose}>
+  return <Modal width={760} onClose={handleClose}>
     <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "center", gap: 12 }}>
       <div style={{ fontSize: 16, fontWeight: 700 }}>Свойства РПД</div>
       <div style={{ flex: 1 }} />
@@ -108,13 +133,9 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
     </div>
 
     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: "12px 20px", borderTop: "1px solid " + T.borderLight, position: "sticky", bottom: 0, background: T.surface }}>
-      {savedTick && <span style={{ fontSize: 12, color: T.green }}>✓ Сохранено</span>}
-      <Btn onClick={onClose}>Закрыть</Btn>
-      {canEdit && (
-        <Btn primary onClick={handleSave} disabled={saving || !dirty}>
-          {saving ? "Сохраняю…" : "Сохранить"}
-        </Btn>
-      )}
+      {saving && <span style={{ fontSize: 12, color: T.textMuted }}>Сохраняю…</span>}
+      {!saving && savedTick && <span style={{ fontSize: 12, color: T.green }}>✓ Сохранено</span>}
+      <Btn primary onClick={handleClose}>Закрыть</Btn>
     </div>
   </Modal>;
 }
@@ -160,7 +181,7 @@ function BupDisciplinesTable({ bupDisciplines, disciplineName }) {
       Дисциплины БУПа не привязаны.
     </div>;
   }
-  return <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
+  return <div className="table-scroll" style={{ border: "1px solid " + T.borderLight, borderRadius: 6 }}>
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <thead>
         <tr>

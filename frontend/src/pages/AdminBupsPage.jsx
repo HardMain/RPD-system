@@ -37,7 +37,7 @@ export function AdminBupsPage() {
         : bups.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13 }}>
             БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины.
           </div>
-        : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+        : <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
             <thead><tr style={{ background: T.bg }}>
               <th style={{ ...hdr, textAlign: "center", width: 80 }}>Год</th>
               <th style={hdr}>Наименование</th>
@@ -57,7 +57,7 @@ export function AdminBupsPage() {
                 </td>
               </tr>)}
             </tbody>
-          </table>}
+          </table></div>}
       </div>
     </div>
 

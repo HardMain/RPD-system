@@ -22,6 +22,7 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
       <span style={{ fontSize: 12, color: T.textMuted }}>{rpds.length} РПД</span>
     </div>
     <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+      <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
         <thead><tr style={{ background: T.surface }}>{COLS.map((c, i) => <th key={i} style={{ ...hdr, textAlign: c.align }}>{c.label}</th>)}</tr></thead>
         <tbody>{rpds.map(r => {
@@ -44,6 +45,7 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
           </tr>;
         })}</tbody>
       </table>
+      </div>
     </div>
   </div>;
 }

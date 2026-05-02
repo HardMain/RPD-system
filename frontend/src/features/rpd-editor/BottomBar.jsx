@@ -12,12 +12,12 @@ export function BottomBar({
     {isEdit && canEdit && !isHead && <>
       <Btn small onClick={onSave} disabled={saving}>Сохранить</Btn>
       <div style={{ flex: 1 }} />
-      <Btn primary onClick={onSendApproval}>Отправить на согласование</Btn>
+      <Btn small primary onClick={onSendApproval}>Отправить на согласование</Btn>
     </>}
     {isHead && status === "На согласовании" && <>
       <div style={{ flex: 1 }} />
-      <Btn primary onClick={onApprove}>Согласовать</Btn>
-      <Btn danger onClick={onReject}>На доработку</Btn>
+      <Btn small primary onClick={onApprove}>Согласовать</Btn>
+      <Btn small danger onClick={onReject}>На доработку</Btn>
     </>}
     {showPdf && !(isHead && status === "На согласовании") && <>
       <div style={{ flex: 1 }} />
