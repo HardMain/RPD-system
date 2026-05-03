@@ -9,8 +9,12 @@ import { T } from "../../../theme.js";
  * Структура:
  *   • Карточка на каждую BUP-привязку (multi-БУП — несколько карточек).
  *     В шапке карточки — код / БУП / семестр / форма контроля.
- *   • Внутри карточки — таблица: «Всего | Лек | Лаб | Пр | КСР | СРС».
- *     Если у дисциплины один семестр: две строки — «По плану» и
+ *   • Внутри карточки — таблица: «Всего | Лек | Лаб | Пр | СРС».
+ *     КСР в раздел 4 не распределяется (в РПД пользователь раскидывает только
+ *     Л/ЛР/ПЗ/СРС по разделам), поэтому колонка КСР здесь намеренно скрыта —
+ *     иначе у строки «Распределено» она всегда была бы 0 и подсвечивалась
+ *     красным «не сходится с планом». Полный план КСР видно в разделе 3.
+ *   • Если у дисциплины один семестр: две строки — «По плану» и
  *     «Распределено». Если несколько — те же две строки на каждый семестр,
  *     плюс финальная «Всего по дисциплине» (план целиком; красным то, что
  *     не сходится с распределённым).
@@ -61,11 +65,13 @@ function BdCard({ bd, sections }) {
       const sec = s.semester ?? fallbackSem;
       return sec === semNum;
     });
+    // КСР преподаватель не раскидывает по разделам — поэтому он не входит в
+    // распределённое и не отображается в таблице PlanSummary (см. шапку
+    // компонента). План КСР живёт в разделе 3 (WorkloadTable).
     return {
       lec: inGroup.reduce((a, s) => a + (s.lecture_hours || 0), 0),
       lab: inGroup.reduce((a, s) => a + (s.lab_hours || 0), 0),
       pr:  inGroup.reduce((a, s) => a + (s.practice_hours || 0), 0),
-      ksr: 0, // КСР не вводится в RpdSection — план показываем, факт — 0.
       srs: inGroup.reduce((a, s) => a + (s.self_study_hours || 0), 0),
     };
   }
@@ -75,21 +81,35 @@ function BdCard({ bd, sections }) {
   const planAll = sumPlanOver(semesters);
   const distAll = sumDistOver(semesters.map(s => distributedFor(s.number)));
 
+  // Список «Семестр N — <форма контроля>» — по строке на каждую форму
+  // (Экзамен / Диф. зачет / Зачёт / КП / КР). Если у одной формы контроля
+  // несколько семестров — они перечисляются через запятую («Семестр 2, 3 —
+  // Диф. зачет»). Семестры без формы контроля не показываются — это редкий
+  // случай и обычно ошибка в БУПе, не нужно подсвечивать его в шапке.
+  const semesterLines = formatSemesterControlLines(bd, semesters);
+
   return <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
-    {/* Шапка карточки — мета BD: код, имя БУПа, семестр, контроль. */}
-    <div style={{ padding: "8px 12px", background: T.bg, borderBottom: "1px solid " + T.borderLight, display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
-      <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px" }}>{bd.code || "—"}</span>
-      <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{bd.bup_name || ""}</span>
-      <span style={{ flex: 1 }} />
-      <span style={{ fontSize: 11, color: T.textMuted }}>Семестр: <b style={{ color: T.text }}>{bd.semester || "—"}</b></span>
-      <span style={{ fontSize: 11, color: T.textMuted }}>Контроль: <b style={{ color: T.text }}>{bd.control_form || "—"}</b></span>
+    {/* Шапка карточки — мета BD: код, имя БУПа, и список «Семестр N — Форма
+        контроля» под ним отдельной строкой. */}
+    <div style={{ padding: "8px 12px", background: T.bg, borderBottom: "1px solid " + T.borderLight }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
+        <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px" }}>{bd.code || "—"}</span>
+        <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{bd.bup_name || ""}</span>
+      </div>
+      {semesterLines.length > 0 && (
+        <div style={{ marginTop: 6, fontSize: 11, color: T.textMuted, lineHeight: 1.65 }}>
+          {semesterLines.map((line, i) => (
+            <div key={i}>Семестр {line.sems} — <b style={{ color: T.text }}>{line.label}</b></div>
+          ))}
+        </div>
+      )}
     </div>
 
-    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12, tableLayout: "fixed" }}>
+    <div className="table-scroll">
+    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
       <colgroup>
         <col style={{ width: "32%" }} />
         <col style={{ width: "12%" }} />
-        <col />
         <col />
         <col />
         <col />
@@ -102,7 +122,6 @@ function BdCard({ bd, sections }) {
           <th style={hCellC}>Лек</th>
           <th style={hCellC}>Лаб</th>
           <th style={hCellC}>Пр</th>
-          <th style={hCellC}>КСР</th>
           <th style={hCellC}>СРС</th>
         </tr>
       </thead>
@@ -119,18 +138,19 @@ function BdCard({ bd, sections }) {
         {isMulti && <TotalRow plan={planAll} dist={distAll} />}
       </tbody>
     </table>
+    </div>
   </div>;
 }
 
 
 function SemBlock({ sem, dist, showHeader }) {
-  // Пустые ячейки плана показываем как 0 — чтобы преподаватель сразу видел,
-  // что в этом виде занятий часов не запланировано.
-  const planTotal = (z(sem.lec)) + (z(sem.lab)) + (z(sem.pr)) + (z(sem.ksr)) + (z(sem.srs));
-  const distTotal = dist.lec + dist.lab + dist.pr + dist.ksr + dist.srs;
+  // «Всего» — план без КСР (т.к. КСР сюда не распределяется и колонка скрыта,
+  // включать его в total означало бы постоянное рассогласование с распред.).
+  const planTotal = (z(sem.lec)) + (z(sem.lab)) + (z(sem.pr)) + (z(sem.srs));
+  const distTotal = dist.lec + dist.lab + dist.pr + dist.srs;
   return <>
     {showHeader && <tr>
-      <td colSpan={7} style={{ ...bCell, fontWeight: 700, background: T.bg, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", fontSize: 11 }}>
+      <td colSpan={6} style={{ ...bCell, fontWeight: 700, background: T.bg, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", fontSize: 11 }}>
         {sem.number}-й семестр
       </td>
     </tr>}
@@ -140,7 +160,6 @@ function SemBlock({ sem, dist, showHeader }) {
       <td style={numCell}>{z(sem.lec)}</td>
       <td style={numCell}>{z(sem.lab)}</td>
       <td style={numCell}>{z(sem.pr)}</td>
-      <td style={numCell}>{z(sem.ksr)}</td>
       <td style={numCell}>{z(sem.srs)}</td>
     </tr>
     <tr>
@@ -149,7 +168,6 @@ function SemBlock({ sem, dist, showHeader }) {
       <td style={mismatch(dist.lec, z(sem.lec))}>{dist.lec}</td>
       <td style={mismatch(dist.lab, z(sem.lab))}>{dist.lab}</td>
       <td style={mismatch(dist.pr,  z(sem.pr))}>{dist.pr}</td>
-      <td style={mismatch(dist.ksr, z(sem.ksr))}>{dist.ksr}</td>
       <td style={mismatch(dist.srs, z(sem.srs))}>{dist.srs}</td>
     </tr>
   </>;
@@ -157,23 +175,77 @@ function SemBlock({ sem, dist, showHeader }) {
 
 
 function TotalRow({ plan, dist }) {
-  // Строка «Всего по дисциплине»: показываем плановую сумму. Если
+  // Строка «Всего по дисциплине»: показываем плановую сумму без КСР. Если
   // распределённая сумма не совпадает — ячейка подсвечена красным.
-  const planTotal = plan.lec + plan.lab + plan.pr + plan.ksr + plan.srs;
-  const distTotal = dist.lec + dist.lab + dist.pr + dist.ksr + dist.srs;
+  const planTotal = plan.lec + plan.lab + plan.pr + plan.srs;
+  const distTotal = dist.lec + dist.lab + dist.pr + dist.srs;
   return <tr>
     <td style={{ ...bCell, fontWeight: 700, color: T.text, background: T.bg }}>Всего по дисциплине</td>
     <td style={mismatchTotal(distTotal, planTotal)}>{planTotal}</td>
     <td style={mismatchTotal(dist.lec, plan.lec)}>{plan.lec}</td>
     <td style={mismatchTotal(dist.lab, plan.lab)}>{plan.lab}</td>
     <td style={mismatchTotal(dist.pr,  plan.pr)}>{plan.pr}</td>
-    <td style={mismatchTotal(dist.ksr, plan.ksr)}>{plan.ksr}</td>
     <td style={mismatchTotal(dist.srs, plan.srs)}>{plan.srs}</td>
   </tr>;
 }
 
 
 // ─── helpers ────────────────────────────────────────────────────────────────
+
+// Парсит «Экзамен (3), Диф. зачет (2)» → группирует семестры по форме
+// контроля и возвращает массив строк {sems: "2, 3", label: "Диф. зачет"}.
+// Если у формы только один семестр — sems="1" (без запятой). Если control_form
+// не распарсился, но у дисциплины известны semesters — возвращаем строку с
+// перечислением семестров без формы контроля.
+function formatSemesterControlLines(bd, semesters) {
+  const raw = bd?.control_form || "";
+  // Группа: контроль → отсортированный список семестров.
+  const groups = []; // [{ label, sems: number[] }]
+  // Сохраняем порядок появления формы контроля в исходной строке.
+  const order = new Map();
+  const re = /([А-Яа-яёЁ.\s]+?)\s*\(\s*([\d,\s]+)\s*\)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const label = normalizeControlLabel(m[1].trim());
+    const sems = m[2]
+      .split(/[,\s]+/)
+      .filter(Boolean)
+      .map(t => parseInt(t, 10))
+      .filter(n => !isNaN(n));
+    if (!order.has(label)) {
+      const idx = groups.length;
+      order.set(label, idx);
+      groups.push({ label, sems: [] });
+    }
+    const g = groups[order.get(label)];
+    for (const n of sems) if (!g.sems.includes(n)) g.sems.push(n);
+  }
+  if (groups.length === 0) {
+    // Не удалось распарсить — fallback: показываем известные семестры одной
+    // строкой без формы. Если и семестров нет — возвращаем пусто, шапка
+    // тогда останется без второй строки.
+    if (!semesters || semesters.length === 0) return [];
+    const sems = semesters.map(s => s.number).sort((a, b) => a - b);
+    return [{ sems: sems.join(", "), label: raw.trim() || "форма контроля не указана" }];
+  }
+  return groups.map(g => ({
+    sems: g.sems.sort((a, b) => a - b).join(", "),
+    label: g.label,
+  }));
+}
+
+function normalizeControlLabel(s) {
+  const lower = s.toLowerCase().replace(/\s+/g, " ").trim();
+  // Каноничные подписи — те же варианты, что использует WorkloadTable.
+  if (lower === "экзамен") return "Экзамен";
+  if (lower === "зачёт" || lower === "зачет") return "Зачёт";
+  if (lower === "диф. зачет" || lower === "диф.зачет"
+      || lower === "дифференцированный зачёт" || lower === "дифференцированный зачет") return "Диф. зачет";
+  if (lower === "курсовой проект") return "Курсовой проект";
+  if (lower === "курсовая работа") return "Курсовая работа";
+  // Незнакомая форма — оставляем как есть, но с заглавной первой буквы.
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 
 // Конвертация null/undefined → 0 (для отображения плановых ячеек).
 function z(v) { return typeof v === "number" ? v : 0; }
@@ -183,7 +255,6 @@ function sumPlanOver(semesters) {
     lec: semesters.reduce((a, s) => a + z(s.lec), 0),
     lab: semesters.reduce((a, s) => a + z(s.lab), 0),
     pr:  semesters.reduce((a, s) => a + z(s.pr),  0),
-    ksr: semesters.reduce((a, s) => a + z(s.ksr), 0),
     srs: semesters.reduce((a, s) => a + z(s.srs), 0),
   };
 }
@@ -193,7 +264,6 @@ function sumDistOver(distArr) {
     lec: distArr.reduce((a, d) => a + d.lec, 0),
     lab: distArr.reduce((a, d) => a + d.lab, 0),
     pr:  distArr.reduce((a, d) => a + d.pr,  0),
-    ksr: distArr.reduce((a, d) => a + d.ksr, 0),
     srs: distArr.reduce((a, d) => a + d.srs, 0),
   };
 }

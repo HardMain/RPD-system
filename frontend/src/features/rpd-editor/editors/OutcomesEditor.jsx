@@ -5,6 +5,7 @@ import { td, th } from "../../../styles.js";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { BupDropdown } from "../BupDropdown.jsx";
 import { Dropdown } from "../../../components/Dropdown.jsx";
+import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 
 export function OutcomesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
@@ -171,12 +172,13 @@ function OutcomeTextarea({ value, disabled, onSave }) {
   if (disabled) {
     return <div style={{ padding: "6px 8px", whiteSpace: "pre-wrap", fontSize: 13, color: T.text }}>{value || ""}</div>;
   }
-  return <textarea
+  return <ExpandableTextarea
     value={local}
     onChange={e => setLocal(e.target.value)}
     onBlur={() => { if (local !== value) onSave(local); }}
     placeholder="Знать… / Уметь… / Владеть…"
-    style={{ width: "100%", minHeight: 56, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, resize: "vertical", boxSizing: "border-box", background: T.surface, outline: "none" }}
+    collapsedMaxHeight={72}
+    style={{ width: "100%", minHeight: 56, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none" }}
   />;
 }
 

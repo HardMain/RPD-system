@@ -11,9 +11,17 @@ export const pdfToolBtn = (disabled) => ({
   fontSize: 12, fontWeight: 600, fontFamily: F,
 });
 
-/* Table cell styles for inner editor tables */
-export const td = { padding: 8, border: "1px solid " + T.borderLight, fontSize: 12 };
-export const th = { padding: 8, border: "1px solid " + T.border, background: T.bg, fontWeight: 700, textAlign: "left", fontSize: 12 };
+/* Table cell styles for inner editor tables.
+ * `wordBreak: normal + overflowWrap: break-word` — стандартный wrap-режим:
+ * обычные слова делятся по пробелам, и только когда слово целиком не влезает
+ * в ячейку (длинный URL, идентификатор), оно ломается посимвольно. Без этого
+ * длинные строки вылезают из ячейки и наезжают на соседнюю.
+ *
+ * Все таблицы редактора используют эти стили + обёртку `.table-scroll` →
+ * сначала колонки сжимаются по содержимому, потом таблица расширяется
+ * за пределы контейнера и появляется горизонтальный скролл. */
+export const td = { padding: 8, border: "1px solid " + T.borderLight, fontSize: 12, wordBreak: "normal", overflowWrap: "break-word" };
+export const th = { padding: 8, border: "1px solid " + T.border, background: T.bg, fontWeight: 700, textAlign: "left", fontSize: 12, wordBreak: "normal", overflowWrap: "break-word" };
 
 /* Table cell styles for top-level page tables */
 export const hdr = { padding: "10px 12px", borderBottom: "2px solid " + T.border, textAlign: "left", fontWeight: 700, fontSize: 12, textTransform: "uppercase", letterSpacing: .5 };

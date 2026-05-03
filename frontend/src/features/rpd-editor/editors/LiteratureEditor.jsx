@@ -5,7 +5,9 @@ import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Dropdown } from "../../../components/Dropdown.jsx";
 import { MultiSelectDropdown } from "../../../components/MultiSelectDropdown.jsx";
-import { PlusIcon, TrashIcon } from "../../../components/icons.jsx";
+import { PlusIcon } from "../../../components/icons.jsx";
+import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
+import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { LITERATURE_TYPES, ELS_OPTIONS } from "../catalogs.js";
 
@@ -155,46 +157,15 @@ function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
 
   function renderGroup(g) {
     const rows = grouped[g.source_type];
-    return <div key={g.source_type} style={{ marginBottom: 16 }}>
-      {g.subtitle && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{g.subtitle}</div>}
-      {rows.length > 0 ? (
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <colgroup>
-            <col style={{ width: 50 }} />
-            <col />
-            <col style={{ width: 110 }} />
-          </colgroup>
-          <thead>
-            <tr>
-              <th style={{ ...th, textAlign: "center" }}>№ п/п</th>
-              <th style={th}>Библиографическое описание (автор, заглавие, вид издания, место, издательство, год издания, количество страниц)</th>
-              <th style={{ ...th, textAlign: "center" }}>Количество экземпляров в библиотеке</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((item, i) => (
-              <PrintedRow
-                key={item.id_literature}
-                item={item}
-                index={i + 1}
-                editable={editable}
-                onSave={(patch) => onSave(item, patch)}
-                onDelete={() => onDelete(item)}
-              />
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-          Не используется
-        </div>
-      )}
-      {editable && (
-        <div style={{ marginTop: 8 }}>
-          <Btn small onClick={() => onAdd(g.source_type)}><PlusIcon /> Добавить запись</Btn>
-        </div>
-      )}
-    </div>;
+    return <PrintedGroup
+      key={g.source_type}
+      g={g}
+      rows={rows}
+      editable={editable}
+      onAdd={onAdd}
+      onDelete={onDelete}
+      onSave={onSave}
+    />;
   }
 
   return <div>
@@ -211,9 +182,64 @@ function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
   </div>;
 }
 
-function PrintedRow({ item, index, editable, onSave, onDelete }) {
+function PrintedGroup({ g, rows, editable, onAdd, onDelete, onSave }) {
+  const tbodyRef = useRef(null);
+  function delById(id) {
+    const item = rows.find(it => String(it.id_literature) === String(id));
+    if (item) onDelete(item);
+  }
+  return <div style={{ marginBottom: 16 }}>
+    {g.subtitle && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{g.subtitle}</div>}
+    {rows.length > 0 ? (
+      <div style={{ position: "relative" }}>
+      <div className="table-scroll">
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <colgroup>
+          <col style={{ width: 50 }} />
+          <col />
+          <col style={{ width: 110 }} />
+        </colgroup>
+        <thead>
+          <tr>
+            <th style={{ ...th, textAlign: "center" }}>№ п/п</th>
+            <th style={th}>Библиографическое описание (автор, заглавие, вид издания, место, издательство, год издания, количество страниц)</th>
+            <th style={{ ...th, textAlign: "center" }}>Количество экземпляров в библиотеке</th>
+          </tr>
+        </thead>
+        <tbody ref={tbodyRef}>
+          {rows.map((item, i) => (
+            <PrintedRow
+              key={item.id_literature}
+              item={item}
+              index={i + 1}
+              editable={editable}
+              onSave={(patch) => onSave(item, patch)}
+            />
+          ))}
+        </tbody>
+      </table>
+      </div>
+      {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить запись" />}
+      </div>
+    ) : (
+      <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
+        Не используется
+      </div>
+    )}
+    {editable && (
+      <div style={{ marginTop: 8 }}>
+        <Btn small onClick={() => onAdd(g.source_type)}><PlusIcon /> Добавить запись</Btn>
+      </div>
+    )}
+  </div>;
+}
+
+function PrintedRow({ item, index, editable, onSave }) {
   const [title, setTitle] = useState(item.title || "");
-  const [copies, setCopies] = useState(item.copies_count == null ? "" : String(item.copies_count));
+  // copies всегда число: при стирании value сразу становится 0, как у
+  // HourInput в SectionEditor (раздел 4). Так пользователь не может оставить
+  // ячейку пустой / получить серый placeholder — минимум всегда 0.
+  const [copies, setCopies] = useState(item.copies_count ?? 0);
   // Защита от «отката» свежего ввода: пока пользователь правит ячейку, у этой
   // строки может прилететь reload (например, blur на title в этой же строке
   // или редактирование соседней). useEffect раньше безусловно перезатирал
@@ -222,14 +248,14 @@ function PrintedRow({ item, index, editable, onSave, onDelete }) {
   // local буфер уже отличается, не трогаем его — пусть live-ввод проживёт до
   // своего blur'а.
   const titleRef = useRef(item.title || "");
-  const copiesRef = useRef(item.copies_count == null ? "" : String(item.copies_count));
+  const copiesRef = useRef(item.copies_count ?? 0);
   useEffect(() => {
     const next = item.title || "";
     if (title === titleRef.current) setTitle(next);
     titleRef.current = next;
   }, [item.title]);
   useEffect(() => {
-    const next = item.copies_count == null ? "" : String(item.copies_count);
+    const next = item.copies_count ?? 0;
     if (copies === copiesRef.current) setCopies(next);
     copiesRef.current = next;
   }, [item.copies_count]);
@@ -239,41 +265,41 @@ function PrintedRow({ item, index, editable, onSave, onDelete }) {
     onSave({ title });
   }
   function commitCopies() {
-    const n = copies.trim() === "" ? null : Number(copies);
-    if (n === item.copies_count) return;
-    onSave({ copies_count: n });
+    const cur = +copies || 0;
+    const orig = item.copies_count ?? 0;
+    if (cur === orig) return;
+    onSave({ copies_count: cur });
   }
 
   if (!editable) {
     return <tr>
       <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
       <td style={td}>{item.title || ""}</td>
-      <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{item.copies_count ?? ""}</td>
+      <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{item.copies_count ?? 0}</td>
     </tr>;
   }
 
-  return <tr>
+  return <tr data-trash-row data-trash-id={item.id_literature}>
     <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
     <td style={{ ...td, padding: 4 }}>
-      <textarea
+      <ExpandableTextarea
         value={title}
         onChange={e => setTitle(e.target.value)}
         onBlur={commitTitle}
         placeholder="Например: Курс физики (Трофимова Т.И., Академия, 2019, 560 с.)"
+        collapsedMaxHeight={70}
         style={inlineTextarea}
       />
     </td>
-    <td style={{ ...td, padding: 4, textAlign: "center", position: "relative", overflow: "visible" }}>
+    <td style={{ ...td, padding: 4, textAlign: "center" }}>
       <input
         type="number"
         min="0"
-        value={copies}
-        onChange={e => setCopies(e.target.value)}
+        value={copies ?? 0}
+        onChange={e => setCopies(e.target.value === "" ? 0 : +e.target.value)}
         onBlur={commitCopies}
-        placeholder="—"
         style={inlineNumber}
       />
-      <button onClick={onDelete} title="Удалить запись" style={trashBtn}><TrashIcon /></button>
     </td>
   </tr>;
 }
@@ -282,8 +308,15 @@ function PrintedRow({ item, index, editable, onSave, onDelete }) {
 // ─── 6.2 Электронная литература ─────────────────────────────────────────────
 
 function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
+  const tbodyRef = useRef(null);
+  function delById(id) {
+    const item = items.find(it => String(it.id_literature) === String(id));
+    if (item) onDelete(item);
+  }
   return <div>
     {items.length > 0 ? (
+      <div style={{ position: "relative" }}>
+      <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <colgroup>
           <col style={{ width: "20%" }} />
@@ -299,18 +332,20 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
             <th style={th}>Доступность ЭБС (сеть Интернет / локальная сеть; авторизованный / свободный доступ)</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody ref={tbodyRef}>
           {items.map(item => (
             <ElectronicRow
               key={item.id_literature}
               item={item}
               editable={editable}
               onSave={(patch) => onSave(item, patch)}
-              onDelete={() => onDelete(item)}
             />
           ))}
         </tbody>
       </table>
+      </div>
+      {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить запись" />}
+      </div>
     ) : (
       <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
         Не используется
@@ -324,7 +359,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
   </div>;
 }
 
-function ElectronicRow({ item, editable, onSave, onDelete }) {
+function ElectronicRow({ item, editable, onSave }) {
   const [title, setTitle] = useState(item.title || "");
   // URL=" " — это sentinel, который backend трактует как «электронная». В инпуте
   // показываем пусто, чтобы пользователь видел чистое поле и не подумал, что
@@ -386,7 +421,7 @@ function ElectronicRow({ item, editable, onSave, onDelete }) {
     .filter(t => t !== ADDITIONAL_MAIN_TYPE)
     .map(t => ({ value: t, label: t }));
 
-  return <tr>
+  return <tr data-trash-row data-trash-id={item.id_literature}>
     <td style={{ ...td, padding: 4 }}>
       <Dropdown
         value={item.source_type || ""}
@@ -397,11 +432,12 @@ function ElectronicRow({ item, editable, onSave, onDelete }) {
       />
     </td>
     <td style={{ ...td, padding: 4 }}>
-      <textarea
+      <ExpandableTextarea
         value={title}
         onChange={e => setTitle(e.target.value)}
         onBlur={commitTitle}
         placeholder="Например: Информатика. Базовый курс (Денисова Э.В., 2017)"
+        collapsedMaxHeight={70}
         style={inlineTextarea}
       />
     </td>
@@ -415,14 +451,13 @@ function ElectronicRow({ item, editable, onSave, onDelete }) {
         style={inlineInput}
       />
     </td>
-    <td style={{ ...td, padding: 4, position: "relative", overflow: "visible" }}>
+    <td style={{ ...td, padding: 4 }}>
       <MultiSelectDropdown
         value={Array.isArray(item.availability) ? item.availability : []}
         options={ELS_OPTIONS}
         onChange={changeAvail}
         placeholder="Выбрать ЭБС"
       />
-      <button onClick={onDelete} title="Удалить запись" style={trashBtn}><TrashIcon /></button>
     </td>
   </tr>;
 }
@@ -437,7 +472,6 @@ const inlineTextarea = {
   borderRadius: 4,
   fontSize: 13, fontFamily: F, lineHeight: 1.45,
   background: T.surface,
-  resize: "vertical",
   minHeight: 32,
   boxSizing: "border-box",
   outline: "none",
@@ -454,9 +488,12 @@ const inlineInput = {
   boxSizing: "border-box",
 };
 
+// `field-sizing: content` — ширина инпута следует за длиной цифры, чтобы
+// auto-layout колонки не схлопывал её в 0.
 const inlineNumber = {
-  width: "100%",
-  padding: "4px 2px",
+  width: "auto",
+  fieldSizing: "content",
+  padding: "4px 6px",
   border: "1px solid " + T.borderLight,
   borderRadius: 4,
   fontSize: 13, fontFamily: F,
@@ -466,15 +503,3 @@ const inlineNumber = {
   outline: "none",
 };
 
-const trashBtn = {
-  position: "absolute",
-  left: "calc(100% + 8px)",
-  top: "50%",
-  transform: "translateY(-50%)",
-  border: "none",
-  background: "none",
-  cursor: "pointer",
-  padding: 4,
-  color: T.textMuted,
-  display: "inline-flex",
-};

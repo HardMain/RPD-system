@@ -37,6 +37,7 @@ def _bd_out(bd: BupDiscipline) -> BupDisciplineOut:
         semester=bd.semester,
         control_form=bd.control_form,
         total_hours=bd.total_hours,
+        exam_hours=bd.exam_hours,
         lecture_hours=bd.lecture_hours,
         lab_hours=bd.lab_hours,
         practice_hours=bd.practice_hours,

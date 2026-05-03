@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Dropdown } from "../../../components/Dropdown.jsx";
-import { PlusIcon, TrashIcon } from "../../../components/icons.jsx";
+import { PlusIcon } from "../../../components/icons.jsx";
+import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { DATABASE_TYPES } from "../catalogs.js";
 
@@ -20,6 +21,7 @@ export function DatabasesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const items = rpd.databases || [];
+  const tbodyRef = useRef(null);
 
   async function addRow() {
     try { await api.addDatabase(rpdId, { name: "", db_type: null }); await reload(); } catch {}
@@ -28,6 +30,10 @@ export function DatabasesEditor() {
     const filled = (item.name || "").trim() || (item.db_type || "").trim();
     if (filled && !confirm("Удалить запись?")) return;
     try { await api.deleteDatabase(item.id_database); await reload(); } catch {}
+  }
+  async function delById(id) {
+    const item = items.find(it => String(it.id_database) === String(id));
+    if (item) await delRow(item);
   }
   async function saveRow(item, patch) {
     try {
@@ -41,6 +47,8 @@ export function DatabasesEditor() {
 
   return <div>
     {items.length > 0 ? (
+      <div style={{ position: "relative" }}>
+      <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <colgroup>
           <col style={{ width: "35%" }} />
@@ -52,18 +60,20 @@ export function DatabasesEditor() {
             <th style={th}>Наименование БД</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody ref={tbodyRef}>
           {items.map(item => (
             <DatabaseRow
               key={item.id_database}
               item={item}
               editable={editable}
               onSave={(patch) => saveRow(item, patch)}
-              onDelete={() => delRow(item)}
             />
           ))}
         </tbody>
       </table>
+      </div>
+      {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить запись" />}
+      </div>
     ) : (
       <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
         Не используется
@@ -78,7 +88,7 @@ export function DatabasesEditor() {
 }
 
 
-function DatabaseRow({ item, editable, onSave, onDelete }) {
+function DatabaseRow({ item, editable, onSave }) {
   const [name, setName] = useState(item.name || "");
   useEffect(() => { setName(item.name || ""); }, [item.name]);
 
@@ -100,7 +110,7 @@ function DatabaseRow({ item, editable, onSave, onDelete }) {
 
   const typeOptions = DATABASE_TYPES.map(s => ({ value: s, label: s }));
 
-  return <tr>
+  return <tr data-trash-row data-trash-id={item.id_database}>
     <td style={{ ...td, padding: 4 }}>
       <Dropdown
         value={item.db_type || ""}
@@ -110,7 +120,7 @@ function DatabaseRow({ item, editable, onSave, onDelete }) {
         clearLabel="Не выбрано"
       />
     </td>
-    <td style={{ ...td, padding: 4, position: "relative", overflow: "visible" }}>
+    <td style={{ ...td, padding: 4 }}>
       <input
         value={name}
         onChange={e => setName(e.target.value)}
@@ -118,7 +128,6 @@ function DatabaseRow({ item, editable, onSave, onDelete }) {
         placeholder="Например, eLIBRARY.RU"
         style={inlineInput}
       />
-      <button onClick={onDelete} title="Удалить запись" style={trashBtn}><TrashIcon /></button>
     </td>
   </tr>;
 }
@@ -135,17 +144,4 @@ const inlineInput = {
   background: T.surface,
   outline: "none",
   boxSizing: "border-box",
-};
-
-const trashBtn = {
-  position: "absolute",
-  left: "calc(100% + 8px)",
-  top: "50%",
-  transform: "translateY(-50%)",
-  border: "none",
-  background: "none",
-  cursor: "pointer",
-  padding: 4,
-  color: T.textMuted,
-  display: "inline-flex",
 };

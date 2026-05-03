@@ -339,6 +339,7 @@ class BupDisciplineRefOut(BaseModel):
     semester: str | None = None
     control_form: str | None = None
     total_hours: int | None = None
+    exam_hours: int | None = None
     lecture_hours: int | None = None
     lab_hours: int | None = None
     practice_hours: int | None = None

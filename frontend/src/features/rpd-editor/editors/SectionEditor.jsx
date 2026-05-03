@@ -3,7 +3,9 @@ import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
-import { PlusIcon, TrashIcon } from "../../../components/icons.jsx";
+import { PlusIcon } from "../../../components/icons.jsx";
+import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
+import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { PlanSummary } from "./PlanSummary.jsx";
 
@@ -71,6 +73,11 @@ export function SectionEditor() {
     if (!isSectionEmpty(s) && !confirm("Удалить раздел?")) return;
     try { await api.deleteSection(s.id_section); await reload(); } catch {}
   }
+  async function delById(id) {
+    const s = (rpd.sections || []).find(it => String(it.id_section) === String(id));
+    if (s) await delSec(s);
+  }
+  const tbodyRef = useRef(null);
 
   async function saveSec(section, patch) {
     try {
@@ -112,6 +119,8 @@ export function SectionEditor() {
     {/* Шапка 1:1 со шаблоном rpd_template.docx (TABLE 6). Если семестров много —
         перед каждой группой строк рисуем подзаголовок-«N-й семестр» и итоговую
         строку «Итого» в конце группы. */}
+    <div style={{ position: "relative" }}>
+    <div className="table-scroll">
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
         <col />
@@ -133,7 +142,7 @@ export function SectionEditor() {
           <th style={{ ...th, textAlign: "center" }}>СРС</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody ref={tbodyRef}>
         {groups.map(([semNum, list]) => {
           const groupRows = [];
           if (isMultiSemester) {
@@ -154,7 +163,6 @@ export function SectionEditor() {
                 number={globalIdx}
                 editable={editable}
                 onSave={(patch) => saveSec(s, patch)}
-                onDelete={() => delSec(s)}
               />
             );
           }
@@ -214,6 +222,9 @@ export function SectionEditor() {
         )}
       </tbody>
     </table>
+    </div>
+    {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить раздел" />}
+    </div>
   </div>;
 }
 
@@ -248,7 +259,7 @@ function computePlanSemesters(rpd) {
 // есть. Кнопка-корзина живёт ВНУТРИ последней ячейки (СРС), но визуально
 // плавает справа от таблицы за счёт left:calc(100%+8px) + overflow:visible
 // у td. Таблица при этом сохраняет ширину 100% — как у разделов 3/6/7.
-function SectionRow({ section, number, editable, onSave, onDelete }) {
+function SectionRow({ section, number, editable, onSave }) {
   const [local, setLocal] = useState(section);
   // Локальные правки имеют приоритет над приходящим section: при clicks на спиннер
   // input'а type="number" родитель reload'ится и шлёт «свежий» section с прежним
@@ -293,7 +304,7 @@ function SectionRow({ section, number, editable, onSave, onDelete }) {
     </tr>;
   }
 
-  return <tr>
+  return <tr data-trash-row data-trash-id={section.id_section}>
     <td style={{ ...td, padding: 6 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
         <span style={{ fontWeight: 700, color: T.textMuted, flexShrink: 0, minWidth: 18 }}>{number}.</span>
@@ -305,11 +316,12 @@ function SectionRow({ section, number, editable, onSave, onDelete }) {
           style={inlineInput}
         />
       </div>
-      <textarea
+      <ExpandableTextarea
         value={local.brief_content || ""}
         onChange={e => patch("brief_content", e.target.value)}
         onBlur={() => commitField("brief_content")}
         placeholder="Краткое содержание (необязательно)"
+        collapsedMaxHeight={64}
         style={inlineTextarea}
       />
     </td>
@@ -322,13 +334,8 @@ function SectionRow({ section, number, editable, onSave, onDelete }) {
     <td style={{ ...td, padding: 4, textAlign: "center" }}>
       <HourInput value={local.practice_hours} onChange={v => patch("practice_hours", v)} onBlur={() => commitNum("practice_hours")} />
     </td>
-    <td style={{ ...td, padding: 4, textAlign: "center", position: "relative", overflow: "visible" }}>
+    <td style={{ ...td, padding: 4, textAlign: "center" }}>
       <HourInput value={local.self_study_hours} onChange={v => patch("self_study_hours", v)} onBlur={() => commitNum("self_study_hours")} />
-      <button
-        onClick={onDelete}
-        title="Удалить раздел"
-        style={trashBtn}
-      ><TrashIcon /></button>
     </td>
   </tr>;
 }
@@ -368,15 +375,19 @@ const inlineTextarea = {
   fontSize: 11, fontFamily: F, lineHeight: 1.45,
   color: T.textMuted,
   background: T.surface,
-  resize: "vertical",
   minHeight: 28,
   boxSizing: "border-box",
   outline: "none",
 };
 
+// `field-sizing: content` — input ширится/сужается ровно под цифру внутри,
+// а не растягивается на 100% ячейки. Колонка таблицы при auto-layout берёт
+// min-content по своим ячейкам, и цифра остаётся видна, даже если соседние
+// колонки сжимаются. Поддержка: Chrome/Edge 123+, Firefox 122+, Safari 17.4+.
 const hourInput = {
-  width: "100%",
-  padding: "4px 2px",
+  width: "auto",
+  fieldSizing: "content",
+  padding: "4px 6px",
   border: "1px solid " + T.borderLight,
   borderRadius: 4,
   fontSize: 13, fontFamily: F,
@@ -386,17 +397,3 @@ const hourInput = {
   outline: "none",
 };
 
-// Корзина живёт «снаружи» таблицы — left:calc(100% + 8px) выводит её правее
-// правой границы СРС-ячейки, в зарезервированный paddingRight обёртки.
-const trashBtn = {
-  position: "absolute",
-  left: "calc(100% + 8px)",
-  top: "50%",
-  transform: "translateY(-50%)",
-  border: "none",
-  background: "none",
-  cursor: "pointer",
-  padding: 4,
-  color: T.textMuted,
-  display: "inline-flex",
-};

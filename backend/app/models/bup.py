@@ -46,6 +46,7 @@ class BupDiscipline(Base):
     control_form = Column(String(255))       # «Экзамен», «Зачёт», «Экзамен, зачёт» и т.п.
 
     total_hours = Column(Integer)            # Общая трудоёмкость, ак.час
+    exam_hours = Column(Integer)             # Экзамен (общая трудоёмкость, C9 XLS-БУПа)
     lecture_hours = Column(Integer)          # Лекции (агрегат по всем семестрам)
     lab_hours = Column(Integer)              # Лабораторные
     practice_hours = Column(Integer)         # Практические
@@ -122,6 +123,7 @@ class RpdBupDiscipline(Base):
     semester = Column(String(30))
     control_form = Column(String(255))
     total_hours = Column(Integer)
+    exam_hours = Column(Integer)
     lecture_hours = Column(Integer)
     lab_hours = Column(Integer)
     practice_hours = Column(Integer)

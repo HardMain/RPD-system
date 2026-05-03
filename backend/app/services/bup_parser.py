@@ -64,6 +64,11 @@ class ParsedDiscipline:
     control_form: str | None = None
     semester: str | None = None
     total_hours: int | None = None
+    # Общая трудоёмкость экзамена в академ.часах (колонка C9 XLS-БУПа). По
+    # ФГОС ВО — 36 ч на каждый экзамен, поэтому если экзаменов в дисциплине
+    # несколько, в C9 кладётся суммарное значение (72 для двух экзаменов и т.п.).
+    # На UI делится между семестрами, в которых назначен экзамен.
+    exam_hours: int | None = None
     lecture_hours: int | None = None
     lab_hours: int | None = None
     practice_hours: int | None = None
@@ -267,6 +272,7 @@ def parse_bup_xls(content: bytes) -> ParsedBup:
             control_form=control_form,
             semester=primary_sem,
             total_hours=total,
+            exam_hours=_to_int(row[9]) if len(row) > 9 else None,
             lecture_hours=_to_int(row[11]) if len(row) > 11 else None,
             lab_hours=_to_int(row[12]) if len(row) > 12 else None,
             practice_hours=_to_int(row[13]) if len(row) > 13 else None,

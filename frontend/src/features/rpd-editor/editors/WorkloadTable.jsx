@@ -61,13 +61,26 @@ export function WorkloadTable({ rpd }) {
   // иметь одинаковую форму контроля по дизайну create_rpd).
   const controlMap = parseControlForm(bds[0]?.control_form || rpd?.control_form || "");
 
+  // Часы экзамена — общее значение из колонки «Экзамен» XLS-БУПа (C9). По ФГОС
+  // ВО на каждый экзамен ставится 36 ч (1 з.е.), поэтому если экзаменов
+  // несколько, в C9 кладётся суммарное (72 для двух экзаменов и т.п.). На
+  // уровне семестра делим суммарное на количество семестров с экзаменом —
+  // получим часы экзамена в каждом конкретном семестре. Если у БУПа поле
+  // exam_hours пустое (legacy/не распарсилось) — fallback на 36 ч за каждый
+  // экзамен (стандарт ФГОС).
+  const examTotalHours = bds.reduce((acc, bd) => acc || bd.exam_hours || 0, 0);
+  const examSemesterCount = countSemestersWith(controlMap, "экзамен");
+  const examHoursPerSemester = examSemesterCount > 0
+    ? Math.round(examTotalHours / examSemesterCount) || 36
+    : 36;
+
   // Ширины: «Вид работы» ≈ 49%, «Всего часов» ≈ 9%, «Распределение по семестрам»
   // ≈ 42% — равномерно делится на N. Совпадает со структурой TABLE 5 в шаблоне.
   const SEM_GROUP_PCT = 42;
   const semColPct = (SEM_GROUP_PCT / semesters.length).toFixed(3) + "%";
 
   return <div className="table-scroll">
-    <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
         <col style={{ width: "49%" }} />
         <col style={{ width: "9%" }} />
@@ -100,7 +113,7 @@ export function WorkloadTable({ rpd }) {
             </tr>;
           }
           // total per row across semesters: sum of numbers, ignoring blanks
-          const cellValues = semesters.map(s => r.value(s, controlMap));
+          const cellValues = semesters.map(s => r.value(s, controlMap, examHoursPerSemester));
           const total = cellValues.reduce((acc, v) => typeof v === "number" ? acc + v : acc, 0);
           const totalDisplay = cellValues.some(v => typeof v === "number") ? total : "";
           return <tr key={i}>
@@ -175,6 +188,14 @@ function hasControl(controlMap, semNum, label) {
   return controlMap[semNum]?.has(label);
 }
 
+function countSemestersWith(controlMap, label) {
+  let n = 0;
+  for (const semNum of Object.keys(controlMap)) {
+    if (controlMap[semNum]?.has(label)) n += 1;
+  }
+  return n;
+}
+
 function rpdTotalHours(rpd, bds) {
   for (const bd of bds) if (bd.total_hours) return bd.total_hours;
   return rpd.total_hours || 0;
@@ -183,8 +204,12 @@ function rpdTotalHours(rpd, bds) {
 
 const ROWS = [
   { heading: true, label: "1. Проведение учебных занятий (включая текущий контроль успеваемости) в форме:" },
+  // «Контактная аудиторная работа» в БУПах ПНИПУ = Лек + Лаб + ПЗ + КСР
+  // (ровно так заполняется колонка «Аудиторные» в XLS-БУПе). КСР затем
+  // повторно отображается отдельной строкой «из них» — это та же раскладка,
+  // что в шапке БУПа «Аудиторные → из них → Лек/Лаб/ПЗ/КСР».
   { label: "1.1. Контактная аудиторная работа, из них:", indent: 0,
-    value: (s) => sumNullable(s.lecture, s.lab, s.practice) },
+    value: (s) => sumNullable(s.lecture, s.lab, s.practice, s.ksr) },
   { label: "— лекции (Л)", indent: 1, value: (s) => s.lecture },
   { label: "— лабораторные работы (ЛР)", indent: 1, value: (s) => s.lab },
   { label: "— практические занятия, семинары и (или) другие виды занятий семинарского типа (ПЗ)", indent: 1, value: (s) => s.practice },
@@ -192,8 +217,12 @@ const ROWS = [
   { label: "— контрольная работа", indent: 1, value: () => null },
   { label: "1.2. Самостоятельная работа студентов (СРС)", indent: 0, value: (s) => s.srs },
   { heading: true, label: "2. Промежуточная аттестация" },
+  // Часы экзамена приходят из BD.exam_hours (колонка «Экзамен» XLS-БУПа,
+  // C9). На уровне семестра — это `examHoursPerSemester` (общая сумма
+  // делится на число семестров с экзаменом). Передаём третьим аргументом
+  // в value(), чтобы не трогать парсер БУПа на каждой ячейке.
   { label: "Экзамен", indent: 0,
-    value: (s, ctrl) => hasControl(ctrl, s.number, "экзамен") ? 9 : null },
+    value: (s, ctrl, examPerSem) => hasControl(ctrl, s.number, "экзамен") ? examPerSem : null },
   { label: "Дифференцированный зачёт", indent: 0,
     value: (s, ctrl) => hasControl(ctrl, s.number, "диф. зачет") ? "+" : null },
   { label: "Зачёт", indent: 0,

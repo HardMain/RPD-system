@@ -129,13 +129,24 @@ def build_context(rpd, bd=None, link=None) -> dict:
     lec = _safe(_pick(link.lecture_hours if link else None, bd.lecture_hours if bd else 0), 0)
     pr = _safe(_pick(link.practice_hours if link else None, bd.practice_hours if bd else 0), 0)
     lab = _safe(_pick(link.lab_hours if link else None, bd.lab_hours if bd else 0), 0)
+    ksr = _safe(_pick(link.ksr_hours if link else None, bd.ksr_hours if bd else 0), 0)
     srs = _safe(_pick(link.self_study_hours if link else None, bd.self_study_hours if bd else 0), 0)
-    contact = lec + pr + lab
+    exam_total = _safe(_pick(link.exam_hours if link else None, bd.exam_hours if bd else 0), 0)
+    contact = lec + pr + lab + ksr  # «Контактная аудиторная» = Лек+Лаб+ПЗ+КСР (как в БУПе ПНИПУ)
 
     # Контрольная форма: какой семестр чем сдаётся. Парсим строку вида
     # «Экзамен (3), Зачёт (2), Курсовая работа (3)» в map {sem -> set(меток)}.
     control_str = _pick(link.control_form if link else None, bd.control_form if bd else "") or ""
     control_map = _parse_control_form(control_str)
+
+    # Часы экзамена per-семестр: общая сумма из колонки «Экзамен» БУПа делится
+    # на число семестров, в которых назначен экзамен. По ФГОС — 36 ч (1 з.е.)
+    # на каждый экзамен; если поле в БУПе пустое (старые данные) — fallback.
+    exam_semesters_count = sum(1 for labels in control_map.values() if "экзамен" in labels)
+    if exam_semesters_count > 0 and exam_total:
+        exam_per_semester = round(exam_total / exam_semesters_count) or 36
+    else:
+        exam_per_semester = 36
 
     # ── Workload: один блок на каждый занятый семестр дисциплины ──────────
     # Источник — semesters_data (snapshot или живой BupDiscipline). Если он
@@ -157,7 +168,11 @@ def build_context(rpd, bd=None, link=None) -> dict:
         s_pr = s.get("practice")
         s_ksr = s.get("ksr")
         s_srs = s.get("srs")
-        s_contact_parts = [v for v in (s_lec, s_lab, s_pr) if v]
+        # «Контактная аудиторная работа» в БУПе ПНИПУ включает КСР наравне
+        # с Лек/Лаб/ПЗ — поэтому суммируем все четыре. Пустые ячейки (None
+        # в semesters_data) считаются как «нет», но если хоть одна заполнена,
+        # выдаём сумму по заполненным.
+        s_contact_parts = [v for v in (s_lec, s_lab, s_pr, s_ksr) if isinstance(v, int)]
         s_contact = sum(s_contact_parts) if s_contact_parts else None
         labels = control_map.get(sn, set())
         workload_semesters.append({
@@ -169,7 +184,7 @@ def build_context(rpd, bd=None, link=None) -> dict:
             "ksr": _blank_or_int(s_ksr),
             "control_work": "",
             "srs": _blank_or_int(s_srs),
-            "exam": 9 if "экзамен" in labels else "",
+            "exam": exam_per_semester if "экзамен" in labels else "",
             "diff_credit": "" if "диф. зачет" not in labels else "+",
             "credit": "" if "зачёт" not in labels else "+",
             "course_project": "" if "курсовой проект" not in labels else "+",

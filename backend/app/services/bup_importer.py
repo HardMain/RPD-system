@@ -277,6 +277,7 @@ async def import_parsed_bup(
             existing.semester = pd.semester
             existing.control_form = pd.control_form
             existing.total_hours = pd.total_hours
+            existing.exam_hours = pd.exam_hours
             existing.lecture_hours = pd.lecture_hours
             existing.lab_hours = pd.lab_hours
             existing.practice_hours = pd.practice_hours
@@ -299,6 +300,7 @@ async def import_parsed_bup(
                 semester=pd.semester,
                 control_form=pd.control_form,
                 total_hours=pd.total_hours,
+                exam_hours=pd.exam_hours,
                 lecture_hours=pd.lecture_hours,
                 lab_hours=pd.lab_hours,
                 practice_hours=pd.practice_hours,

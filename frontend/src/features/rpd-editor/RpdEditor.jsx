@@ -28,6 +28,91 @@ import { DocsUpload } from "./editors/DocsUpload.jsx";
 import { FosEditor } from "./editors/FosEditor.jsx";
 import { RpdMetaModal } from "./RpdMetaModal.jsx";
 
+
+// Слепок полей РПД, реально влияющих на печатную форму. Если две «версии»
+// этого слепка совпадают — печатная форма ничем не отличается, и помечать
+// её «устаревшей» не надо. Пустые элементы (раздел без названия, пустая
+// строка литературы, тема без текста) фильтруются — пользователь только
+// добавил каркас, в печатной форме его нет.
+function pdfRelevantSnapshot(r) {
+  if (!r) return "";
+  const norm = (v) => (v == null ? "" : String(v).trim());
+  const sections = (r.sections || [])
+    .filter(s => norm(s.title))
+    .map(s => ({
+      n: s.section_number || 0,
+      t: norm(s.title),
+      b: norm(s.brief_content),
+      lec: s.lecture_hours || 0,
+      lab: s.lab_hours || 0,
+      pr: s.practice_hours || 0,
+      srs: s.self_study_hours || 0,
+      sem: s.semester ?? null,
+      tp: (s.topics || [])
+        .filter(t => norm(t.title))
+        .map(t => ({ k: t.topic_type, t: norm(t.title) })),
+    }));
+  const literature = (r.literature || [])
+    .filter(l => norm(l.title) || norm(l.url))
+    .map(l => ({
+      st: norm(l.source_type),
+      t: norm(l.title),
+      c: l.copies_count ?? 0,
+      u: norm(l.url),
+      a: Array.isArray(l.availability) ? [...l.availability].sort() : [],
+    }));
+  const software = (r.software || [])
+    .filter(s => norm(s.name))
+    .map(s => ({ n: norm(s.name), lt: norm(s.license_type) }));
+  const databases = (r.databases || [])
+    .filter(d => norm(d.name))
+    .map(d => ({ n: norm(d.name), tp: norm(d.db_type) }));
+  const mtech = (r.material_tech || [])
+    .filter(m => norm(m.room_type) || norm(m.equipment))
+    .map(m => ({ rt: norm(m.room_type), eq: norm(m.equipment), q: m.quantity ?? 0 }));
+  const outcomes = (r.learning_outcomes || [])
+    .filter(o => norm(o.outcome_text) || norm(o.indicator_code))
+    .map(o => ({
+      cc: norm(o.competency_code),
+      ic: norm(o.indicator_code),
+      o: norm(o.outcome_text),
+      at: norm(o.assessment_tool),
+    }));
+  const developers = (r.developers || []).map(d => ({
+    n: norm(d.user_full_name || d.full_name),
+    p: norm(d.position),
+  }));
+  const bds = (r.bup_disciplines || []).map(b => ({
+    bn: norm(b.bup_name),
+    by: b.bup_year ?? null,
+    code: norm(b.code),
+    sem: norm(b.semester),
+    cf: norm(b.control_form),
+    th: b.total_hours ?? 0,
+    eh: b.exam_hours ?? 0,
+    lh: b.lecture_hours ?? 0,
+    labh: b.lab_hours ?? 0,
+    ph: b.practice_hours ?? 0,
+    kh: b.ksr_hours ?? 0,
+    sh: b.self_study_hours ?? 0,
+    sd: b.semesters_data || null,
+    dc: norm(b.direction_code),
+    dn: norm(b.direction_name),
+  }));
+  return JSON.stringify({
+    g: norm(r.goals_text),
+    ts: norm(r.tasks_text),
+    o: norm(r.objects_text),
+    rq: norm(r.requirements_text),
+    et: norm(r.educational_tech),
+    mr: norm(r.methodical_recommendations),
+    sections, literature, software, databases, mtech, outcomes, developers, bds,
+    fosMain: r.fos_main ? r.fos_main.id_file : null,
+    fosOther: (r.fos_other || []).map(f => f.id_file).sort(),
+  });
+}
+
+
 export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
@@ -115,6 +200,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   // PDF переиспользуется — серверный рендер не дёргается заново.
   const pdfDirtyRef = useRef(true);
   const initialLoadRef = useRef(true);
+  // Snapshot полей РПД, которые реально попадают в печатную форму. Сравниваем
+  // на каждом перечитывании: если ничего значимого не изменилось (например,
+  // юзер просто добавил пустую строку — она отфильтрована в шаблоне), то
+  // плашку «форма устарела» НЕ показываем.
+  const prevPdfSnapRef = useRef(null);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
   const isEdit = editMode; const isHead = userRole === "Зав. кафедрой";
   const showPdf = !isEdit;
@@ -132,13 +222,26 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       // пустую строку, в шаблон и далее отдаётся только goals_text.
       const mergedGoals = [r.goals_text, r.tasks_text].map(s => (s || "").trim()).filter(Boolean).join("\n\n");
       setEditTexts({ goals: mergedGoals, objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
-      // Первый load при монтировании компонента не помечает PDF грязным
-      // (PDF и так ещё не загружен). Все последующие load() — это перечитывание
-      // после изменений, поэтому PDF на сервере мог обновиться.
-      if (initialLoadRef.current) initialLoadRef.current = false;
-      else pdfDirtyRef.current = true;
-    } catch { }
-    if (!silent) setLoading(false);
+
+      // Сравниваем «печатно-значимый» снапшот: если он не изменился (например,
+      // только добавилась пустая строка таблицы), считаем что PDF не устарел.
+      const newSnap = pdfRelevantSnapshot(r);
+      let pdfChanged = false;
+      if (initialLoadRef.current) {
+        initialLoadRef.current = false;
+        // Первый load — PDF и так ещё не загружен, грязным не помечаем,
+        // только запоминаем baseline-снапшот.
+      } else {
+        pdfChanged = newSnap !== prevPdfSnapRef.current;
+        if (pdfChanged) pdfDirtyRef.current = true;
+      }
+      prevPdfSnapRef.current = newSnap;
+      if (!silent) setLoading(false);
+      return pdfChanged;
+    } catch {
+      if (!silent) setLoading(false);
+      return false;
+    }
   }, [rpdId]);
   useEffect(() => { load(); }, [load]);
 
@@ -200,18 +303,20 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   // Это сделано из-за UX-фидбэка: автоматический перерендер при каждом
   // потере фокуса (onBlur) в edit-парной вкладке выглядел беспокойно — PDF
   // дёргался каждые несколько секунд, пока преподаватель печатал.
+  //
+  // Плашку «форма устарела» взводим только если перечитанный РПД реально
+  // меняет печатную форму (см. pdfRelevantSnapshot — пустые строки/разделы
+  // отфильтрованы). Без этого добавление пустого раздела/строки литературы
+  // тоже триггерило бы плашку, хотя в PDF ничего бы не изменилось.
   const initialReloadRef = useRef(true);
   const reloadDebounceRef = useRef(null);
   useEffect(() => {
     if (initialReloadRef.current) { initialReloadRef.current = false; return; }
     if (reloadDebounceRef.current) clearTimeout(reloadDebounceRef.current);
-    reloadDebounceRef.current = setTimeout(() => {
+    reloadDebounceRef.current = setTimeout(async () => {
       reloadDebounceRef.current = null;
-      load(true);
-      // PDF помечаем устаревшим, но не дёргаем сервер. Если юзер сейчас в
-      // edit-режиме — флаг pdfDirtyRef сработает при возврате в просмотр.
-      pdfDirtyRef.current = true;
-      if (showPdf) setPdfStale(true);
+      const changed = await load(true);
+      if (changed && showPdf) setPdfStale(true);
     }, 400);
     return () => { if (reloadDebounceRef.current) { clearTimeout(reloadDebounceRef.current); reloadDebounceRef.current = null; } };
   }, [reloadKey]);
@@ -931,15 +1036,15 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <SectionHeading title="1. Общие положения" collapsed={isCollapsed("1")} onToggle={() => toggleCollapse("1")} />
                 {!isCollapsed("1") && <>
                   <div ref={refs["1.1"]} style={{ marginBottom: 32 }}>
-                    <EditableBlock skey="goals" label="1.1. Цели и задачи дисциплины" fieldKey="goals" />
+                    <EditableBlock skey="goals" label="1.1. Цели и задачи дисциплины" fieldKey="goals" placeholder="Опишите цели и задачи дисциплины…" />
                   </div>
                   <HR />
                   <div ref={refs["1.2"]} style={{ marginBottom: 32 }}>
-                    <EditableBlock skey="objects" label="1.2. Изучаемые объекты дисциплины" fieldKey="objects" />
+                    <EditableBlock skey="objects" label="1.2. Изучаемые объекты дисциплины" fieldKey="objects" placeholder="Перечислите изучаемые объекты и явления…" />
                   </div>
                   <HR />
                   <div ref={refs["1.3"]} style={{ marginBottom: 32 }}>
-                    <EditableBlock skey="requirements" label="1.3. Входные требования" fieldKey="requirements" />
+                    <EditableBlock skey="requirements" label="1.3. Входные требования" fieldKey="requirements" placeholder="Опишите входные требования к обучающимся…" />
                   </div>
                 </>}
               </div>
@@ -989,11 +1094,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <SectionHeading title="5. Организационно-педагогические условия" collapsed={isCollapsed("5")} onToggle={() => toggleCollapse("5")} />
                 {!isCollapsed("5") && <>
                   <div ref={refs["5.1"]} style={{ marginBottom: 32 }}>
-                    <EditableBlock skey="educational_tech" label="5.1. Образовательные технологии" fieldKey="educational_tech" />
+                    <EditableBlock skey="educational_tech" label="5.1. Образовательные технологии" fieldKey="educational_tech" placeholder="Опишите образовательные технологии, применяемые при освоении дисциплины…" />
                   </div>
                   <HR />
                   <div ref={refs["5.2"]} style={{ marginBottom: 32 }}>
-                    <EditableBlock skey="methodical_recommendations" label="5.2. Методические указания" fieldKey="methodical_recommendations" />
+                    <EditableBlock skey="methodical_recommendations" label="5.2. Методические указания" fieldKey="methodical_recommendations" placeholder="Опишите методические указания для обучающихся по освоению дисциплины…" />
                   </div>
                 </>}
               </div>

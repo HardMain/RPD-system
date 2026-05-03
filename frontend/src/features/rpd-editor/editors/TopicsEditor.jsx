@@ -3,7 +3,8 @@ import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
-import { PlusIcon, TrashIcon } from "../../../components/icons.jsx";
+import { PlusIcon } from "../../../components/icons.jsx";
+import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 
 /**
@@ -59,6 +60,7 @@ export function TopicsEditor({ kind }) {
 
 
 function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex, reload }) {
+  const tbodyRef = useRef(null);
   async function addTopic() {
     try {
       await api.addTopic(section.id_section, { topic_type: kind, title: "" });
@@ -70,6 +72,10 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
     // увидел из автодобавления или передумал. Терять там нечего.
     if ((t.title || "").trim() && !confirm("Удалить тему?")) return;
     try { await api.deleteTopic(t.id_topic); await reload(); } catch {}
+  }
+  async function delById(id) {
+    const t = topics.find(it => String(it.id_topic) === String(id));
+    if (t) await delTopic(t);
   }
   // Один раз на маунт блока — если у раздела для текущего kind ещё нет ни
   // одной темы, добавляем пустую. Так пользователь сразу видит готовую к
@@ -94,6 +100,8 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
       Раздел {section.section_number}. {section.title}
     </div>
     {/* Шапка и колонки 1:1 с шаблоном (TABLE 7/8): «№ п.п. | Наименование темы …». */}
+    <div style={{ position: "relative" }}>
+    <div className="table-scroll">
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
         <col style={{ width: 60 }} />
@@ -105,7 +113,7 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
           <th style={th}>{titleLabel}</th>
         </tr>
       </thead>
-      <tbody>
+      <tbody ref={tbodyRef}>
         {topics.length === 0 && (
           <tr>
             <td colSpan={2} style={{ ...td, textAlign: "center", color: T.textMuted, fontStyle: "italic" }}>
@@ -120,11 +128,13 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
             index={startIndex + i}
             editable={editable}
             onSave={(title) => saveTitle(t, title)}
-            onDelete={() => delTopic(t)}
           />
         ))}
       </tbody>
     </table>
+    </div>
+    {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить тему" />}
+    </div>
     {editable && (
       <div style={{ marginTop: 8 }}>
         <Btn small onClick={addTopic}><PlusIcon /> Добавить тему</Btn>
@@ -134,7 +144,7 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
 }
 
 
-function TopicRow({ topic, index, editable, onSave, onDelete }) {
+function TopicRow({ topic, index, editable, onSave }) {
   const [local, setLocal] = useState(topic.title || "");
   useEffect(() => { setLocal(topic.title || ""); }, [topic.title]);
 
@@ -145,9 +155,9 @@ function TopicRow({ topic, index, editable, onSave, onDelete }) {
     </tr>;
   }
 
-  return <tr>
+  return <tr data-trash-row data-trash-id={topic.id_topic}>
     <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
-    <td style={{ ...td, padding: 4, position: "relative", overflow: "visible" }}>
+    <td style={{ ...td, padding: 4 }}>
       <input
         value={local}
         onChange={e => setLocal(e.target.value)}
@@ -155,11 +165,6 @@ function TopicRow({ topic, index, editable, onSave, onDelete }) {
         placeholder="Название темы"
         style={inlineInput}
       />
-      <button
-        onClick={onDelete}
-        title="Удалить тему"
-        style={trashBtn}
-      ><TrashIcon /></button>
     </td>
   </tr>;
 }
@@ -176,17 +181,4 @@ const inlineInput = {
   background: T.surface,
   outline: "none",
   boxSizing: "border-box",
-};
-
-const trashBtn = {
-  position: "absolute",
-  left: "calc(100% + 8px)",
-  top: "50%",
-  transform: "translateY(-50%)",
-  border: "none",
-  background: "none",
-  cursor: "pointer",
-  padding: 4,
-  color: T.textMuted,
-  display: "inline-flex",
 };

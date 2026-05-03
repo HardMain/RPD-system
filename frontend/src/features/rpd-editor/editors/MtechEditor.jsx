@@ -3,7 +3,9 @@ import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
-import { PlusIcon, TrashIcon } from "../../../components/icons.jsx";
+import { PlusIcon } from "../../../components/icons.jsx";
+import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
+import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 
 /**
@@ -17,6 +19,7 @@ export function MtechEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const items = rpd.material_tech || [];
+  const tbodyRef = useRef(null);
 
   async function addRow() {
     try { await api.addMaterialTech(rpdId, { room_type: "", equipment: "", quantity: null }); await reload(); } catch {}
@@ -25,6 +28,10 @@ export function MtechEditor() {
     const filled = (item.room_type || "").trim() || (item.equipment || "").trim() || item.quantity != null;
     if (filled && !confirm("Удалить запись?")) return;
     try { await api.deleteMaterialTech(item.id_material_tech); await reload(); } catch {}
+  }
+  async function delById(id) {
+    const item = items.find(it => String(it.id_material_tech) === String(id));
+    if (item) await delRow(item);
   }
   async function saveRow(item, patch) {
     try {
@@ -39,6 +46,8 @@ export function MtechEditor() {
 
   return <div>
     {items.length > 0 ? (
+      <div style={{ position: "relative" }}>
+      <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <colgroup>
           <col style={{ width: "25%" }} />
@@ -52,18 +61,20 @@ export function MtechEditor() {
             <th style={{ ...th, textAlign: "center" }}>Количество единиц</th>
           </tr>
         </thead>
-        <tbody>
+        <tbody ref={tbodyRef}>
           {items.map(item => (
             <MtechRow
               key={item.id_material_tech}
               item={item}
               editable={editable}
               onSave={(patch) => saveRow(item, patch)}
-              onDelete={() => delRow(item)}
             />
           ))}
         </tbody>
       </table>
+      </div>
+      {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить запись" />}
+      </div>
     ) : (
       <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
         Не используется
@@ -78,7 +89,7 @@ export function MtechEditor() {
 }
 
 
-function MtechRow({ item, editable, onSave, onDelete }) {
+function MtechRow({ item, editable, onSave }) {
   const [roomType, setRoomType] = useState(item.room_type || "");
   const [equipment, setEquipment] = useState(item.equipment || "");
   const [quantity, setQuantity] = useState(item.quantity == null ? "" : String(item.quantity));
@@ -126,7 +137,7 @@ function MtechRow({ item, editable, onSave, onDelete }) {
     </tr>;
   }
 
-  return <tr>
+  return <tr data-trash-row data-trash-id={item.id_material_tech}>
     <td style={{ ...td, padding: 4 }}>
       <input
         value={roomType}
@@ -137,15 +148,16 @@ function MtechRow({ item, editable, onSave, onDelete }) {
       />
     </td>
     <td style={{ ...td, padding: 4 }}>
-      <textarea
+      <ExpandableTextarea
         value={equipment}
         onChange={e => setEquipment(e.target.value)}
         onBlur={commitEquip}
         placeholder="Например, Учебная аудитория с проектором, ноутбуками…"
+        collapsedMaxHeight={70}
         style={inlineTextarea}
       />
     </td>
-    <td style={{ ...td, padding: 4, textAlign: "center", position: "relative", overflow: "visible" }}>
+    <td style={{ ...td, padding: 4, textAlign: "center" }}>
       <input
         type="number"
         min="0"
@@ -155,7 +167,6 @@ function MtechRow({ item, editable, onSave, onDelete }) {
         placeholder="—"
         style={inlineNumber}
       />
-      <button onClick={onDelete} title="Удалить запись" style={trashBtn}><TrashIcon /></button>
     </td>
   </tr>;
 }
@@ -181,15 +192,17 @@ const inlineTextarea = {
   borderRadius: 4,
   fontSize: 13, fontFamily: F, lineHeight: 1.45,
   background: T.surface,
-  resize: "vertical",
   minHeight: 32,
   boxSizing: "border-box",
   outline: "none",
 };
 
+// `field-sizing: content` — ширина инпута по содержимому цифры, чтобы при
+// сжатии таблицы колонка не схлопывалась в 0.
 const inlineNumber = {
-  width: "100%",
-  padding: "4px 2px",
+  width: "auto",
+  fieldSizing: "content",
+  padding: "4px 6px",
   border: "1px solid " + T.borderLight,
   borderRadius: 4,
   fontSize: 13, fontFamily: F,
@@ -199,15 +212,3 @@ const inlineNumber = {
   outline: "none",
 };
 
-const trashBtn = {
-  position: "absolute",
-  left: "calc(100% + 8px)",
-  top: "50%",
-  transform: "translateY(-50%)",
-  border: "none",
-  background: "none",
-  cursor: "pointer",
-  padding: 4,
-  color: T.textMuted,
-  display: "inline-flex",
-};

@@ -99,6 +99,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
             semester=_pick(link.semester, bd.semester if bd else None),
             control_form=_pick(link.control_form, bd.control_form if bd else None),
             total_hours=_pick(link.total_hours, bd.total_hours if bd else None),
+            exam_hours=_pick(link.exam_hours, bd.exam_hours if bd else None),
             lecture_hours=_pick(link.lecture_hours, bd.lecture_hours if bd else None),
             lab_hours=_pick(link.lab_hours, bd.lab_hours if bd else None),
             practice_hours=_pick(link.practice_hours, bd.practice_hours if bd else None),
@@ -327,6 +328,7 @@ def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> No
     link.semester = bd.semester
     link.control_form = bd.control_form
     link.total_hours = bd.total_hours
+    link.exam_hours = bd.exam_hours
     link.lecture_hours = bd.lecture_hours
     link.lab_hours = bd.lab_hours
     link.practice_hours = bd.practice_hours

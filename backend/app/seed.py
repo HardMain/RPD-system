@@ -163,7 +163,8 @@ async def seed_data():
             id_bup=bup1.id_bup, id_discipline=d_inf.id_discipline,
             id_department=dept.id_department,
             code="Б1.О.15", semester="1, 2", control_form="Экзамен (2), Зачёт (1)",
-            total_hours=252, lecture_hours=26, lab_hours=56, practice_hours=None,
+            total_hours=252, exam_hours=36,
+            lecture_hours=26, lab_hours=56, practice_hours=None,
             ksr_hours=None, self_study_hours=126, zet=7,
             # Часы по семестрам — берём из inf_sections ниже (sum по группам
             # 1–10 = 1 сем., 11–14 = 2 сем.).
@@ -186,7 +187,8 @@ async def seed_data():
             id_bup=bup1.id_bup, id_discipline=d_phys.id_discipline,
             id_department=dept.id_department,
             code="Б1.О.08", semester="1, 2", control_form="Экзамен (2)",
-            total_hours=144, lecture_hours=36, lab_hours=18, practice_hours=18,
+            total_hours=144, exam_hours=36,
+            lecture_hours=36, lab_hours=18, practice_hours=18,
             ksr_hours=None, self_study_hours=72, zet=4,
             semesters_data=[
                 {"number": 1, "lecture": 18, "lab": 9, "practice": 9, "ksr": None, "srs": 36},
@@ -197,7 +199,8 @@ async def seed_data():
             id_bup=bup1.id_bup, id_discipline=d_db.id_discipline,
             id_department=dept.id_department,
             code="Б1.О.20", semester="3", control_form="Экзамен (3)",
-            total_hours=180, lecture_hours=36, lab_hours=36, practice_hours=18,
+            total_hours=180, exam_hours=36,
+            lecture_hours=36, lab_hours=36, practice_hours=18,
             ksr_hours=None, self_study_hours=90, zet=5,
             semesters_data=[
                 {"number": 3, "lecture": 36, "lab": 36, "practice": 18, "ksr": None, "srs": 90},
@@ -207,7 +210,8 @@ async def seed_data():
             id_bup=bup1.id_bup, id_discipline=d_algo.id_discipline,
             id_department=dept.id_department,
             code="Б1.О.19", semester="3, 4", control_form="Экзамен (4)",
-            total_hours=216, lecture_hours=36, lab_hours=36, practice_hours=36,
+            total_hours=216, exam_hours=36,
+            lecture_hours=36, lab_hours=36, practice_hours=36,
             ksr_hours=None, self_study_hours=108, zet=6,
             semesters_data=[
                 {"number": 3, "lecture": 18, "lab": 18, "practice": 18, "ksr": None, "srs": 54},
