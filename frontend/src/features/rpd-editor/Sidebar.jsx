@@ -1,5 +1,5 @@
 import { T, F } from "../../theme.js";
-import { Badge } from "../../components/Badge.jsx";
+import { EyeIcon, PencilIcon, SplitIcon } from "../../components/icons.jsx";
 import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from "./constants.js";
 
 export function Sidebar({
@@ -9,41 +9,40 @@ export function Sidebar({
   isCollapsed,
   onToggleMode, onOpenPair, onGoTo, onOpenMeta,
 }) {
-  const viewTakenByPair = hasPair && isEdit;     // мы edit, значит view — это сосед
-  const editTakenByPair = hasPair && !isEdit;    // мы view, значит edit — это сосед
-  const viewClickable = isEdit && !viewTakenByPair;
-  const editClickable = !isEdit && canEdit && !editTakenByPair;
+  // Тулбар сверху сайдбара: 3 иконки в одной строке — глаз (просмотр),
+  // карандаш (редактирование), две страницы (открыть рядом). Активный режим
+  // подсвечен. Когда РПД уже открыта в паре (hasPair=true) — переключатели и
+  // кнопка пары пропадают: режимы разведены по двум панелям, переключаться
+  // некуда. «Свойства РПД» — отдельной строкой ПОД тулбаром.
+  const showModes = !hasPair;
+  const showPair = !hasPair && onOpenPair && (isEdit || canEdit);
+  const editClickable = !isEdit && canEdit;
+  const viewClickable = isEdit;
 
   return <div style={{ width, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
-    {/* Переключатель режима. Если та же РПД уже открыта в парной вкладке (hasPair),
-        кнопку противоположного режима блокируем — этот режим занят соседней вкладкой. */}
-    <div style={{ display: "flex", borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
-      <button
-        onClick={() => { if (viewClickable) onToggleMode(); }}
-        disabled={viewTakenByPair}
-        title={viewTakenByPair ? "Этот режим уже открыт в парной вкладке" : (isEdit ? "Переключиться в просмотр PDF" : "Текущий режим")}
-        style={{
-          flex: 1, padding: "6px 4px", border: "none",
-          borderRight: "1px solid " + T.border,
-          background: !isEdit ? T.blueLight : "transparent",
-          color: !isEdit ? T.blue : (viewTakenByPair ? T.textLight : T.textMuted),
-          fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
-          cursor: viewClickable ? "pointer" : "default", textAlign: "center",
-          opacity: viewTakenByPair ? 0.5 : 1,
-        }}>👁 ПРОСМОТР</button>
-      <button
-        onClick={() => { if (editClickable) onToggleMode(); }}
-        disabled={(!canEdit && !isEdit) || editTakenByPair}
-        title={editTakenByPair ? "Этот режим уже открыт в парной вкладке" : (!canEdit ? "Редактирование недоступно при текущем статусе РПД" : (!isEdit ? "Переключиться в режим редактирования" : "Текущий режим"))}
-        style={{
-          flex: 1, padding: "6px 4px", border: "none",
-          background: isEdit ? T.orangeLight : "transparent",
-          color: isEdit ? T.orange : (editTakenByPair ? T.textLight : (canEdit ? T.textMuted : T.textLight)),
-          fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
-          cursor: editClickable ? "pointer" : "default", textAlign: "center",
-          opacity: ((!canEdit && !isEdit) || editTakenByPair) ? 0.5 : 1,
-        }}>✏ РЕДАКТИРОВАНИЕ</button>
-    </div>
+    {(showModes || showPair) && (
+      <div style={{ display: "flex", borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
+        {showModes && <ToolbarBtn
+          icon={<EyeIcon />}
+          active={!isEdit}
+          onClick={() => { if (viewClickable) onToggleMode(); }}
+          disabled={!viewClickable}
+          title={!isEdit ? "Текущий режим: просмотр" : "Переключиться в просмотр PDF"}
+        />}
+        {showModes && <ToolbarBtn
+          icon={<PencilIcon />}
+          active={isEdit}
+          onClick={() => { if (editClickable) onToggleMode(); }}
+          disabled={!editClickable && !isEdit}
+          title={!canEdit && !isEdit ? "Редактирование недоступно при текущем статусе РПД" : (isEdit ? "Текущий режим: редактирование" : "Переключиться в режим редактирования")}
+        />}
+        {showPair && <ToolbarBtn
+          icon={<SplitIcon />}
+          onClick={onOpenPair}
+          title={`Откроет копию РПД в режиме «${isEdit ? "просмотр" : "редактирование"}» во второй панели`}
+        />}
+      </div>
+    )}
 
     {/* «Свойства РПД» — открывает модалку со всем, что не относится к печатной форме:
         основные данные, привязанные дисциплины БУПа с ФГОС, комментарий, разработчики. */}
@@ -60,19 +59,6 @@ export function Sidebar({
       onMouseEnter={e => e.currentTarget.style.background = T.bg}
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >ⓘ Свойства РПД</button>}
-
-    {/* Discoverable-кнопка для пары: «Открыть рядом в [противоположном режиме]».
-        Прячем когда пара уже есть. Если редактировать нельзя в принципе — тоже не показываем. */}
-    {!hasPair && onOpenPair && (isEdit || canEdit) && <button
-      onClick={onOpenPair}
-      title={`Откроет копию РПД в режиме «${isEdit ? "просмотр" : "редактирование"}» во второй панели · при сохранении edit-вкладки парная view-вкладка обновится автоматически`}
-      style={{
-        display: "block", width: "100%", padding: "5px 8px",
-        border: "none", borderBottom: "1px solid " + T.border,
-        background: T.accentLight, color: T.accent,
-        fontSize: 10, fontWeight: 700, letterSpacing: .3, fontFamily: F,
-        cursor: "pointer", textAlign: "center", flexShrink: 0,
-      }}>⧉ Открыть рядом в режиме «{isEdit ? "просмотр" : "редактор"}»</button>}
 
     {isHead && status === "На согласовании" && <div style={{ padding: "4px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
 
@@ -115,6 +101,25 @@ export function Sidebar({
       </button>;
     })}</div>
 
-    <div style={{ borderTop: "1px solid " + T.borderLight, padding: "8px 12px", fontSize: 11, color: T.textMuted, flexShrink: 0 }}><Badge status={status} /></div>
+    <div style={{ borderTop: "1px solid " + T.borderLight, padding: "8px 12px", fontSize: 11, color: T.text, flexShrink: 0 }}>{status}</div>
   </div>;
+}
+
+// Иконочная кнопка тулбара. Активная — с тёмной заливкой (T.text), неактивная —
+// прозрачная с приглушённым цветом. Disabled — полупрозрачная, не реагирует на клик.
+function ToolbarBtn({ icon, active, onClick, disabled, title }) {
+  return <button
+    onClick={disabled ? undefined : onClick}
+    disabled={disabled}
+    title={title}
+    style={{
+      flex: 1, padding: "8px 4px", border: "none",
+      borderRight: "1px solid " + T.border,
+      background: active ? T.bg : "transparent",
+      color: active ? T.text : T.textMuted,
+      cursor: disabled ? "default" : "pointer",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      opacity: disabled ? 0.35 : 1,
+    }}
+  >{icon}</button>;
 }

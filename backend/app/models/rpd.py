@@ -77,6 +77,11 @@ class RpdSection(Base):
     practice_hours = Column(Integer, default=0)
     lab_hours = Column(Integer, default=0)
     self_study_hours = Column(Integer, default=0)
+    # Номер семестра, к которому относится раздел. Если у дисциплины БУПа один
+    # семестр — поле игнорируется (UI его не показывает). Если несколько —
+    # каждый раздел вводится в контексте своего семестра, и в печатной форме
+    # таблица 6 (Содержание) разбивается на блоки `discipline_semesters`.
+    semester = Column(SmallInteger, nullable=True)
 
     rpd = relationship("Rpd", back_populates="sections")
     topics = relationship("RpdTopic", back_populates="section", cascade="all, delete-orphan",

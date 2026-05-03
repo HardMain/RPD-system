@@ -34,6 +34,56 @@ def _parse_semester(raw: Any) -> int:
     return 1
 
 
+def _blank_or_int(v):
+    """Превратить значение часов в формат, готовый к рендеру в DOCX:
+    None и 0 (если пришли как None) → пустая строка; целые → int.
+    Жизнь-блок раздела 3 в шаблоне рисует ровно то, что мы кладём — `0` иногда
+    нужен, поэтому различаем None (пусто) и 0 (явный ноль)."""
+    if v is None:
+        return ""
+    return v
+
+
+def _sum_or_blank(values):
+    """Сумма чисел из values, игнорируя None. Если все None — возвращаем None."""
+    nums = [v for v in values if isinstance(v, int)]
+    if not nums:
+        return None
+    return sum(nums)
+
+
+_CONTROL_LABEL_NORM = {
+    "экзамен": "экзамен",
+    "диф. зачет": "диф. зачет",
+    "диф.зачет": "диф. зачет",
+    "дифференцированный зачёт": "диф. зачет",
+    "дифференцированный зачет": "диф. зачет",
+    "зачёт": "зачёт",
+    "зачет": "зачёт",
+    "курсовой проект": "курсовой проект",
+    "курсовая работа": "курсовая работа",
+}
+
+
+def _parse_control_form(raw: str) -> dict[int, set[str]]:
+    """Парсим строку «Экзамен (3), Зачёт (2), Курсовая работа (3)» в map
+    {3: {'экзамен', 'курсовая работа'}, 2: {'зачёт'}}. Это нужно для строки
+    «Промежуточная аттестация» в разделе 3 печатной формы — у каждого семестра
+    своя пометка (часы экзамена 9 ч, зачёт/курсовая просто '+')."""
+    if not raw:
+        return {}
+    import re as _re
+    out: dict[int, set[str]] = {}
+    # Каждое срабатывание: «Метка (1, 2)» или «Метка (3)».
+    for m in _re.finditer(r"([А-Яа-яёЁ\.\s]+?)\s*\(\s*([\d,\s]+)\s*\)", raw):
+        label_raw = m.group(1).strip().lower()
+        label = _CONTROL_LABEL_NORM.get(label_raw, label_raw)
+        for tok in m.group(2).replace(",", " ").split():
+            if tok.isdigit():
+                out.setdefault(int(tok), set()).add(label)
+    return out
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -82,89 +132,115 @@ def build_context(rpd, bd=None, link=None) -> dict:
     srs = _safe(_pick(link.self_study_hours if link else None, bd.self_study_hours if bd else 0), 0)
     contact = lec + pr + lab
 
-    # Контрольная форма: распределение часов по типу контроля
-    control = (_pick(link.control_form if link else None, bd.control_form if bd else "") or "").lower()
-    exam_h = 9 if "экз" in control else 0
-    diff_credit_h = 0
-    credit_h = 0
-    if "диф" in control and "зач" in control:
-        diff_credit_h = 0  # часы не выделяются, отметка
-    elif "зач" in control:
-        credit_h = 0
+    # Контрольная форма: какой семестр чем сдаётся. Парсим строку вида
+    # «Экзамен (3), Зачёт (2), Курсовая работа (3)» в map {sem -> set(меток)}.
+    control_str = _pick(link.control_form if link else None, bd.control_form if bd else "") or ""
+    control_map = _parse_control_form(control_str)
 
-    sem_num = _parse_semester(_pick(link.semester if link else None, bd.semester if bd else None))
+    # ── Workload: один блок на каждый занятый семестр дисциплины ──────────
+    # Источник — semesters_data (snapshot или живой BupDiscipline). Если он
+    # пустой (БУП старого формата без per-semester полей) — собираем один
+    # семестр из агрегатов, как раньше.
+    sems_data = _pick(link.semesters_data if link else None, bd.semesters_data if bd else None)
+    if not sems_data:
+        sem_num = _parse_semester(_pick(link.semester if link else None, bd.semester if bd else None))
+        sems_data = [{
+            "number": sem_num,
+            "lecture": lec, "lab": lab, "practice": pr, "ksr": None, "srs": srs,
+        }]
 
-    # ── Workload: текущий семестр + 7 пустых слотов = всего 8 столбцов ─────
-    semester_block = {
-        "number": sem_num,
-        "contact": contact,
-        "lectures": lec,
-        "labs": lab,
-        "practice": pr,
-        "ksr": 0,
-        "control_work": 0,
-        "srs": srs,
-        "exam": exam_h,
-        "diff_credit": diff_credit_h,
-        "credit": credit_h,
-        "course_project": 0,
-        "course_work": 0,
+    workload_semesters = []
+    for s in sems_data:
+        sn = s.get("number")
+        s_lec = s.get("lecture")
+        s_lab = s.get("lab")
+        s_pr = s.get("practice")
+        s_ksr = s.get("ksr")
+        s_srs = s.get("srs")
+        s_contact_parts = [v for v in (s_lec, s_lab, s_pr) if v]
+        s_contact = sum(s_contact_parts) if s_contact_parts else None
+        labels = control_map.get(sn, set())
+        workload_semesters.append({
+            "number": sn,
+            "contact": _blank_or_int(s_contact),
+            "lectures": _blank_or_int(s_lec),
+            "labs": _blank_or_int(s_lab),
+            "practice": _blank_or_int(s_pr),
+            "ksr": _blank_or_int(s_ksr),
+            "control_work": "",
+            "srs": _blank_or_int(s_srs),
+            "exam": 9 if "экзамен" in labels else "",
+            "diff_credit": "" if "диф. зачет" not in labels else "+",
+            "credit": "" if "зачёт" not in labels else "+",
+            "course_project": "" if "курсовой проект" not in labels else "+",
+            "course_work": "" if "курсовая работа" not in labels else "+",
+            "total": _blank_or_int(_sum_or_blank([s_lec, s_lab, s_pr, s_ksr, s_srs])),
+        })
+
+    # «Итого» по всем семестрам — сумма по числовым ячейкам, пустые игнорируем.
+    def _col_sum(key):
+        total = 0
+        any_value = False
+        for s in workload_semesters:
+            v = s.get(key)
+            if isinstance(v, int):
+                total += v
+                any_value = True
+        return total if any_value else ""
+    total_block = {
+        "number": "Итого",
+        "contact": _col_sum("contact"),
+        "lectures": _col_sum("lectures"),
+        "labs": _col_sum("labs"),
+        "practice": _col_sum("practice"),
+        "ksr": _col_sum("ksr"),
+        "control_work": _col_sum("control_work"),
+        "srs": _col_sum("srs"),
+        "exam": _col_sum("exam"),
+        "diff_credit": _col_sum("diff_credit"),
+        "credit": _col_sum("credit"),
+        "course_project": _col_sum("course_project"),
+        "course_work": _col_sum("course_work"),
         "total": total_hours,
     }
     workload = {
-        "total": dict(semester_block, number="Итого"),
-        "semesters": [semester_block],
+        "total": total_block,
+        "semesters": workload_semesters,
     }
 
     # ── Результаты обучения ────────────────────────────────────────────────
-    # Идём по индикаторам всех bds_for_indicators (одна БУП-привязка или все
-    # сразу). Для каждого индикатора строка ВСЕГДА в печатной форме — даже
-    # если пользователь ещё не заполнил outcome_text / средство оценки.
+    # Источник истины — RpdLearningOutcome (как и в /outcomes-table).
+    # snapshot competency_code/indicator_code/indicator_description заполняется
+    # при autofill во время создания РПД и сохраняется даже после удаления БУПа.
+    # Дедуп — по живому id_indicator, иначе по snapshot-ключу.
     learning_outcomes = []
-    seen_indicator_ids: set[int] = set()
-    outcome_by_ind = {
-        lo.id_indicator: lo
-        for lo in (rpd.learning_outcomes or [])
-        if lo.id_indicator is not None
-    }
-    for bdisc in bds_for_indicators:
-        for bdc in (bdisc.competencies or []):
-            comp = bdc.competency
-            if comp is None:
-                continue
-            for ind in (comp.indicators or []):
-                if ind.id_indicator in seen_indicator_ids:
-                    continue
-                seen_indicator_ids.add(ind.id_indicator)
-                lo = outcome_by_ind.get(ind.id_indicator)
-                learning_outcomes.append({
-                    "competency_code": comp.code or "",
-                    "indicator_code": ind.code or "",
-                    "outcome_text": (lo.outcome_text if lo else "") or "",
-                    "indicator_description": ind.description or "",
-                    "assessment_tool": (lo.assessment_tool if lo else "") or "",
-                })
-
-    # «Осиротевшие» outcomes — те, что были автодобавлены при привязке БУПа,
-    # а потом БУП хард-удалили: индикатор уехал, а snapshot в РПД остался.
-    # В PDF их добавляем только если печатаем «общую» форму (bd не выбран),
-    # как делает OutcomesEditor в режиме «без bd_id».
-    if bd is None:
-        for lo in (rpd.learning_outcomes or []):
-            if lo.id_indicator and lo.id_indicator in seen_indicator_ids:
-                continue
-            if not (lo.indicator_code or "").strip():
-                continue
-            learning_outcomes.append({
-                "competency_code": lo.competency_code or "",
-                "indicator_code": lo.indicator_code or "",
-                "outcome_text": lo.outcome_text or "",
-                "indicator_description": lo.indicator_description or "",
-                "assessment_tool": lo.assessment_tool or "",
-            })
+    seen_keys: set[tuple] = set()
+    for lo in (rpd.learning_outcomes or []):
+        ind = lo.indicator if lo.id_indicator is not None else None
+        comp = ind.competency if ind else None
+        if lo.id_indicator is not None:
+            key = ("ind", lo.id_indicator)
+        else:
+            key = ("snap", lo.competency_code or "", lo.indicator_code or "")
+        if key in seen_keys:
+            continue
+        # Пустые snapshot-строки (без competency/indicator кода) пропускаем —
+        # это «битые» данные, в печатную форму они не попадают.
+        comp_code = lo.competency_code or (comp.code if comp else "") or ""
+        ind_code = lo.indicator_code or (ind.code if ind else "") or ""
+        if not comp_code and not ind_code:
+            continue
+        seen_keys.add(key)
+        learning_outcomes.append({
+            "competency_code": comp_code,
+            "indicator_code": ind_code,
+            "outcome_text": lo.outcome_text or "",
+            "indicator_description": lo.indicator_description or (ind.description if ind else "") or "",
+            "assessment_tool": lo.assessment_tool or "",
+        })
 
     # Сортируем по коду компетенции и индикатора — стабильный порядок и тот же,
-    # что у OutcomesEditor (тоже сортируется по Competency.code, Indicator.code).
+    # что у OutcomesEditor.
     learning_outcomes.sort(key=lambda r: (r["competency_code"], r["indicator_code"]))
 
     # ── Содержание дисциплины (разделы по семестрам) ──────────────────────
@@ -172,7 +248,16 @@ def build_context(rpd, bd=None, link=None) -> dict:
     # успел/не стал её заполнить — в печатной форме её быть не должно. Это же
     # правило фильтрует темы 4.1/4.2 (frontend TopicsEditor делает то же).
     rpd_sections = [s for s in (rpd.sections or []) if (s.title or "").strip()]
-    sections = []
+    # Группируем разделы по семестрам, в которые их положил пользователь. Если
+    # у дисциплины один семестр — все разделы попадают в него (даже если
+    # section.semester is None — старые данные). Если несколько — разделы без
+    # явно указанного семестра привязываем к первому.
+    plan_semester_numbers = [s["number"] for s in workload_semesters if s["number"] is not None]
+    if not plan_semester_numbers:
+        plan_semester_numbers = [_parse_semester(_pick(link.semester if link else None, bd.semester if bd else None))]
+    fallback_sem = plan_semester_numbers[0]
+
+    by_sem: dict[int, list] = {n: [] for n in plan_semester_numbers}
     tot_lec = tot_lab = tot_pr = tot_srs = 0
     for s in rpd_sections:
         sl = _safe(s.lecture_hours, 0)
@@ -183,7 +268,8 @@ def build_context(rpd, bd=None, link=None) -> dict:
         tot_pr += sp
         tot_lab += slb
         tot_srs += ss
-        sections.append({
+        sec_sem = s.semester if s.semester in by_sem else fallback_sem
+        by_sem.setdefault(sec_sem, []).append({
             "name": s.title,
             "description": _safe(s.brief_content, ""),
             "lectures": sl,
@@ -191,14 +277,18 @@ def build_context(rpd, bd=None, link=None) -> dict:
             "practice": sp,
             "srs": ss,
         })
-    discipline_semesters = [{
-        "number": sem_num,
-        "sections": sections,
-        "total_lectures": tot_lec,
-        "total_labs": tot_lab,
-        "total_practice": tot_pr,
-        "total_srs": tot_srs,
-    }]
+
+    discipline_semesters = []
+    for n in sorted(by_sem.keys()):
+        items = by_sem[n]
+        discipline_semesters.append({
+            "number": n,
+            "sections": items,
+            "total_lectures": sum(it["lectures"] for it in items),
+            "total_labs": sum(it["labs"] for it in items),
+            "total_practice": sum(it["practice"] for it in items),
+            "total_srs": sum(it["srs"] for it in items),
+        })
     total = {
         "lectures": tot_lec,
         "labs": tot_lab,
@@ -254,12 +344,16 @@ def build_context(rpd, bd=None, link=None) -> dict:
 
     PRINTED_BUCKETS = {
         "Учебные и научные издания": "main",
+        # Подгруппа 2.1 «Учебные и научные издания» из раздела
+        # «Дополнительная литература» — отдельный source_type, чтобы записи
+        # 1 «Основной» и 2.1 «Дополнительной» не смешивались.
+        "Учебные и научные издания (дополнительные)": "additional_study",
         "Периодические издания": "periodical",
         "Нормативно-технические издания": "normative",
         "Методические указания для студентов по освоению дисциплины": "methodical",
         "Учебно-методическое обеспечение самостоятельной работы студента": "self_study",
     }
-    buckets = {k: [] for k in ("main", "periodical", "normative", "methodical", "self_study")}
+    buckets = {k: [] for k in ("main", "additional_study", "periodical", "normative", "methodical", "self_study")}
     lit_el = []
     # Дискриминатор «электронная» — наличие URL (truthy). Согласовано с
     # frontend/LiteratureEditor: новой строке 6.2 он кладёт URL=" " (sentinel),
@@ -369,9 +463,12 @@ def build_context(rpd, bd=None, link=None) -> dict:
         "program_name": bup_profile or direction_profile or (direction.profile if direction else None) or direction_name or "—",
         "publish_year": (rpd.academic_year or str(datetime.now().year))[:4],
 
-        "goals_text": _safe(rpd.goals_text, "—"),
-        "objects_text": _safe(rpd.objects_text, "—"),
-        "requirements_text": _safe(rpd.requirements_text, "Не предусмотрено"),
+        # Незаполненные текстовые блоки шаблон должен рендерить как ПУСТУЮ
+        # строку, а не «—». Прочерки сбивают читателя: в Word'е такие места
+        # должны просто оставаться чистыми — преподаватель допишет позже.
+        "goals_text": _safe(rpd.goals_text, ""),
+        "objects_text": _safe(rpd.objects_text, ""),
+        "requirements_text": _safe(rpd.requirements_text, ""),
 
         "learning_outcomes": learning_outcomes,
         "workload": workload,
@@ -381,14 +478,15 @@ def build_context(rpd, bd=None, link=None) -> dict:
         "practical_topics": practical_topics,
         "lab_topics": lab_topics_list,
 
-        "educational_tech": _safe(rpd.educational_tech, "—"),
-        "methodical_recommendations": _safe(rpd.methodical_recommendations, "—"),
+        "educational_tech": _safe(rpd.educational_tech, ""),
+        "methodical_recommendations": _safe(rpd.methodical_recommendations, ""),
 
         "literature_main": buckets["main"] or empty_printed,
-        # Доп. учебная литература — отдельной категории на фронте нет (вводится
-        # как «Учебные и научные»). Шаблон ждёт отдельный список — отдаём пустую
-        # строку, чтобы он рендерился без подстановок.
-        "literature_additional_study": empty_printed,
+        # Подгруппа 2.1 — теперь у фронта своя категория («Учебные и научные
+        # издания (дополнительные)»), бакетится в `additional_study`. Если в
+        # подгруппе нет записей, в шаблон уходит «Не используется» — точно так
+        # же, как и у других пустых разделов 6.1.
+        "literature_additional_study": buckets["additional_study"] or empty_printed,
         "literature_periodical": buckets["periodical"] or empty_printed,
         "literature_additional_normative": buckets["normative"] or empty_printed,
         "literature_methodical": buckets["methodical"] or empty_printed,

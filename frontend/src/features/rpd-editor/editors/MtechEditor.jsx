@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
@@ -66,7 +66,7 @@ export function MtechEditor() {
       </table>
     ) : (
       <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-        МТО не добавлено — в печатной форме будет одна пустая строка.
+        Не используется
       </div>
     )}
     {editable && (
@@ -82,9 +82,27 @@ function MtechRow({ item, editable, onSave, onDelete }) {
   const [roomType, setRoomType] = useState(item.room_type || "");
   const [equipment, setEquipment] = useState(item.equipment || "");
   const [quantity, setQuantity] = useState(item.quantity == null ? "" : String(item.quantity));
-  useEffect(() => { setRoomType(item.room_type || ""); }, [item.room_type]);
-  useEffect(() => { setEquipment(item.equipment || ""); }, [item.equipment]);
-  useEffect(() => { setQuantity(item.quantity == null ? "" : String(item.quantity)); }, [item.quantity]);
+  // Защита от «отката» свежего ввода: useEffect больше не перезатирает буфер
+  // безусловно — только если пользователь не успел напечатать что-то новое
+  // (live-ввод сравнивается с предыдущим серверным значением через ref).
+  const roomRef = useRef(item.room_type || "");
+  const equipRef = useRef(item.equipment || "");
+  const qtyRef = useRef(item.quantity == null ? "" : String(item.quantity));
+  useEffect(() => {
+    const next = item.room_type || "";
+    if (roomType === roomRef.current) setRoomType(next);
+    roomRef.current = next;
+  }, [item.room_type]);
+  useEffect(() => {
+    const next = item.equipment || "";
+    if (equipment === equipRef.current) setEquipment(next);
+    equipRef.current = next;
+  }, [item.equipment]);
+  useEffect(() => {
+    const next = item.quantity == null ? "" : String(item.quantity);
+    if (quantity === qtyRef.current) setQuantity(next);
+    qtyRef.current = next;
+  }, [item.quantity]);
 
   function commitRoom() {
     if (roomType === (item.room_type || "")) return;
@@ -102,9 +120,9 @@ function MtechRow({ item, editable, onSave, onDelete }) {
 
   if (!editable) {
     return <tr>
-      <td style={td}>{item.room_type || <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}</td>
-      <td style={td}>{item.equipment || <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}</td>
-      <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{item.quantity ?? "—"}</td>
+      <td style={td}>{item.room_type || ""}</td>
+      <td style={td}>{item.equipment || ""}</td>
+      <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{item.quantity ?? ""}</td>
     </tr>;
   }
 

@@ -10,6 +10,7 @@
   прикреплена к нескольким дисциплинам разных БУПов, как в АРМ).
 """
 from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
@@ -45,12 +46,19 @@ class BupDiscipline(Base):
     control_form = Column(String(255))       # «Экзамен», «Зачёт», «Экзамен, зачёт» и т.п.
 
     total_hours = Column(Integer)            # Общая трудоёмкость, ак.час
-    lecture_hours = Column(Integer)          # Лекции
+    lecture_hours = Column(Integer)          # Лекции (агрегат по всем семестрам)
     lab_hours = Column(Integer)              # Лабораторные
     practice_hours = Column(Integer)         # Практические
     ksr_hours = Column(Integer)              # КСР
     self_study_hours = Column(Integer)       # СРС
     zet = Column(Integer)                    # Зачётные единицы
+
+    # Часы по каждому занятому семестру дисциплины. Список dict'ов:
+    # [{"number": 1, "lecture": 18, "lab": 0, "practice": 36, "ksr": 0, "srs": 30},
+    #  {"number": 2, ...}]. Заполняется парсером XLS из блоков C16-C55. Любое
+    # поле может быть None, если в XLS соответствующая ячейка пустая —
+    # печатная форма раздела 3 оставит её пустой, не подставляя «0».
+    semesters_data = Column(JSONB, nullable=True)
 
     bup = relationship("Bup", back_populates="disciplines")
     discipline = relationship("Discipline", back_populates="bup_disciplines")
@@ -120,6 +128,9 @@ class RpdBupDiscipline(Base):
     ksr_hours = Column(Integer)
     self_study_hours = Column(Integer)
     zet = Column(Integer)
+    # Snapshot почасового расклада по семестрам — переживает hard-delete БУПа.
+    # Формат тот же, что у `BupDiscipline.semesters_data`.
+    semesters_data = Column(JSONB, nullable=True)
     # Имя логической дисциплины — на случай, если её тоже удалят (например когда
     # она использовалась только этим планом).
     discipline_name = Column(String(200))

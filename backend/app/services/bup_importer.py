@@ -18,7 +18,7 @@ from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency,
     Direction, Discipline, Competency, CompetencyIndicator, Department,
 )
-from app.services.bup_parser import ParsedBup, ParsedDiscipline
+from app.services.bup_parser import ParsedBup, ParsedDiscipline, ParsedSemester
 
 
 def _normalize_competency_code(code: str) -> str:
@@ -175,6 +175,25 @@ async def _ensure_at_least_one_indicator(db: AsyncSession, comp: Competency) -> 
     await db.flush()
 
 
+def _semesters_to_jsonb(semesters: list[ParsedSemester]) -> list[dict] | None:
+    """Сериализуем `list[ParsedSemester]` в JSONB-формат, ожидаемый моделью.
+    None значит «семестров нет в XLS» — UI и шаблон возьмут агрегатные поля
+    BupDiscipline и сделают вид, что семестр один (legacy-сценарий)."""
+    if not semesters:
+        return None
+    return [
+        {
+            "number": s.number,
+            "lecture": s.lecture_hours,
+            "lab": s.lab_hours,
+            "practice": s.practice_hours,
+            "ksr": s.ksr_hours,
+            "srs": s.self_study_hours,
+        }
+        for s in semesters
+    ]
+
+
 def _build_bup_name(parsed: ParsedBup, year: int | None) -> str:
     """Сборка человекочитаемого имени БУПа: '2024 ЭТФ ПИ б (полный)'."""
     parts: list[str] = []
@@ -248,6 +267,7 @@ async def import_parsed_bup(
             if pd.department else fallback_dept
         )
         existing = existing_by_code.get(pd.code or "")
+        sems_jsonb = _semesters_to_jsonb(pd.semesters)
         if existing is not None:
             # Обновляем поля существующей строки — id_bup_discipline сохраняется,
             # привязки RpdBupDiscipline у уже созданных РПД остаются валидны.
@@ -263,6 +283,7 @@ async def import_parsed_bup(
             existing.ksr_hours = pd.ksr_hours
             existing.self_study_hours = pd.self_study_hours
             existing.zet = pd.zet
+            existing.semesters_data = sems_jsonb
             # Перезагружаем компетенции: проще снести и собрать заново — это
             # дочерняя коллекция, на неё никто извне не ссылается.
             for link in list(existing.competencies):
@@ -284,6 +305,7 @@ async def import_parsed_bup(
                 ksr_hours=pd.ksr_hours,
                 self_study_hours=pd.self_study_hours,
                 zet=pd.zet,
+                semesters_data=sems_jsonb,
             )
             db.add(bd)
             await db.flush()

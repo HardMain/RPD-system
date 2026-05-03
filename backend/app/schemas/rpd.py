@@ -26,9 +26,16 @@ class RpdCreate(BaseModel):
 class OutcomeUpsert(BaseModel):
     """Upsert одной строки в таблице планируемых результатов.
 
-    `outcome_text == "" and assessment_tool == ""` означает «удалить запись»,
-    если она существовала."""
-    id_indicator: int
+    Идентификация записи:
+      • `id_outcome` — приоритет (для строк со snapshot, где живого индикатора уже нет).
+      • `id_indicator` — fallback (для строк с живым индикатором).
+
+    `outcome_text == "" and assessment_tool == ""` НЕ удаляет запись — после
+    «вшивания» компетенций в РПД при создании пустая строка остаётся видимой
+    в таблице раздела 2, преподаватель должен иметь возможность очистить и
+    оставить пустой. Если хочется удалить — отдельный DELETE-эндпоинт."""
+    id_outcome: int | None = None
+    id_indicator: int | None = None
     outcome_text: str = ""
     assessment_tool: str = ""
 
@@ -56,8 +63,12 @@ class FosFileSelect(BaseModel):
 
 
 class OutcomeRowOut(BaseModel):
-    """Строка таблицы планируемых результатов: индикатор + (опц.) запись."""
-    id_indicator: int
+    """Строка таблицы планируемых результатов: индикатор + (опц.) запись.
+
+    `id_indicator` может быть None — если живого индикатора в БУПе уже нет
+    (БУП удалён, индикатор уехал вместе с осиротевшей компетенцией). Тогда
+    идентификация — через `id_outcome`."""
+    id_indicator: int | None = None
     indicator_code: str
     indicator_description: str
     competency_code: str
@@ -113,6 +124,7 @@ class RpdSectionOut(BaseModel):
     practice_hours: int
     lab_hours: int
     self_study_hours: int
+    semester: int | None = None
     topics: list[RpdTopicOut] = []
 
     class Config:
@@ -127,6 +139,7 @@ class RpdSectionCreate(BaseModel):
     practice_hours: int = 0
     lab_hours: int = 0
     self_study_hours: int = 0
+    semester: int | None = None
 
 
 # ── Literature ────────────────────────────────────────────────────────────────
@@ -337,6 +350,12 @@ class BupDisciplineRefOut(BaseModel):
     direction_profile: str | None = None
     fgos_file_id: int | None = None
     fgos_file_name: str | None = None
+    # Часы по каждому семестру дисциплины (как в XLS-блоках C16-C55).
+    # Список dict'ов {number, lecture, lab, practice, ksr, srs}. Пустые ячейки
+    # хранятся как null, чтобы шаблон раздела 3 рисовал их пустыми, а не «0».
+    # Может быть None, если БУП был импортирован до этой правки — UI/шаблон
+    # тогда рендерят один семестр из агрегатных полей.
+    semesters_data: list[dict] | None = None
     # БУП был soft-удалён администратором: показываем bup-дисциплину как обычно,
     # но рядом с именем плана можно подсказать пользователю «БУП удалён из БД».
     bup_deleted: bool = False

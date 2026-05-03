@@ -43,18 +43,22 @@ export function LiteratureEditor({ kind }) {
   async function addRow(source_type) {
     const payload = isElectronic
       ? { source_type, title: "", url: " ", availability: [] }
-      : { source_type, title: "", copies_count: null };
+      // У печатной по умолчанию «0 экземпляров», а не null/прочерк. Чаще всего
+      // именно 0 и есть стартовое значение, а ставить «—» при добавлении и
+      // потом править — лишний шаг.
+      : { source_type, title: "", copies_count: 0 };
     try { await api.addLiterature(rpdId, payload); await reload(); } catch {}
   }
 
   async function delRow(item) {
     // Пустую строку — без подтверждения. Считаем «пустой», когда пользователь
     // не ввёл ни одного поля и ничего не выбрал из выпадашек. Sentinel URL=" "
-    // у новой 6.2-строки после .trim() становится пустым.
+    // у новой 6.2-строки после .trim() становится пустым. copies_count=0 —
+    // тоже считается пустым (это дефолт, выставленный кнопкой «+»).
     const filled = isElectronic
       ? ((item.title || "").trim() || (item.url || "").trim()
          || (item.source_type || "").trim() || (item.availability?.length > 0))
-      : ((item.title || "").trim() || item.copies_count != null);
+      : ((item.title || "").trim() || (item.copies_count != null && item.copies_count !== 0));
     if (filled && !confirm("Удалить запись?")) return;
     try { await api.deleteLiterature(item.id_literature); await reload(); } catch {}
   }
@@ -101,75 +105,134 @@ export function LiteratureEditor({ kind }) {
 
 // ─── 6.1 Печатная литература ────────────────────────────────────────────────
 
-const PRINTED_GROUPS = [
-  { title: "1. Основная литература", source_type: "Учебные и научные издания" },
-  { title: "2.2. Периодические издания", source_type: "Периодические издания" },
-  { title: "2.3. Нормативно-технические издания", source_type: "Нормативно-технические издания" },
-  { title: "3. Методические указания для студентов по освоению дисциплины", source_type: "Методические указания для студентов по освоению дисциплины" },
-  { title: "4. Учебно-методическое обеспечение самостоятельной работы студента", source_type: "Учебно-методическое обеспечение самостоятельной работы студента" },
+// Структура печатной литературы 1:1 с типовой формой РПД ПНИПУ:
+// 1. Основная литература (одна группа «Учебные и научные»)
+// 2. Дополнительная литература — три подгруппы 2.1 / 2.2 / 2.3
+// 3. Методические указания для студентов
+// 4. Учебно-методическое обеспечение СРС
+//
+// 2.1 «Учебные и научные» — отдельная подгруппа, отличается от 1-й только
+// контекстом (вспомогательная литература). Чтобы записи не путались, у них
+// отдельный source_type — «Учебные и научные издания (дополнительные)».
+// Бэкенд знает этот тип через PRINTED_BUCKETS и кладёт в bucket
+// `additional_study`.
+const ADDITIONAL_MAIN_TYPE = "Учебные и научные издания (дополнительные)";
+const PRINTED_SECTIONS = [
+  {
+    title: "1. Основная литература",
+    groups: [{ source_type: "Учебные и научные издания" }],
+  },
+  {
+    title: "2. Дополнительная литература",
+    groups: [
+      { subtitle: "2.1. Учебные и научные издания", source_type: ADDITIONAL_MAIN_TYPE },
+      { subtitle: "2.2. Периодические издания", source_type: "Периодические издания" },
+      { subtitle: "2.3. Нормативно-технические издания", source_type: "Нормативно-технические издания" },
+    ],
+  },
+  {
+    title: "3. Методические указания для студентов по освоению дисциплины",
+    groups: [{ source_type: "Методические указания для студентов по освоению дисциплины" }],
+  },
+  {
+    title: "4. Учебно-методическое обеспечение самостоятельной работы студента",
+    groups: [{ source_type: "Учебно-методическое обеспечение самостоятельной работы студента" }],
+  },
 ];
+
+// Все source_type, известные печатной форме (плоский список — для проверки и
+// fallback'a при бакетировании items).
+const PRINTED_TYPES = PRINTED_SECTIONS.flatMap(s => s.groups.map(g => g.source_type));
 
 function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
   // Несовпавшие по виду (legacy/неизвестные source_type) — кладём в основную,
   // как делает backend (PRINTED_BUCKETS fallback на main).
-  const grouped = Object.fromEntries(PRINTED_GROUPS.map(g => [g.source_type, []]));
+  const grouped = Object.fromEntries(PRINTED_TYPES.map(t => [t, []]));
   for (const it of items) {
     if (grouped[it.source_type] !== undefined) grouped[it.source_type].push(it);
     else grouped["Учебные и научные издания"].push(it);
   }
 
+  function renderGroup(g) {
+    const rows = grouped[g.source_type];
+    return <div key={g.source_type} style={{ marginBottom: 16 }}>
+      {g.subtitle && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{g.subtitle}</div>}
+      {rows.length > 0 ? (
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <colgroup>
+            <col style={{ width: 50 }} />
+            <col />
+            <col style={{ width: 110 }} />
+          </colgroup>
+          <thead>
+            <tr>
+              <th style={{ ...th, textAlign: "center" }}>№ п/п</th>
+              <th style={th}>Библиографическое описание (автор, заглавие, вид издания, место, издательство, год издания, количество страниц)</th>
+              <th style={{ ...th, textAlign: "center" }}>Количество экземпляров в библиотеке</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((item, i) => (
+              <PrintedRow
+                key={item.id_literature}
+                item={item}
+                index={i + 1}
+                editable={editable}
+                onSave={(patch) => onSave(item, patch)}
+                onDelete={() => onDelete(item)}
+              />
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
+          Не используется
+        </div>
+      )}
+      {editable && (
+        <div style={{ marginTop: 8 }}>
+          <Btn small onClick={() => onAdd(g.source_type)}><PlusIcon /> Добавить запись</Btn>
+        </div>
+      )}
+    </div>;
+  }
+
   return <div>
-    {PRINTED_GROUPS.map(g => {
-      const rows = grouped[g.source_type];
-      return <div key={g.source_type} style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{g.title}</div>
-        {rows.length > 0 ? (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <colgroup>
-              <col style={{ width: 50 }} />
-              <col />
-              <col style={{ width: 110 }} />
-            </colgroup>
-            <thead>
-              <tr>
-                <th style={{ ...th, textAlign: "center" }}>№ п/п</th>
-                <th style={th}>Библиографическое описание (автор, заглавие, вид издания, место, издательство, год издания, количество страниц)</th>
-                <th style={{ ...th, textAlign: "center" }}>Количество экземпляров в библиотеке</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((item, i) => (
-                <PrintedRow
-                  key={item.id_literature}
-                  item={item}
-                  index={i + 1}
-                  editable={editable}
-                  onSave={(patch) => onSave(item, patch)}
-                  onDelete={() => onDelete(item)}
-                />
-              ))}
-            </tbody>
-          </table>
-        ) : (
-          <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-            Не используется
-          </div>
-        )}
-        {editable && (
-          <div style={{ marginTop: 8 }}>
-            <Btn small onClick={() => onAdd(g.source_type)}><PlusIcon /> Добавить запись</Btn>
-          </div>
-        )}
-      </div>;
-    })}
+    {PRINTED_SECTIONS.map(section => (
+      <div key={section.title} style={{ marginBottom: 22 }}>
+        {/* Заголовок-секция (1 / 2 / 3 / 4) — крупнее и с разделительной чертой,
+            чтобы на глаз отделять «Основную» от «Дополнительной» и т.д. */}
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid " + T.borderLight }}>
+          {section.title}
+        </div>
+        {section.groups.map(renderGroup)}
+      </div>
+    ))}
   </div>;
 }
 
 function PrintedRow({ item, index, editable, onSave, onDelete }) {
   const [title, setTitle] = useState(item.title || "");
   const [copies, setCopies] = useState(item.copies_count == null ? "" : String(item.copies_count));
-  useEffect(() => { setTitle(item.title || ""); }, [item.title]);
-  useEffect(() => { setCopies(item.copies_count == null ? "" : String(item.copies_count)); }, [item.copies_count]);
+  // Защита от «отката» свежего ввода: пока пользователь правит ячейку, у этой
+  // строки может прилететь reload (например, blur на title в этой же строке
+  // или редактирование соседней). useEffect раньше безусловно перезатирал
+  // буфер значением с сервера — клик по спиннеру copies показывал «4», и через
+  // миг откатывал к «3». Сравниваем с предыдущим серверным значением: если
+  // local буфер уже отличается, не трогаем его — пусть live-ввод проживёт до
+  // своего blur'а.
+  const titleRef = useRef(item.title || "");
+  const copiesRef = useRef(item.copies_count == null ? "" : String(item.copies_count));
+  useEffect(() => {
+    const next = item.title || "";
+    if (title === titleRef.current) setTitle(next);
+    titleRef.current = next;
+  }, [item.title]);
+  useEffect(() => {
+    const next = item.copies_count == null ? "" : String(item.copies_count);
+    if (copies === copiesRef.current) setCopies(next);
+    copiesRef.current = next;
+  }, [item.copies_count]);
 
   function commitTitle() {
     if (title === (item.title || "")) return;
@@ -184,8 +247,8 @@ function PrintedRow({ item, index, editable, onSave, onDelete }) {
   if (!editable) {
     return <tr>
       <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
-      <td style={td}>{item.title || <span style={{ color: T.textMuted, fontStyle: "italic" }}>Без описания</span>}</td>
-      <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{item.copies_count ?? "—"}</td>
+      <td style={td}>{item.title || ""}</td>
+      <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{item.copies_count ?? ""}</td>
     </tr>;
   }
 
@@ -250,7 +313,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
       </table>
     ) : (
       <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-        Электронных ресурсов нет
+        Не используется
       </div>
     )}
     {editable && (
@@ -267,8 +330,19 @@ function ElectronicRow({ item, editable, onSave, onDelete }) {
   // показываем пусто, чтобы пользователь видел чистое поле и не подумал, что
   // у него пробел в URL.
   const [url, setUrl] = useState(((item.url || "").trim() ? item.url : ""));
-  useEffect(() => { setTitle(item.title || ""); }, [item.title]);
-  useEffect(() => { setUrl(((item.url || "").trim() ? item.url : "")); }, [item.url]);
+  // см. PrintedRow — защита от «отката» свежего ввода при reload во время редактирования.
+  const titleRef = useRef(item.title || "");
+  const urlRef = useRef((item.url || "").trim() ? item.url : "");
+  useEffect(() => {
+    const next = item.title || "";
+    if (title === titleRef.current) setTitle(next);
+    titleRef.current = next;
+  }, [item.title]);
+  useEffect(() => {
+    const next = (item.url || "").trim() ? item.url : "";
+    if (url === urlRef.current) setUrl(next);
+    urlRef.current = next;
+  }, [item.url]);
 
   function commitTitle() {
     if (title === (item.title || "")) return;
@@ -294,18 +368,23 @@ function ElectronicRow({ item, editable, onSave, onDelete }) {
     const avail = Array.isArray(item.availability) ? item.availability : [];
     const cleanUrl = (item.url || "").trim();
     return <tr>
-      <td style={td}>{item.source_type || <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}</td>
-      <td style={td}>{item.title || <span style={{ color: T.textMuted, fontStyle: "italic" }}>Без названия</span>}</td>
+      <td style={td}>{item.source_type || ""}</td>
+      <td style={td}>{item.title || ""}</td>
       <td style={{ ...td, wordBreak: "break-all" }}>
         {cleanUrl
           ? <a href={cleanUrl} target="_blank" rel="noreferrer" style={{ color: T.accent }}>{cleanUrl}</a>
-          : <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}
+          : ""}
       </td>
-      <td style={td}>{avail.length ? avail.join(", ") : <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}</td>
+      <td style={td}>{avail.length ? avail.join(", ") : ""}</td>
     </tr>;
   }
 
-  const typeOptions = LITERATURE_TYPES.map(t => ({ value: t, label: t }));
+  // В 6.2 выпадашка не должна показывать «(дополнительные)» — этот тип нужен
+  // только для разделения 1-й и 2.1 групп в печатной 6.1; для электронной
+  // литературы (6.2) это бессмыслица.
+  const typeOptions = LITERATURE_TYPES
+    .filter(t => t !== ADDITIONAL_MAIN_TYPE)
+    .map(t => ({ value: t, label: t }));
 
   return <tr>
     <td style={{ ...td, padding: 4 }}>

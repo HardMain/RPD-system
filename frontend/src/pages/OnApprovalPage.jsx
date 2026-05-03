@@ -1,5 +1,4 @@
 import { T } from "../theme.js";
-import { Badge } from "../components/Badge.jsx";
 
 export function OnApprovalPage({ rpds, onOpen }) {
   const items = rpds.filter(r => r.status === "На согласовании");
@@ -9,7 +8,7 @@ export function OnApprovalPage({ rpds, onOpen }) {
         <div style={{ fontWeight: 600, fontSize: 13 }}>{r.discipline_name}</div>
         <div style={{ fontSize: 11, color: T.textMuted }}>{r.direction_code} — {r.academic_year}</div>
       </div>
-      <Badge status={r.status} />
+      <span style={{ fontSize: 12, color: T.text }}>{r.status}</span>
     </div>)}
     {items.length === 0 && <div style={{ padding: 40, textAlign: "center", color: T.textMuted }}>Нет РПД на согласовании</div>}
   </div>;

@@ -5,71 +5,114 @@ import { td, th } from "../../../styles.js";
  * Раздел 3 «Объём и виды учебной работы» — read-only визуализация,
  * 1:1 со структурой rpd_template.docx (TABLE 5).
  *
- * 3 колонки верхнего уровня: Вид учебной работы | Всего часов | Распределение
- * по семестрам в часах. Третья дробится на N подколонок — по одной на каждую
- * привязанную БУП-дисциплину (как в шаблоне через {%tc for s in workload.semesters %}).
+ * Колонок верхнего уровня три: Вид работы | Всего часов | Распределение по
+ * семестрам в часах. Третья дробится на N подколонок — по одной на каждый
+ * РЕАЛЬНЫЙ семестр дисциплины (берём из BD.semesters_data, который парсится
+ * из блоков C16-C55 XLS-БУПа). Если у одной РПД multi-БУП (несколько привязок
+ * с одинаковой нагрузкой) — семестры объединяются (по `number`); часы должны
+ * совпадать по дизайну (один макет покрывает только БУПы с равными часами).
  *
- * Считаем те же значения, что rpd_template_context.build_context — чтобы цифры
- * в редакторе и в скачанном PDF не расходились.
+ * Пустые ячейки (None в семестре) отображаются как «—», а явный 0 — как «0».
+ * Это соответствует требованию XLS: незаполненная ячейка остаётся пустой и
+ * в печатной форме.
  */
 export function WorkloadTable({ rpd }) {
   const bds = rpd?.bup_disciplines || [];
-  // Если нет ни одной БУП-привязки — fallback на агрегатные поля самой РПД
-  // (legacy-сценарий). В этом случае одна семестровая колонка.
-  const cols = bds.length > 0
-    ? bds.map(bd => ({
-        key: bd.id_bup_discipline ?? bd.bup_name,
-        title: bd.semester || "—",
-        bd,
-      }))
-    : [{ key: "rpd", title: rpd.semester || "—", bd: rpdAsBd(rpd) }];
 
-  const rows = ROWS;
+  // Собираем уникальные семестры со всех привязок. Если у привязки нет
+  // semesters_data (старый формат БУПа без per-semester блоков) — fallback
+  // на агрегатные поля BD как один-семестровый блок.
+  const semesterMap = new Map(); // number → { lecture, lab, practice, ksr, srs, total }
+  for (const bd of bds) {
+    const sd = bd.semesters_data;
+    if (sd && sd.length > 0) {
+      for (const s of sd) {
+        if (s.number == null) continue;
+        if (!semesterMap.has(s.number)) {
+          semesterMap.set(s.number, {
+            lecture: s.lecture, lab: s.lab, practice: s.practice,
+            ksr: s.ksr, srs: s.srs,
+          });
+        }
+      }
+    } else {
+      const num = parseInt(String(bd.semester || "1").split(/[,\s\-]/)[0], 10) || 1;
+      if (!semesterMap.has(num)) {
+        semesterMap.set(num, {
+          lecture: bd.lecture_hours, lab: bd.lab_hours, practice: bd.practice_hours,
+          ksr: bd.ksr_hours, srs: bd.self_study_hours,
+        });
+      }
+    }
+  }
+  if (semesterMap.size === 0) {
+    semesterMap.set(parseInt(rpd.semester || "1", 10) || 1, {
+      lecture: rpd.lecture_hours, lab: rpd.lab_hours, practice: rpd.practice_hours,
+      ksr: 0, srs: rpd.self_study_hours,
+    });
+  }
+
+  const semesters = [...semesterMap.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([n, v]) => ({ number: n, ...v }));
+
+  // Контрольная форма: чтобы строки «Экзамен/Зачёт/Курсовая…» отмечались
+  // только в нужном семестре. Парсим с любой привязки (multi-БУП обязан
+  // иметь одинаковую форму контроля по дизайну create_rpd).
+  const controlMap = parseControlForm(bds[0]?.control_form || rpd?.control_form || "");
+
+  // Ширины: «Вид работы» ≈ 49%, «Всего часов» ≈ 9%, «Распределение по семестрам»
+  // ≈ 42% — равномерно делится на N. Совпадает со структурой TABLE 5 в шаблоне.
+  const SEM_GROUP_PCT = 42;
+  const semColPct = (SEM_GROUP_PCT / semesters.length).toFixed(3) + "%";
 
   return <div className="table-scroll">
-    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+    <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
       <colgroup>
-        <col />
-        <col style={{ width: 90 }} />
-        {cols.map(c => <col key={c.key} style={{ width: 80 }} />)}
+        <col style={{ width: "49%" }} />
+        <col style={{ width: "9%" }} />
+        {semesters.map(s => <col key={s.number} style={{ width: semColPct }} />)}
       </colgroup>
       <thead>
         <tr>
           <th rowSpan={2} style={{ ...th, verticalAlign: "middle" }}>Вид учебной работы</th>
           <th rowSpan={2} style={{ ...th, textAlign: "center", verticalAlign: "middle" }}>Всего часов</th>
-          <th colSpan={cols.length} style={{ ...th, textAlign: "center" }}>
+          <th colSpan={semesters.length} style={{ ...th, textAlign: "center" }}>
             Распределение по семестрам в часах
           </th>
         </tr>
         <tr>
-          {cols.map(c => (
-            <th key={c.key} style={{ ...th, textAlign: "center", fontSize: 11 }}>
+          {semesters.map(s => (
+            <th key={s.number} style={{ ...th, textAlign: "center", fontSize: 11 }}>
               <div style={{ color: T.textMuted, fontWeight: 600, fontSize: 10, textTransform: "uppercase", letterSpacing: ".3px" }}>Семестр</div>
-              <div>{c.title}</div>
+              <div>{s.number}</div>
             </th>
           ))}
         </tr>
       </thead>
       <tbody>
-        {rows.map((r, i) => {
+        {ROWS.map((r, i) => {
           if (r.heading) {
             return <tr key={i}>
-              <td colSpan={2 + cols.length} style={{ ...td, fontWeight: 700, background: T.bg }}>
+              <td colSpan={2 + semesters.length} style={{ ...td, fontWeight: 700, background: T.bg }}>
                 {r.label}
               </td>
             </tr>;
           }
-          const totalVal = cols.reduce((s, c) => s + numOr0(r.get(c.bd)), 0);
+          // total per row across semesters: sum of numbers, ignoring blanks
+          const cellValues = semesters.map(s => r.value(s, controlMap));
+          const total = cellValues.reduce((acc, v) => typeof v === "number" ? acc + v : acc, 0);
+          const totalDisplay = cellValues.some(v => typeof v === "number") ? total : "";
           return <tr key={i}>
             <td style={{ ...td, paddingLeft: 12 + (r.indent || 0) * 16, fontWeight: r.total ? 700 : 400 }}>
               {r.label}
             </td>
             <td style={{ ...td, textAlign: "center", fontWeight: r.total ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>
-              {fmt(totalVal)}
+              {r.total ? (rpdTotalHours(rpd, bds) || totalDisplay || "") : (totalDisplay === "" ? "" : totalDisplay)}
             </td>
-            {cols.map(c => (
-              <td key={c.key} style={{ ...td, textAlign: "center", fontWeight: r.total ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>
-                {fmt(r.get(c.bd))}
+            {cellValues.map((v, j) => (
+              <td key={semesters[j].number} style={{ ...td, textAlign: "center", fontWeight: r.total ? 700 : 400, fontVariantNumeric: "tabular-nums" }}>
+                {fmtCell(v)}
               </td>
             ))}
           </tr>;
@@ -82,54 +125,83 @@ export function WorkloadTable({ rpd }) {
 
 // ─── helpers ────────────────────────────────────────────────────────────────
 
-function numOr0(v) { return typeof v === "number" ? v : 0; }
-function fmt(v) {
-  if (v == null) return "—";
-  if (typeof v === "number") return v === 0 ? "0" : String(v);
-  return v;
+function fmtCell(v) {
+  // Различаем null/undefined (пустая XLS-ячейка) и явный 0. Пустую отдаём
+  // как тире, как принято в БУПах ПНИПУ; явный 0 — как «0».
+  if (v === null || v === undefined || v === "") return "";
+  return String(v);
 }
 
-// Логика exam/credit повторяет rpd_template_context.build_context — единственное
-// поле часов, реально зависящее от формы контроля, это exam (9 ч). Зачёт/диф.зачёт
-// в шаблоне всегда 0 (это просто отметка в столбце); тут так же.
-function examHours(bd) {
-  const c = (bd?.control_form || "").toLowerCase();
-  return c.includes("экз") ? 9 : 0;
-}
-function contactHours(bd) {
-  return numOr0(bd?.lecture_hours) + numOr0(bd?.lab_hours)
-       + numOr0(bd?.practice_hours) + numOr0(bd?.ksr_hours);
+function sumNullable(...vals) {
+  // Сумма с поддержкой пустых ячеек: если ВСЕ пусты — None; иначе сумма чисел.
+  const nums = vals.filter(v => typeof v === "number");
+  if (nums.length === 0) return null;
+  return nums.reduce((a, b) => a + b, 0);
 }
 
-// Если у РПД нет ни одной БУП-привязки — собираем «псевдо-bd» из агрегатных полей
-// самой РПД. Контрольная форма в этом случае одна на всю РПД.
-function rpdAsBd(rpd) {
-  return {
-    lecture_hours: rpd.lecture_hours || 0,
-    lab_hours: rpd.lab_hours || 0,
-    practice_hours: rpd.practice_hours || 0,
-    ksr_hours: 0,
-    self_study_hours: rpd.self_study_hours || 0,
-    total_hours: rpd.total_hours || 0,
-    control_form: rpd.control_form || "",
-  };
+function parseControlForm(raw) {
+  // «Экзамен (3), Зачёт (2)» → { 3: ['экзамен'], 2: ['зачёт'] }
+  const out = {};
+  if (!raw) return out;
+  const re = /([А-Яа-яёЁ.\s]+?)\s*\(\s*([\d,\s]+)\s*\)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    const labelRaw = m[1].trim().toLowerCase();
+    const label = NORMALIZE_CONTROL[labelRaw] || labelRaw;
+    for (const tok of m[2].replace(",", " ").split(/\s+/)) {
+      if (/^\d+$/.test(tok)) {
+        const n = parseInt(tok, 10);
+        if (!out[n]) out[n] = new Set();
+        out[n].add(label);
+      }
+    }
+  }
+  return out;
+}
+
+const NORMALIZE_CONTROL = {
+  "экзамен": "экзамен",
+  "диф. зачет": "диф. зачет",
+  "диф.зачет": "диф. зачет",
+  "дифференцированный зачёт": "диф. зачет",
+  "дифференцированный зачет": "диф. зачет",
+  "зачёт": "зачёт",
+  "зачет": "зачёт",
+  "курсовой проект": "курсовой проект",
+  "курсовая работа": "курсовая работа",
+};
+
+function hasControl(controlMap, semNum, label) {
+  return controlMap[semNum]?.has(label);
+}
+
+function rpdTotalHours(rpd, bds) {
+  for (const bd of bds) if (bd.total_hours) return bd.total_hours;
+  return rpd.total_hours || 0;
 }
 
 
 const ROWS = [
   { heading: true, label: "1. Проведение учебных занятий (включая текущий контроль успеваемости) в форме:" },
-  { label: "1.1. Контактная аудиторная работа, из них:", indent: 0, get: contactHours },
-  { label: "— лекции (Л)", indent: 1, get: bd => bd.lecture_hours },
-  { label: "— лабораторные работы (ЛР)", indent: 1, get: bd => bd.lab_hours },
-  { label: "— практические занятия, семинары и (или) другие виды занятий семинарского типа (ПЗ)", indent: 1, get: bd => bd.practice_hours },
-  { label: "— контроль самостоятельной работы (КСР)", indent: 1, get: bd => bd.ksr_hours },
-  { label: "— контрольная работа", indent: 1, get: () => 0 },
-  { label: "1.2. Самостоятельная работа студентов (СРС)", indent: 0, get: bd => bd.self_study_hours },
+  { label: "1.1. Контактная аудиторная работа, из них:", indent: 0,
+    value: (s) => sumNullable(s.lecture, s.lab, s.practice) },
+  { label: "— лекции (Л)", indent: 1, value: (s) => s.lecture },
+  { label: "— лабораторные работы (ЛР)", indent: 1, value: (s) => s.lab },
+  { label: "— практические занятия, семинары и (или) другие виды занятий семинарского типа (ПЗ)", indent: 1, value: (s) => s.practice },
+  { label: "— контроль самостоятельной работы (КСР)", indent: 1, value: (s) => s.ksr },
+  { label: "— контрольная работа", indent: 1, value: () => null },
+  { label: "1.2. Самостоятельная работа студентов (СРС)", indent: 0, value: (s) => s.srs },
   { heading: true, label: "2. Промежуточная аттестация" },
-  { label: "Экзамен", indent: 0, get: examHours },
-  { label: "Дифференцированный зачёт", indent: 0, get: () => 0 },
-  { label: "Зачёт", indent: 0, get: () => 0 },
-  { label: "Курсовой проект (КП)", indent: 0, get: () => 0 },
-  { label: "Курсовая работа (КР)", indent: 0, get: () => 0 },
-  { label: "Общая трудоёмкость дисциплины", indent: 0, get: bd => bd.total_hours, total: true },
+  { label: "Экзамен", indent: 0,
+    value: (s, ctrl) => hasControl(ctrl, s.number, "экзамен") ? 9 : null },
+  { label: "Дифференцированный зачёт", indent: 0,
+    value: (s, ctrl) => hasControl(ctrl, s.number, "диф. зачет") ? "+" : null },
+  { label: "Зачёт", indent: 0,
+    value: (s, ctrl) => hasControl(ctrl, s.number, "зачёт") ? "+" : null },
+  { label: "Курсовой проект (КП)", indent: 0,
+    value: (s, ctrl) => hasControl(ctrl, s.number, "курсовой проект") ? "+" : null },
+  { label: "Курсовая работа (КР)", indent: 0,
+    value: (s, ctrl) => hasControl(ctrl, s.number, "курсовая работа") ? "+" : null },
+  { label: "Общая трудоёмкость дисциплины", indent: 0, total: true,
+    value: (s) => sumNullable(s.lecture, s.lab, s.practice, s.ksr, s.srs) },
 ];

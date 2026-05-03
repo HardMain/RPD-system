@@ -1,6 +1,5 @@
 import { T, F } from "../theme.js";
 import { hdr, tcell } from "../styles.js";
-import { Badge } from "../components/Badge.jsx";
 
 export function ApprovalPage({ rpds, onOpen }) {
   const ar = rpds.filter(r => r.status === "На согласовании" || r.status === "На доработке");
@@ -13,7 +12,7 @@ export function ApprovalPage({ rpds, onOpen }) {
           <td style={tcell}>{r.direction_code}</td>
           <td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td>
           <td style={tcell}>{r.academic_year}</td>
-          <td style={tcell}><Badge status={r.status} /></td>
+          <td style={tcell}>{r.status}</td>
           <td style={tcell}>{r.author_name}</td>
         </tr>)}</tbody>
       </table>

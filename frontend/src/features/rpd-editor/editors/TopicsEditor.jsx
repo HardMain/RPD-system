@@ -109,7 +109,7 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
         {topics.length === 0 && (
           <tr>
             <td colSpan={2} style={{ ...td, textAlign: "center", color: T.textMuted, fontStyle: "italic" }}>
-              Тем нет
+              Не используется
             </td>
           </tr>
         )}
@@ -141,7 +141,7 @@ function TopicRow({ topic, index, editable, onSave, onDelete }) {
   if (!editable) {
     return <tr>
       <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
-      <td style={td}>{topic.title || <span style={{ color: T.textMuted, fontStyle: "italic" }}>Без названия</span>}</td>
+      <td style={td}>{topic.title || ""}</td>
     </tr>;
   }
 

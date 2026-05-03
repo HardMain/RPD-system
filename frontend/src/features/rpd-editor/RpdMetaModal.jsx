@@ -3,7 +3,6 @@ import * as api from "../../api/client.js";
 import { T, F } from "../../theme.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Modal } from "../../components/Modal.jsx";
-import { Badge } from "../../components/Badge.jsx";
 import { TrashIcon } from "../../components/icons.jsx";
 
 /**
@@ -29,8 +28,6 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
   // в редакторе — только текст самой печатной формы.
   const [comment, setComment] = useState(rpd.comment || "");
   const initialCommentRef = useRef(rpd.comment || "");
-  const [saving, setSaving] = useState(false);
-  const [savedTick, setSavedTick] = useState(false);
   const debounceRef = useRef(null);
   const lastSavedRef = useRef(rpd.comment || "");
 
@@ -57,17 +54,12 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
     debounceRef.current = setTimeout(async () => {
       debounceRef.current = null;
       const value = comment;
-      setSaving(true);
       try {
         await api.updateRpd(rpdId, { comment: value });
         lastSavedRef.current = value;
         await reload();
-        setSavedTick(true);
-        setTimeout(() => setSavedTick(false), 1500);
       } catch {
-        // тихо — если сеть прыгнула, юзер увидит, что отметка «Сохранено» не появилась
-      } finally {
-        setSaving(false);
+        // тихо — отметку о сохранении не показываем (пользователь сюда ничего не нажимал)
       }
     }, 600);
     return () => { if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; } };
@@ -90,7 +82,7 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
     <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "center", gap: 12 }}>
       <div style={{ fontSize: 16, fontWeight: 700 }}>Свойства РПД</div>
       <div style={{ flex: 1 }} />
-      <Badge status={rpd.status} />
+      <span style={{ fontSize: 13, color: T.textMuted }}>{rpd.status}</span>
     </div>
 
     <div style={{ padding: "18px 24px", display: "flex", flexDirection: "column", gap: 22 }}>
@@ -133,9 +125,7 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
     </div>
 
     <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, padding: "12px 20px", borderTop: "1px solid " + T.borderLight, position: "sticky", bottom: 0, background: T.surface }}>
-      {saving && <span style={{ fontSize: 12, color: T.textMuted }}>Сохраняю…</span>}
-      {!saving && savedTick && <span style={{ fontSize: 12, color: T.green }}>✓ Сохранено</span>}
-      <Btn primary onClick={handleClose}>Закрыть</Btn>
+      <Btn onClick={handleClose}>Закрыть</Btn>
     </div>
   </Modal>;
 }

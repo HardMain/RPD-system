@@ -68,7 +68,7 @@ export function SoftwareEditor() {
       </table>
     ) : (
       <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-        ПО не добавлено — в печатной форме будет одна пустая строка.
+        Не используется
       </div>
     )}
     {editable && (
@@ -95,8 +95,8 @@ function SoftwareRow({ item, editable, onSave, onDelete }) {
 
   if (!editable) {
     return <tr>
-      <td style={td}>{item.license_type || <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}</td>
-      <td style={td}>{item.name || <span style={{ color: T.textMuted, fontStyle: "italic" }}>Без названия</span>}</td>
+      <td style={td}>{item.license_type || ""}</td>
+      <td style={td}>{item.name || ""}</td>
     </tr>;
   }
 

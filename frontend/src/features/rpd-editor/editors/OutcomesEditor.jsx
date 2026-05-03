@@ -40,23 +40,25 @@ export function OutcomesEditor() {
   }, [reloadRows]);
 
   // Сохранение по blur — отправляем upsert и обновляем локальную строку.
+  // Идентифицируем запись по `id_outcome` (он всегда живой даже после удаления
+  // БУПа), `id_indicator` отправляем только как fallback для совместимости со
+  // старыми данными. После создания РПД autofill заранее ставит id_outcome
+  // каждой строке таблицы.
   async function saveRow(idx, patch) {
     const row = rows[idx];
     const next = { ...row, ...patch };
     setRows(prev => prev.map((r, i) => i === idx ? next : r));
     try {
       const r = await api.upsertOutcome(rpdId, {
-        id_indicator: row.id_indicator,
+        id_outcome: row.id_outcome || null,
+        id_indicator: row.id_indicator || null,
         outcome_text: next.outcome_text || "",
         assessment_tool: next.assessment_tool || "",
       });
-      // backend вернёт id_outcome=0 если запись была удалена
       const id_outcome = r.data.id_outcome || null;
       setRows(prev => prev.map((rr, i) => i === idx ? { ...rr, id_outcome } : rr));
-      // Сообщаем родителю что РПД изменилась — чтобы PDF мог перерисоваться
       reload?.();
     } catch (e) {
-      // Откат при ошибке
       setRows(prev => prev.map((r, i) => i === idx ? row : r));
       alert("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
     }
@@ -132,7 +134,9 @@ export function OutcomesEditor() {
       </tr></thead>
       <tbody>
         {rows.map((r, idx) => (
-          <tr key={r.id_indicator}>
+          // id_outcome — самый стабильный ключ (живёт после удаления БУПа). Для
+          // legacy-РПД, где outcome ещё не создан — fallback на id_indicator.
+          <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`}>
             <td style={{ ...td, ...wrap }}><b>{r.competency_code}</b></td>
             <td style={{ ...td, ...wrap }}>{r.indicator_code}</td>
             <td style={{ ...td, padding: 4, ...wrap }}>
@@ -165,7 +169,7 @@ function OutcomeTextarea({ value, disabled, onSave }) {
   const [local, setLocal] = useState(value);
   useEffect(() => { setLocal(value); }, [value]);
   if (disabled) {
-    return <div style={{ padding: "6px 8px", whiteSpace: "pre-wrap", fontSize: 13, color: value ? T.text : T.textMuted, fontStyle: value ? "normal" : "italic" }}>{value || "—"}</div>;
+    return <div style={{ padding: "6px 8px", whiteSpace: "pre-wrap", fontSize: 13, color: T.text }}>{value || ""}</div>;
   }
   return <textarea
     value={local}
@@ -179,7 +183,7 @@ function OutcomeTextarea({ value, disabled, onSave }) {
 
 function AssessmentToolPicker({ value, tools, disabled, onSave }) {
   if (disabled) {
-    return <div style={{ padding: "6px 8px", fontSize: 13, color: value ? T.text : T.textMuted, fontStyle: value ? "normal" : "italic" }}>{value || "—"}</div>;
+    return <div style={{ padding: "6px 8px", fontSize: 13, color: T.text }}>{value || ""}</div>;
   }
   // Значения средств оценки уникальны по name (так же ключуем backend-список),
   // поэтому value/label дропдауна — это просто name. clearLabel позволяет

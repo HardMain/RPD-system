@@ -23,7 +23,7 @@ export function FosEditor() {
       </div>
       {main
         ? <FileRow link={main} canEdit={isEdit && canEdit} onChanged={reload} />
-        : <EmptyRow text="Файл не прикреплён" />}
+        : <EmptyRow text="Не заполнено" />}
       {isEdit && canEdit && <FileActions rpdId={rpdId} role="main" replace={!!main} onChanged={reload} />}
     </div>
 
@@ -34,7 +34,7 @@ export function FosEditor() {
         Дополнительные материалы фонда оценочных средств. В печатную форму не попадают.
       </div>
       {other.length === 0
-        ? <EmptyRow text="Прочих файлов нет" />
+        ? <EmptyRow text="Не используется" />
         : <div className="table-scroll" style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflowY: "hidden" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead><tr>
@@ -71,7 +71,7 @@ function FileRow({ link, canEdit, onChanged, asTable }) {
   if (asTable) {
     return <tr>
       <td style={cell}><b>{link.name || link.original_name}</b></td>
-      <td style={cell}>{link.comment || <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}</td>
+      <td style={cell}>{link.comment || ""}</td>
       <td style={cell}><a href={url} target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>📄 {link.original_name}</a> {sizeMb && <span style={{ color: T.textMuted, fontSize: 11 }}>({sizeMb} МБ)</span>}</td>
       <td style={{ ...cell, textAlign: "right", whiteSpace: "nowrap" }}>
         {canEdit && <button onClick={unlink} title="Открепить" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}

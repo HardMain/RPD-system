@@ -66,7 +66,7 @@ export function DatabasesEditor() {
       </table>
     ) : (
       <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-        БД не добавлены — в печатной форме будет одна пустая строка.
+        Не используется
       </div>
     )}
     {editable && (
@@ -93,8 +93,8 @@ function DatabaseRow({ item, editable, onSave, onDelete }) {
 
   if (!editable) {
     return <tr>
-      <td style={td}>{item.db_type || <span style={{ color: T.textMuted, fontStyle: "italic" }}>—</span>}</td>
-      <td style={td}>{item.name || <span style={{ color: T.textMuted, fontStyle: "italic" }}>Без названия</span>}</td>
+      <td style={td}>{item.db_type || ""}</td>
+      <td style={td}>{item.name || ""}</td>
     </tr>;
   }
 

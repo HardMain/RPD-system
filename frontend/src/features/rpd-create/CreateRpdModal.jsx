@@ -223,8 +223,8 @@ export function CreateRpdModal({ onClose, onCreated }) {
     </div>
 
     <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 20px", borderTop: "1px solid " + T.borderLight }}>
-      <Btn onClick={onClose}>Отмена</Btn>
       <Btn primary onClick={go} disabled={submitting || !canSubmit}>{submitting ? "Создание…" : "Создать"}</Btn>
+      <Btn onClick={onClose}>Закрыть</Btn>
     </div>
   </Modal>;
 }

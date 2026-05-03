@@ -1,7 +1,6 @@
 import { T, F } from "../theme.js";
 import { hdr, tcell } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
-import { Badge } from "../components/Badge.jsx";
 import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon } from "../components/icons.jsx";
 
 const COLS = [
@@ -34,7 +33,7 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
             <td style={{ ...tcell, textAlign: "center" }}>{r.academic_year}</td>
             <td style={{ ...tcell, textAlign: "center" }}>{r.total_hours || "-"}</td>
             <td style={{ ...tcell, textAlign: "center" }}>{r.semester || "-"}</td>
-            <td style={tcell}><Badge status={r.status} /></td>
+            <td style={tcell}>{r.status}</td>
             <td style={{ ...tcell, textAlign: "center", width: 1, whiteSpace: "nowrap", padding: "10px 8px" }}>
               <div style={{ display: "inline-flex", gap: 4 }}>
                 <button onClick={e => { e.stopPropagation(); onOpen(r); }} title="Просмотр" style={{ ...iconBtn, cursor: "pointer" }}><EyeIcon /></button>

@@ -42,6 +42,21 @@ SEMESTER_BLOCKS = 8
 
 
 @dataclass
+class ParsedSemester:
+    """Часы дисциплины в конкретном семестре (блок C16+5*(n-1) в XLS).
+
+    Любое из полей может быть None — пустая ячейка в XLS не превращается в 0:
+    это важно для шаблона раздела 3, где у незанятого семестра ячейки должны
+    остаться пустыми, а не «0»."""
+    number: int
+    lecture_hours: int | None = None
+    lab_hours: int | None = None
+    practice_hours: int | None = None
+    ksr_hours: int | None = None
+    self_study_hours: int | None = None
+
+
+@dataclass
 class ParsedDiscipline:
     code: str
     name: str
@@ -56,6 +71,8 @@ class ParsedDiscipline:
     self_study_hours: int | None = None
     zet: int | None = None
     competency_codes: list[str] = field(default_factory=list)
+    # Часы по каждому занятому семестру. Семестры без часов пропускаются.
+    semesters: list[ParsedSemester] = field(default_factory=list)
 
 
 @dataclass
@@ -160,6 +177,30 @@ def _semesters_used(row_vals: list) -> list[int]:
     return used
 
 
+def _extract_semesters(row_vals: list) -> list[ParsedSemester]:
+    """Вытаскивает по 5 значений (Лек/Лаб/Пр/КСР/СРС) для каждого занятого
+    семестра. Семестр считается «занятым», если хотя бы одна из этих ячеек
+    заполнена. Пустые ячейки попадают в результат как None — раздел 3 печатной
+    формы оставит их пустыми."""
+    out: list[ParsedSemester] = []
+    for i in range(SEMESTER_BLOCKS):
+        base = SEMESTER_BLOCK_START + i * SEMESTER_BLOCK_WIDTH
+        if base + SEMESTER_BLOCK_WIDTH > len(row_vals):
+            break
+        vals = [_to_int(row_vals[base + off]) for off in range(SEMESTER_BLOCK_WIDTH)]
+        if not any(v for v in vals):
+            continue
+        out.append(ParsedSemester(
+            number=i + 1,
+            lecture_hours=vals[0],
+            lab_hours=vals[1],
+            practice_hours=vals[2],
+            ksr_hours=vals[3],
+            self_study_hours=vals[4],
+        ))
+    return out
+
+
 # ── main entry ─────────────────────────────────────────────────────────────
 
 
@@ -213,6 +254,11 @@ def parse_bup_xls(content: bytes) -> ParsedBup:
                 primary_sem = ", ".join(str(s) for s in sems)
 
         comp_codes = _split_competencies(_to_str(row[57]) if len(row) > 57 else "")
+        semesters = _extract_semesters(row)
+        # Если в C3-C7 ничего не нашлось, но есть занятые семестровые блоки —
+        # собираем строку «1, 2» по их номерам (как раньше).
+        if primary_sem is None and semesters:
+            primary_sem = ", ".join(str(s.number) for s in semesters)
 
         parsed.disciplines.append(ParsedDiscipline(
             code=code,
@@ -228,6 +274,7 @@ def parse_bup_xls(content: bytes) -> ParsedBup:
             self_study_hours=_to_int(row[15]) if len(row) > 15 else None,
             zet=_to_int(row[56]) if len(row) > 56 else None,
             competency_codes=comp_codes,
+            semesters=semesters,
         ))
 
     return parsed

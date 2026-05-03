@@ -11,7 +11,14 @@ export function SectionEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
 
-  async function addEmpty() {
+  // Список семестров дисциплины: уникальные `number` из semesters_data всех
+  // привязок. Если ни у одной нет per-semester блоков (старый БУП) — fallback
+  // на первый числовой токен `bd.semester` ("1, 2" → 1).
+  const planSemesters = computePlanSemesters(rpd);
+  const isMultiSemester = planSemesters.length > 1;
+  const fallbackSem = planSemesters[0] || 1;
+
+  async function addEmpty(targetSem = null) {
     const next = (rpd.sections?.length || 0) + 1;
     try {
       await api.addSection(rpdId, {
@@ -22,22 +29,36 @@ export function SectionEditor() {
         practice_hours: 0,
         lab_hours: 0,
         self_study_hours: 0,
+        semester: targetSem ?? (isMultiSemester ? fallbackSem : null),
       });
       await reload();
     } catch {}
   }
 
-  // Если у РПД ещё нет ни одного раздела — добавляем одну пустую строку, чтобы
-  // пользователь сразу видел, куда печатать. Срабатывает один раз на маунт
-  // редактора (после удаления всех строк второго авто-добавления не будет).
-  // В печатную форму пустые строки не попадают (фильтр в rpd_template_context).
-  const autoAddedRef = useRef(false);
+  // Auto-add: каждой группе-семестру нужна хотя бы одна стартовая строка,
+  // чтобы пользователь видел, куда вводить. Срабатывает один раз на маунт
+  // редактора per group; после удаления всех строк группы повторное
+  // авто-добавление не запускается. В печатную форму пустые строки не
+  // попадают (фильтр в rpd_template_context).
+  const autoAddedRef = useRef(new Set());
   useEffect(() => {
-    if (!editable || autoAddedRef.current) return;
-    autoAddedRef.current = true;
-    if ((rpd.sections || []).length === 0) addEmpty();
+    if (!editable) return;
+    const targetSems = isMultiSemester ? planSemesters : [null];
+    for (const sem of targetSems) {
+      if (autoAddedRef.current.has(sem)) continue;
+      autoAddedRef.current.add(sem);
+      const has = (rpd.sections || []).some(s =>
+        sem === null ? true : (s.semester === sem)
+      );
+      // Для одного семестра — пустая строка появляется, если разделов нет вообще.
+      // Для multi — пустая строка нужна в каждом семестре, где её ещё нет.
+      const needsEmpty = sem === null
+        ? (rpd.sections || []).length === 0
+        : !has;
+      if (needsEmpty) addEmpty(sem);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editable]);
+  }, [editable, isMultiSemester]);
 
   function isSectionEmpty(s) {
     return !(s.title || "").trim()
@@ -47,8 +68,6 @@ export function SectionEditor() {
   }
 
   async function delSec(s) {
-    // Пустая строка — удаляем без подтверждения: пользователь её всё равно
-    // добавил случайно или передумал, терять нечего.
     if (!isSectionEmpty(s) && !confirm("Удалить раздел?")) return;
     try { await api.deleteSection(s.id_section); await reload(); } catch {}
   }
@@ -63,68 +82,162 @@ export function SectionEditor() {
         practice_hours: patch.practice_hours ?? section.practice_hours ?? 0,
         lab_hours: patch.lab_hours ?? section.lab_hours ?? 0,
         self_study_hours: patch.self_study_hours ?? section.self_study_hours ?? 0,
+        semester: patch.semester !== undefined ? patch.semester
+          : (section.semester ?? (isMultiSemester ? fallbackSem : null)),
       });
       await reload();
     } catch {}
   }
 
-  // Корзина «висит» снаружи таблицы — последняя ячейка со СРС держит её через
-  // position:absolute (left: 100% + offset). Сама таблица занимает 100% ширины
-  // (как PlanSummary и таблицы разделов 3/6/7), а кнопка выезжает в правый
-  // padding карточки редактора (40px справа в RpdEditor.jsx) — там как раз
-  // достаточно места и ничего не обрезается.
+  // Группируем разделы по семестру. Разделы без явного semester (старые данные
+  // или одно-семестровая дисциплина) попадают в `fallbackSem`. Если у дисциплины
+  // один семестр — рисуем одну общую таблицу без заголовков-семестров.
+  const sectionsBySem = new Map();
+  if (isMultiSemester) {
+    for (const n of planSemesters) sectionsBySem.set(n, []);
+  } else {
+    sectionsBySem.set(fallbackSem, []);
+  }
+  for (const s of (rpd.sections || [])) {
+    const n = (isMultiSemester && sectionsBySem.has(s.semester)) ? s.semester : fallbackSem;
+    if (!sectionsBySem.has(n)) sectionsBySem.set(n, []);
+    sectionsBySem.get(n).push(s);
+  }
+
+  let globalIdx = 0;
+  const groups = [...sectionsBySem.entries()].sort((a, b) => a[0] - b[0]);
+
   return <div>
     <PlanSummary bupDisciplines={rpd.bup_disciplines} sections={rpd.sections} />
-      {/* Шапка 1:1 со шаблоном rpd_template.docx (TABLE 6): один логический столбец
-           «Наименование разделов с кратким содержанием», группа аудиторных часов
-           Л|ЛР|ПЗ и отдельный столбец «Объём внеаудиторных» с подзаголовком СРС. */}
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <colgroup>
-          <col />
-          <col style={{ width: 50 }} />
-          <col style={{ width: 50 }} />
-          <col style={{ width: 50 }} />
-          <col style={{ width: 60 }} />
-        </colgroup>
-        <thead>
+    {/* Шапка 1:1 со шаблоном rpd_template.docx (TABLE 6). Если семестров много —
+        перед каждой группой строк рисуем подзаголовок-«N-й семестр» и итоговую
+        строку «Итого» в конце группы. */}
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <colgroup>
+        <col />
+        <col style={{ width: 50 }} />
+        <col style={{ width: 50 }} />
+        <col style={{ width: 50 }} />
+        <col style={{ width: 60 }} />
+      </colgroup>
+      <thead>
+        <tr>
+          <th rowSpan={2} style={{ ...th, verticalAlign: "middle" }}>Наименование разделов дисциплины с кратким содержанием</th>
+          <th colSpan={3} style={{ ...th, textAlign: "center" }}>Объём аудиторных занятий по видам в часах</th>
+          <th style={{ ...th, textAlign: "center" }}>Объём внеаудиторных занятий по видам в часах</th>
+        </tr>
+        <tr>
+          <th style={{ ...th, textAlign: "center" }}>Л</th>
+          <th style={{ ...th, textAlign: "center" }}>ЛР</th>
+          <th style={{ ...th, textAlign: "center" }}>ПЗ</th>
+          <th style={{ ...th, textAlign: "center" }}>СРС</th>
+        </tr>
+      </thead>
+      <tbody>
+        {groups.map(([semNum, list]) => {
+          const groupRows = [];
+          if (isMultiSemester) {
+            groupRows.push(
+              <tr key={`sem-${semNum}`}>
+                <td colSpan={5} style={{ ...td, fontWeight: 700, background: T.bg, paddingLeft: 12 }}>
+                  {semNum}-й семестр
+                </td>
+              </tr>
+            );
+          }
+          for (const s of list) {
+            globalIdx += 1;
+            groupRows.push(
+              <SectionRow
+                key={s.id_section}
+                section={s}
+                number={globalIdx}
+                editable={editable}
+                onSave={(patch) => saveSec(s, patch)}
+                onDelete={() => delSec(s)}
+              />
+            );
+          }
+          // Сначала кнопка добавления, потом «Итого» — иначе добавление шло бы
+          // ПОСЛЕ итогов, что выглядело странно (новый раздел вылезал ниже строки
+          // итогов). Кнопка живёт в конце группы перед итогом, чтобы по клику
+          // строка добавлялась прямо над итогом.
+          if (editable) {
+            groupRows.push(
+              <tr key={`sem-${semNum}-add`}>
+                <td colSpan={5} style={{ ...td, padding: 4, background: T.surface }}>
+                  <Btn small onClick={() => addEmpty(isMultiSemester ? semNum : null)}>
+                    <PlusIcon /> Добавить раздел{isMultiSemester ? ` в ${semNum}-й семестр` : ""}
+                  </Btn>
+                </td>
+              </tr>
+            );
+          }
+          if (isMultiSemester) {
+            const tLec = list.reduce((a, s) => a + (s.lecture_hours || 0), 0);
+            const tLab = list.reduce((a, s) => a + (s.lab_hours || 0), 0);
+            const tPr = list.reduce((a, s) => a + (s.practice_hours || 0), 0);
+            const tSrs = list.reduce((a, s) => a + (s.self_study_hours || 0), 0);
+            groupRows.push(
+              <tr key={`sem-${semNum}-total`}>
+                <td style={{ ...td, fontWeight: 700, textAlign: "right", background: T.bg }}>Итого за {semNum}-й семестр</td>
+                <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.bg, fontVariantNumeric: "tabular-nums" }}>{tLec}</td>
+                <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.bg, fontVariantNumeric: "tabular-nums" }}>{tLab}</td>
+                <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.bg, fontVariantNumeric: "tabular-nums" }}>{tPr}</td>
+                <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.bg, fontVariantNumeric: "tabular-nums" }}>{tSrs}</td>
+              </tr>
+            );
+          }
+          return groupRows;
+        })}
+        {/* Итог по всей дисциплине — для multi-semester. */}
+        {isMultiSemester && (() => {
+          const all = rpd.sections || [];
+          const tLec = all.reduce((a, s) => a + (s.lecture_hours || 0), 0);
+          const tLab = all.reduce((a, s) => a + (s.lab_hours || 0), 0);
+          const tPr = all.reduce((a, s) => a + (s.practice_hours || 0), 0);
+          const tSrs = all.reduce((a, s) => a + (s.self_study_hours || 0), 0);
+          return <tr key="grand-total">
+            <td style={{ ...td, fontWeight: 700, textAlign: "right", background: T.accentLight }}>Всего по дисциплине</td>
+            <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.accentLight, fontVariantNumeric: "tabular-nums" }}>{tLec}</td>
+            <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.accentLight, fontVariantNumeric: "tabular-nums" }}>{tLab}</td>
+            <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.accentLight, fontVariantNumeric: "tabular-nums" }}>{tPr}</td>
+            <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.accentLight, fontVariantNumeric: "tabular-nums" }}>{tSrs}</td>
+          </tr>;
+        })()}
+        {(!rpd.sections || rpd.sections.length === 0) && !editable && (
           <tr>
-            <th rowSpan={2} style={{ ...th, verticalAlign: "middle" }}>Наименование разделов дисциплины с кратким содержанием</th>
-            <th colSpan={3} style={{ ...th, textAlign: "center" }}>Объём аудиторных занятий по видам в часах</th>
-            <th style={{ ...th, textAlign: "center" }}>Объём внеаудиторных занятий по видам в часах</th>
+            <td colSpan={5} style={{ ...td, textAlign: "center", color: T.textMuted, fontStyle: "italic" }}>
+              Разделы не добавлены
+            </td>
           </tr>
-          <tr>
-            <th style={{ ...th, textAlign: "center" }}>Л</th>
-            <th style={{ ...th, textAlign: "center" }}>ЛР</th>
-            <th style={{ ...th, textAlign: "center" }}>ПЗ</th>
-            <th style={{ ...th, textAlign: "center" }}>СРС</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(rpd.sections || []).map((s, i) => (
-            <SectionRow
-              key={s.id_section}
-              section={s}
-              number={i + 1}
-              editable={editable}
-              onSave={(patch) => saveSec(s, patch)}
-              onDelete={() => delSec(s)}
-            />
-          ))}
-          {(!rpd.sections || rpd.sections.length === 0) && (
-            <tr>
-              <td colSpan={5} style={{ ...td, textAlign: "center", color: T.textMuted, fontStyle: "italic" }}>
-                Разделы не добавлены
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-      {editable && (
-        <div style={{ marginTop: 10 }}>
-          <Btn small onClick={addEmpty}><PlusIcon /> Добавить раздел</Btn>
-        </div>
-      )}
+        )}
+      </tbody>
+    </table>
   </div>;
+}
+
+// Список реальных семестров дисциплины — uniqueified по semesters_data всех
+// её BUP-привязок. Если ни у одной нет per-semester данных (старый БУП до
+// миграции этой правки), парсим первый числовой токен `bd.semester` строки.
+function computePlanSemesters(rpd) {
+  const set = new Set();
+  for (const bd of (rpd?.bup_disciplines || [])) {
+    if (bd.semesters_data && bd.semesters_data.length > 0) {
+      for (const s of bd.semesters_data) {
+        if (s.number != null) set.add(s.number);
+      }
+    } else if (bd.semester) {
+      const m = String(bd.semester).match(/\d+/);
+      if (m) set.add(parseInt(m[0], 10));
+    }
+  }
+  if (set.size === 0 && rpd?.semester) {
+    const m = String(rpd.semester).match(/\d+/);
+    if (m) set.add(parseInt(m[0], 10));
+  }
+  if (set.size === 0) set.add(1);
+  return [...set].sort((a, b) => a - b);
 }
 
 
@@ -137,7 +250,19 @@ export function SectionEditor() {
 // у td. Таблица при этом сохраняет ширину 100% — как у разделов 3/6/7.
 function SectionRow({ section, number, editable, onSave, onDelete }) {
   const [local, setLocal] = useState(section);
-  useEffect(() => { setLocal(section); }, [section]);
+  // Локальные правки имеют приоритет над приходящим section: при clicks на спиннер
+  // input'а type="number" родитель reload'ится и шлёт «свежий» section с прежним
+  // значением (бэк ещё не сохранил), а наш буфер уже инкрементирован — без этой
+  // защиты значение откатывалось бы назад. Дёргаем setLocal только если у пользователя
+  // нет несохранённых правок (буфер совпадает по всем полям с прошлым section).
+  const lastSyncedRef = useRef(section);
+  useEffect(() => {
+    const prev = lastSyncedRef.current;
+    const dirty = ["title","brief_content","lecture_hours","lab_hours","practice_hours","self_study_hours"]
+      .some(k => (local[k] ?? "") !== (prev[k] ?? ""));
+    if (!dirty) setLocal(section);
+    lastSyncedRef.current = section;
+  }, [section]);
 
   function patch(k, v) { setLocal(p => ({ ...p, [k]: v })); }
   function commitField(k) {
@@ -156,7 +281,7 @@ function SectionRow({ section, number, editable, onSave, onDelete }) {
   if (!editable) {
     return <tr>
       <td style={td}>
-        <div style={{ fontWeight: 600 }}>{number}. {section.title || <span style={{ color: T.textMuted, fontStyle: "italic" }}>Без названия</span>}</div>
+        <div style={{ fontWeight: 600 }}>{number}. {section.title || ""}</div>
         {section.brief_content && (
           <div style={{ fontSize: 11, color: T.textMuted, marginTop: 4, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{section.brief_content}</div>
         )}

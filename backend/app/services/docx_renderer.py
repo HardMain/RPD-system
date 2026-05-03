@@ -151,6 +151,31 @@ def _fix_tables_in_xml(xml_bytes: bytes) -> bytes:
                         widest = (col, col + s)
                 col += s
 
+        # Если у gridCol больше колонок, чем нужно plain-строкам (loop {%tc for%}
+        # в шаблоне выдал меньше ячеек, чем было заложено) — лишние gridCol
+        # «осиротели». Их ширину переливаем в looped-секцию (widest), сами
+        # лишние gridCol удаляем. Без этого таблица 5 раздела рисовалась шире
+        # данных строк, и колонки семестров получались разной ширины (Word
+        # подгонял ширину к фиксированным gridCol-значениям из шаблона).
+        if widest and len(grid_cols) > target:
+            col_start, col_end = widest
+            extra_total = 0
+            # Удаляем gridCol-ы за пределами target (с конца).
+            while len(grid_cols) > target:
+                extra = grid_cols[-1]
+                extra_total += int(extra.get(f"{W}w", 0))
+                tblGrid.remove(extra)
+                grid_cols = tblGrid.findall(f"{W}gridCol")
+            # И добавляем их ширину в looped-секцию (чтобы суммарная ширина
+            # таблицы не уменьшилась).
+            n = col_end - col_start
+            if n >= 1 and extra_total > 0 and col_end <= len(grid_cols):
+                per = extra_total // n
+                rem = extra_total - per * n
+                for i in range(col_start, col_end):
+                    cur = int(grid_cols[i].get(f"{W}w", 0))
+                    grid_cols[i].set(f"{W}w", str(cur + per + (rem if i == col_start else 0)))
+
         if widest and len(grid_cols) >= widest[1]:
             col_start, col_end = widest
             n = col_end - col_start

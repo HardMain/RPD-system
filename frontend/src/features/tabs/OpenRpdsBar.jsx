@@ -1,13 +1,18 @@
 import { T, F } from "../../theme.js";
 
 /* Чип-вкладка одной открытой РПД. Drag → переезд в другую панель. */
-function TabChip({ tab, isCurrent, isPaired, isDragging, onDragStart, onDragEnd, onClick, onClose }) {
+function TabChip({ tab, isCurrent, pairNumber, isDragging, onDragStart, onDragEnd, onClick, onClose }) {
+  // Когда РПД открыта одновременно в режиме E и V (пара) — обоим чипам приписываем
+  // одну и ту же цифру (E1/V1, E2/V2, …), чтобы было видно, какая вкладка слева
+  // соответствует какой справа. Без пары — просто E или V без номера.
+  const tag = (tab.mode === "edit" ? "E" : "V") + (pairNumber ?? "");
+  const isPaired = pairNumber != null;
   return <div
     draggable
     onDragStart={onDragStart}
     onDragEnd={onDragEnd}
     onClick={onClick}
-    title={isPaired ? "Эта РПД открыта в обоих режимах одновременно (edit ↔ view синхронизируются при сохранении)" : "Перетащите вниз, чтобы открыть в отдельной панели"}
+    title={isPaired ? `Пара ${pairNumber}: edit ↔ view синхронизируются при сохранении` : "Перетащите вниз, чтобы открыть в отдельной панели"}
     style={{
       display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
       borderRadius: "5px 5px 0 0",
@@ -19,10 +24,7 @@ function TabChip({ tab, isCurrent, isPaired, isDragging, onDragStart, onDragEnd,
       color: isCurrent ? T.accent : T.text, flexShrink: 0,
       opacity: isDragging ? 0.5 : 1, userSelect: "none",
     }}>
-    {/* [E]/[V] показывает текущий режим вкладки. Если открыта пара — добавляем «🔗»,
-        чтобы было сразу видно что edit и view связаны и автоматически синхронизируются. */}
-    <span style={{ fontSize: 10, opacity: 0.7, color: tab.mode === "edit" ? T.orange : T.blue, fontWeight: 700 }}>[{tab.mode === "edit" ? "E" : "V"}]</span>
-    {isPaired && <span title="Связана с парной вкладкой" style={{ fontSize: 10, opacity: 0.6 }}>🔗</span>}
+    <span style={{ fontSize: 10, opacity: 0.7, color: tab.mode === "edit" ? T.orange : T.blue, fontWeight: 700 }}>[{tag}]</span>
     <span style={{ maxWidth: 200, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tab.direction_code} {tab.discipline_name} {tab.academic_year}</span>
     <span onClick={e => { e.stopPropagation(); onClose(); }} style={{ cursor: "pointer", marginLeft: 4, opacity: 0.5, fontSize: 13, lineHeight: 1, flexShrink: 0 }}>✕</span>
   </div>;
@@ -40,6 +42,21 @@ export function OpenRpdsBar({
     return null;
   };
 
+  // Нумерация пар: id_rpd, у которых открыто >=2 вкладки, нумеруются 1, 2, …
+  // в порядке появления в openRpds. Обе вкладки одной РПД получают одну цифру.
+  const pairNumberByRpd = {};
+  const seenForPair = new Set();
+  let pairCounter = 0;
+  for (const t of openRpds) {
+    if (seenForPair.has(t.id_rpd)) continue;
+    seenForPair.add(t.id_rpd);
+    const tabsOfThisRpd = openRpds.filter(o => o.id_rpd === t.id_rpd);
+    if (tabsOfThisRpd.length > 1) {
+      pairCounter += 1;
+      pairNumberByRpd[t.id_rpd] = pairCounter;
+    }
+  }
+
   const renderTab = (t) => {
     const paneSide = findPaneOf(t.tabId);
     const isActiveInPane = paneSide === "left"
@@ -47,12 +64,11 @@ export function OpenRpdsBar({
       : (panes.right && panes.right.activeId === t.tabId);
     const isCurrentTab = activeTab === "edit" && isActiveInPane;
     const isDragging = draggingTabId === t.tabId;
-    const isPaired = openRpds.some(o => o.id_rpd === t.id_rpd && o.tabId !== t.tabId);
     return <TabChip
       key={t.tabId}
       tab={t}
       isCurrent={isCurrentTab}
-      isPaired={isPaired}
+      pairNumber={pairNumberByRpd[t.id_rpd]}
       isDragging={isDragging}
       onDragStart={(e) => {
         onSetDragging(t.tabId);

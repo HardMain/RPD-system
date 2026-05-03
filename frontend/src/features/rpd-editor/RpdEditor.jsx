@@ -5,7 +5,6 @@ import { T, F } from "../../theme.js";
 import { pdfToolBtn } from "../../styles.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Spinner } from "../../components/Spinner.jsx";
-import { Badge } from "../../components/Badge.jsx";
 import { DownloadIcon } from "../../components/icons.jsx";
 
 import { SEC_KEYS, SIDEBAR_KEYS, PARENT_SECTION } from "./constants.js";
@@ -52,8 +51,20 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const [activeSecPdf, setActiveSecPdf] = useState("title");
   const [activeSecEdit, setActiveSecEdit] = useState("title");
   const [saving, setSaving] = useState(false);
+  // «Сохранено» — короткая подсказка в нижней панели (живёт ~1.5с после
+  // успешного сохранения, плавно появляется и затухает). Используем число-
+  // счётчик, а не bool: при каждом сохранении инкрементим, и React-key
+  // элемента берётся отсюда — так анимация перезапускается на каждом сейве,
+  // даже если предыдущая «Сохранено» ещё не успела затухнуть.
+  const [savedTick, setSavedTick] = useState(0);
+  const savedTimeoutRef = useRef(null);
   const [pdfData, setPdfData] = useState(null); const [pdfLoading, setPdfLoading] = useState(false); const [pdfError, setPdfError] = useState(null);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
+  // «Печатная форма устарела»: взводится, когда парная edit-вкладка сохранила
+  // что-то после того, как мы последний раз рендерили PDF. Авто-перерендер
+  // мы НЕ делаем (это раздражало — каждый онBlur приводил к пересборке через
+  // LibreOffice). Вместо этого показываем плашку и кнопку «Обновить».
+  const [pdfStale, setPdfStale] = useState(false);
   // Текущая БУП-дисциплина для рендера печатной формы. При multi-БУП (одна РПД
   // покрывает несколько БУПов) каждой привязке соответствует своя печатная форма
   // — отличается титульником и разделом 2 (отфильтрован по её компетенциям),
@@ -182,10 +193,13 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   // Внешний триггер «перечитать всё» (например, парная edit-вкладка сохранилась → notifyRpdChanged
   // у App'а инкрементит reloadKey этой view-вкладки). На первом монтировании ничего не делаем —
   // load() уже отрабатывает в основном эффекте.
-  // Дебаунс 400мс: при «спаме» Save в парной edit-вкладке мы не запускаем 5 PDF-рендеров
-  // подряд на бэке (LibreOffice медленный, очередь забивается), а делаем один reload после
-  // паузы. load(true) — тихий, без mount/unmount формы; reloadPdf уже сам показывает
-  // спиннер поверх PDF.
+  // Поведение: данные РПД (статус, разделы, литература) подгружаем тихо, чтобы
+  // боковая панель и т.п. оставались актуальными. Печатная форма (PDF) НЕ
+  // пересобирается автоматически — просто помечается устаревшей; пользователь
+  // нажмёт «↻ Обновить» в верхнем тулбаре, когда захочет увидеть свежий PDF.
+  // Это сделано из-за UX-фидбэка: автоматический перерендер при каждом
+  // потере фокуса (onBlur) в edit-парной вкладке выглядел беспокойно — PDF
+  // дёргался каждые несколько секунд, пока преподаватель печатал.
   const initialReloadRef = useRef(true);
   const reloadDebounceRef = useRef(null);
   useEffect(() => {
@@ -193,11 +207,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (reloadDebounceRef.current) clearTimeout(reloadDebounceRef.current);
     reloadDebounceRef.current = setTimeout(() => {
       reloadDebounceRef.current = null;
-      const c = showPdf ? pdfScrollRef.current : scrollRef.current;
-      if (c) pendingScrollRestoreRef.current = { mode: showPdf ? "pdf" : "edit", value: c.scrollTop };
       load(true);
-      if (showPdf) reloadPdf();
-      else pdfDirtyRef.current = true;
+      // PDF помечаем устаревшим, но не дёргаем сервер. Если юзер сейчас в
+      // edit-режиме — флаг pdfDirtyRef сработает при возврате в просмотр.
+      pdfDirtyRef.current = true;
+      if (showPdf) setPdfStale(true);
     }, 400);
     return () => { if (reloadDebounceRef.current) { clearTimeout(reloadDebounceRef.current); reloadDebounceRef.current = null; } };
   }, [reloadKey]);
@@ -362,8 +376,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     setPageInputValue(pdfCurrentPage);
   }, [pdfCurrentPage]);
 
-  // Очистка таймера подсветки при размонтировании
-  useEffect(() => () => { if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current); }, []);
+  // Очистка таймеров при размонтировании
+  useEffect(() => () => {
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+  }, []);
 
   // Восстановление позиции скролла:
   //   • при возврате на вкладку с этой РПД,
@@ -606,43 +623,125 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     document.body.style.cursor = "col-resize";
   }
 
+  // Маппинг ключа редактора на колонки таблицы Rpd. goals — это объединённый
+  // блок «Цели и задачи»: пишем его в goals_text, а tasks_text всегда чистим
+  // (легаси-колонка, отдельного редактирования больше нет).
+  function _payloadForField(fieldKey, value) {
+    if (fieldKey === "goals") return { goals_text: value || "", tasks_text: "" };
+    if (fieldKey === "objects") return { objects_text: value || "" };
+    if (fieldKey === "requirements") return { requirements_text: value || "" };
+    if (fieldKey === "educational_tech") return { educational_tech: value || "" };
+    if (fieldKey === "methodical_recommendations") return { methodical_recommendations: value || "" };
+    return null;
+  }
+
+  // То же значение, которое load() кладёт в editTexts. Нужно для проверки
+  // «есть ли реальные правки» перед отправкой запроса.
+  function _expectedValue(fieldKey, r) {
+    if (!r) return "";
+    if (fieldKey === "goals") {
+      return [r.goals_text, r.tasks_text].map(s => (s || "").trim()).filter(Boolean).join("\n\n");
+    }
+    if (fieldKey === "objects") return r.objects_text || "";
+    if (fieldKey === "requirements") return r.requirements_text || "";
+    if (fieldKey === "educational_tech") return r.educational_tech || "";
+    if (fieldKey === "methodical_recommendations") return r.methodical_recommendations || "";
+    return "";
+  }
+
+  // Автосейв одного текстового блока. Вызывается editor'ом при потере фокуса
+  // (по-английски — onBlur) у textarea, а также сразу после автозаполнения
+  // через LLM. Аналог saveSec/saveRow в табличных редакторах.
+  async function saveField(fieldKey) {
+    const value = editTexts[fieldKey] || "";
+    // Если в буфере то же, что и в БД — не отправляем запрос. Это убирает
+    // лишние сейвы при «тыкнули в поле и ушли», когда правок не было.
+    if (value === _expectedValue(fieldKey, rpd)) return;
+    const patch = _payloadForField(fieldKey, value);
+    if (!patch) return;
+    sidebarLockRef.current = true;
+    let ok = false;
+    try {
+      await api.updateRpd(rpdId, patch);
+      await load(true);
+      ok = true;
+    } catch { }
+    if (ok) {
+      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+      setSavedTick(t => t + 1);
+      savedTimeoutRef.current = setTimeout(() => setSavedTick(0), 1500);
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      sidebarLockRef.current = false;
+    }));
+    if (ok && onAfterSave) onAfterSave();
+  }
+
   async function autoFill(key) {
     setGenerating(key);
     try {
       const res = await api.generateSection(rpdId, { section: key });
       const text = res.data.generated_text;
       const fieldMap = { goals: "goals", objects: "objects", requirements: "requirements", educational_tech: "educational_tech", methodical_recommendations: "methodical_recommendations" };
-      if (fieldMap[key]) setEditTexts(p => ({ ...p, [fieldMap[key]]: text }));
+      if (fieldMap[key]) {
+        // Сначала кладём в локальный буфер, потом дописываем в БД через тот же
+        // saveField — иначе после autoFill пользователь должен ткнуться в textarea
+        // и увести фокус, чтобы оно записалось. Через короткий setTimeout, чтобы
+        // setEditTexts успел закоммититься в state — иначе saveField прочтёт ещё
+        // старые editTexts (closure через useState не получает свежий setState).
+        setEditTexts(p => ({ ...p, [fieldMap[key]]: text }));
+        setTimeout(() => saveFieldFromValue(fieldMap[key], text), 0);
+      }
     } catch { } setGenerating(null);
   }
 
-  async function handleSave() {
-    setSaving(true);
-    // Замок подсветки — пока идёт сохранение и пересчёт детей, scroll-spy не реагирует на
-    // возможные мелкие перепрыгивания scrollTop из-за перерендера дочерних редакторов
-    // (после setRpd они обновляют свои таблицы — высота секции на миг меняется).
+  // Версия saveField, которой явно передаётся значение — обходим useState-
+  // closure при сохранении сразу после setEditTexts.
+  async function saveFieldFromValue(fieldKey, value) {
+    if (value === _expectedValue(fieldKey, rpd)) return;
+    const patch = _payloadForField(fieldKey, value);
+    if (!patch) return;
     sidebarLockRef.current = true;
     let ok = false;
     try {
-      // comment не пишем — он живёт в модалке «Свойства РПД» со своей кнопкой
-      // «Сохранить». Эта кнопка пишет только текст печатной формы.
-      // tasks_text всегда чистим — раздел 1.1 теперь единый блок, его текст
-      // полностью лежит в goals_text. Так же подчищаем легаси-данные старых РПД.
-      await api.updateRpd(rpdId, { goals_text: editTexts.goals, tasks_text: "", objects_text: editTexts.objects, requirements_text: editTexts.requirements, educational_tech: editTexts.educational_tech, methodical_recommendations: editTexts.methodical_recommendations });
-      // Тихая перезагрузка — форма не размонтируется в спиннер, скролл и состояние
-      // дочерних редакторов сохраняются. PDF в парной view-вкладке обновится через
-      // onAfterSave (там reloadKey, и мерцание PDF — это нормально).
+      await api.updateRpd(rpdId, patch);
+      await load(true);
+      ok = true;
+    } catch { }
+    if (ok) {
+      if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+      setSavedTick(t => t + 1);
+      savedTimeoutRef.current = setTimeout(() => setSavedTick(0), 1500);
+    }
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      sidebarLockRef.current = false;
+    }));
+    if (ok && onAfterSave) onAfterSave();
+  }
+
+  // «Финальный» сейв всех текстовых полей — нужен только перед отправкой на
+  // согласование, чтобы гарантированно записать любые правки, у которых ещё
+  // не сработал autosave (например, юзер ввёл текст и нажал «Отправить» не
+  // покидая поля, поэтому потеря фокуса (onBlur) не сработала).
+  async function flushAllTexts() {
+    setSaving(true);
+    sidebarLockRef.current = true;
+    let ok = false;
+    try {
+      await api.updateRpd(rpdId, {
+        goals_text: editTexts.goals || "", tasks_text: "",
+        objects_text: editTexts.objects || "",
+        requirements_text: editTexts.requirements || "",
+        educational_tech: editTexts.educational_tech || "",
+        methodical_recommendations: editTexts.methodical_recommendations || "",
+      });
       await load(true);
       ok = true;
     } catch { }
     setSaving(false);
-    // 2 кадра — даём React закоммитить новые состояния и браузеру отрисовать;
-    // только после этого scroll-spy снова начнёт обновлять activeSec.
     requestAnimationFrame(() => requestAnimationFrame(() => {
       sidebarLockRef.current = false;
     }));
-    // Сообщаем родителю — он триггернёт перезагрузку парной view-вкладки
-    // (если она открыта) через её reloadKey.
     if (ok && onAfterSave) onAfterSave();
   }
 
@@ -664,7 +763,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     const errors = getValidationErrors();
     if (errors.length > 0) { setValidationErrors(errors); setModal("validation"); return; }
     setValidationErrors([]);
-    await handleSave();
+    await flushAllTexts();
     try { await api.sendForApproval(rpdId); setModal("sent"); await load(); } catch { setModal("error"); }
   }
   async function handleReview(action) { try { await api.reviewRpd(rpdId, { action, comment: rejectComment }); setModal(action === "approve" ? "approved" : null); setRejectComment(""); await load(); } catch { } }
@@ -683,7 +782,20 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   // выше, а это нарушение правил хуков. Идентичность функции дочерним редакторам
   // не важна: они вызывают reload только из обработчиков, не подписаны на него
   // через useEffect.
-  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: () => load(true), editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse };
+  // reload: тихо перечитывает РПД из БД (без спиннеров), мигает «Сохранено»
+  // в нижней панели и уведомляет парную вкладку (если есть). Используется
+  // всеми табличными редакторами после saveSec/saveRow — благодаря этому
+  // view-парная вкладка узнаёт о правках в таблицах так же, как и о правках
+  // в текстовых блоках, и одинаково ставит пометку «PDF устарел». Раньше
+  // подсказка «Сохранено» показывалась только при правках текстовых полей.
+  const reloadAndNotify = async () => {
+    await load(true);
+    if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+    setSavedTick(t => t + 1);
+    savedTimeoutRef.current = setTimeout(() => setSavedTick(0), 1500);
+    if (onAfterSave) onAfterSave();
+  };
+  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField };
 
   return <RpdEditorProvider value={ctxValue}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -714,8 +826,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         {showPdf ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: T.pdfBg, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", background: T.surface, borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
-              <span style={{ fontSize: 12, color: T.blue, fontWeight: 700 }}>👁 Просмотр PDF</span>
-              <div style={{ width: 1, height: 18, background: T.borderLight }} />
               {/* Page navigation */}
               <button onClick={() => scrollToPdfPage(Math.max(1, pdfCurrentPage - 1), false)} disabled={!pdfNumPages || pdfCurrentPage <= 1} style={pdfToolBtn(pdfCurrentPage <= 1 || !pdfNumPages)} title="Предыдущая страница">◀</button>
               <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: T.text }}>
@@ -763,9 +873,18 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   />
                 </div>
               )}
-              <Btn small onClick={reloadPdf} disabled={pdfLoading}>↻ Обновить</Btn>
+              <Btn small onClick={() => { setPdfStale(false); reloadPdf(); }} disabled={pdfLoading} primary={pdfStale}>↻ Обновить</Btn>
               <Btn small onClick={() => onExportPdf(rpdId, pdfBdId)}><DownloadIcon /> Скачать</Btn>
             </div>
+            {pdfStale && (
+              // Цвет режима просмотра — голубой (T.blue), как и в остальных
+              // подсказках этого режима. В режиме редактирования аналогичные
+              // плашки оранжевые (T.orange) — два цвета визуально различают
+              // контекст.
+              <div style={{ padding: "6px 12px", background: T.blueLight, borderBottom: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
+                Печатная форма устарела — нажмите «↻ Обновить», чтобы пересобрать PDF
+              </div>
+            )}
             <div ref={pdfScrollRef} onScroll={e => { pdfScrollPosRef.current = e.currentTarget.scrollTop; }} style={{ flex: 1, position: "relative", overflow: "auto", background: T.pdfBg, padding: "16px 0" }}>
               {pdfLoading && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12, zIndex: 2, pointerEvents: "none" }}><Spinner size={36} /><div style={{ fontSize: 13 }}>Формируется PDF из шаблона...</div></div>}
               {pdfError && <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#fff", gap: 12 }}><div style={{ fontSize: 14, color: "#ffb4b4" }}>{pdfError}</div><Btn small onClick={reloadPdf}>Повторить</Btn></div>}
@@ -789,9 +908,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           </div>
         ) : (
           <div ref={scrollRef} onScroll={e => { editScrollPosRef.current = e.currentTarget.scrollTop; }} style={{ flex: 1, overflowY: "auto", padding: "24px 32px", background: T.bg }}>
-            {isEdit && canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.orangeLight, border: "1px solid " + T.orange, color: T.orange, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>✏ Режим редактирования — изменения сохраняются кнопкой «Сохранить»</div>}
             {isEdit && !canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 РПД нельзя редактировать в текущем статусе</div>}
-            <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + (isEdit && canEdit ? T.orange : T.borderLight), borderRadius: 4, boxShadow: isEdit && canEdit ? "0 2px 16px rgba(217,115,32,.12)" : "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
+            <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
               {/* ТИТУЛЬНИК. Содержимое РПД (цели/разделы/литература) — общее на все
                   привязанные БУП-дисциплины. Реквизиты титульника (направление, профиль,
                   индекс плана) могут отличаться у разных привязок — показываем все,
@@ -934,7 +1052,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               {rpd.approvals?.length > 0 && <div style={{ marginTop: 32 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>История согласования</div>
                 {rpd.approvals.map(a => <div key={a.id_approval} style={{ padding: "8px 0", borderBottom: "1px solid " + T.borderLight, fontSize: 12 }}>
-                  <span style={{ color: T.textMuted }}>{a.created_at ? new Date(a.created_at).toLocaleString("ru-RU") : ""}</span> — <b>{a.reviewer_name}</b> — <Badge status={a.status} />
+                  <span style={{ color: T.textMuted }}>{a.created_at ? new Date(a.created_at).toLocaleString("ru-RU") : ""}</span> — <b>{a.reviewer_name}</b> — <span>{a.status}</span>
                   {a.comment && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{a.comment}</div>}
                 </div>)}
               </div>}
@@ -949,12 +1067,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         isEdit={isEdit}
         isHead={isHead}
         canEdit={canEdit}
-        saving={saving}
+        savedTick={savedTick}
         status={rpd.status}
-        rpdId={rpdId}
         onBack={onBack}
-        onExportPdf={onExportPdf}
-        onSave={handleSave}
         onSendApproval={handleSendApproval}
         onApprove={() => handleReview("approve")}
         onReject={() => setModal("reject")}

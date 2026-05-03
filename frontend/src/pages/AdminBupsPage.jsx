@@ -104,8 +104,8 @@ function ImportBupModal({ onClose, onImported }) {
         <Input label="Имя БУПа (необязательно)" value={nameOverride} onChange={e => setNameOverride(e.target.value)} placeholder="оставьте пустым для авто-имени" />
         {err && <div style={{ background: "#fde6e3", color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13, marginBottom: 12 }}>{err}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Btn onClick={onClose}>Отмена</Btn>
           <Btn primary onClick={handleSubmit} disabled={busy}>{busy ? "Загружаю…" : "Импортировать"}</Btn>
+          <Btn onClick={onClose}>Закрыть</Btn>
         </div>
       </>}
 
@@ -120,7 +120,7 @@ function ImportBupModal({ onClose, onImported }) {
           {result.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
         </div>}
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <Btn primary onClick={onImported}>Готово</Btn>
+          <Btn onClick={onImported}>Закрыть</Btn>
         </div>
       </>}
     </div>
@@ -140,16 +140,13 @@ function BupDetailModal({ bupId, onClose }) {
     <div style={{ padding: 20 }}>
       {loading || !data ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
       : <>
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14, gap: 12 }}>
-          <div>
-            <div style={{ fontSize: 16, fontWeight: 700 }}>{data.name}</div>
-            <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>
-              {data.direction_code ? `${data.direction_code} ${data.direction_name}` : data.direction_name}
-              {data.faculty ? ` · ${data.faculty}` : ""}
-              {data.year ? ` · ${data.year}` : ""}
-            </div>
+        <div style={{ marginBottom: 14 }}>
+          <div style={{ fontSize: 16, fontWeight: 700 }}>{data.name}</div>
+          <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4 }}>
+            {data.direction_code ? `${data.direction_code} ${data.direction_name}` : data.direction_name}
+            {data.faculty ? ` · ${data.faculty}` : ""}
+            {data.year ? ` · ${data.year}` : ""}
           </div>
-          <Btn onClick={onClose}>Закрыть</Btn>
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Дисциплины БУПа ({data.disciplines.length})</div>
         <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "auto", maxHeight: "55vh" }}>
@@ -177,6 +174,9 @@ function BupDetailModal({ bupId, onClose }) {
               </tr>)}
             </tbody>
           </table>
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+          <Btn onClick={onClose}>Закрыть</Btn>
         </div>
       </>}
     </div>

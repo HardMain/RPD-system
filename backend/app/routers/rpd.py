@@ -110,6 +110,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
             direction_profile=_pick(link.direction_profile, direc.profile if direc else None),
             fgos_file_id=_pick(link.fgos_file_id, fgos.id_file if fgos else None),
             fgos_file_name=_pick(link.fgos_file_name, fgos.original_name if fgos else None),
+            semesters_data=_pick(link.semesters_data, bd.semesters_data if bd else None),
             # bup_deleted = у линка нет живого bd-FK. Snapshot ещё есть — рендерим как обычно,
             # просто с маленькой пометкой «БУП удалён из БД».
             bup_deleted=bd is None,
@@ -332,6 +333,7 @@ def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> No
     link.ksr_hours = bd.ksr_hours
     link.self_study_hours = bd.self_study_hours
     link.zet = bd.zet
+    link.semesters_data = bd.semesters_data
     link.discipline_name = bd.discipline.name if bd.discipline else None
 
 
@@ -378,9 +380,28 @@ async def _autofill_outcomes_from_bup_disciplines(
 ) -> None:
     """Создать пустые `RpdLearningOutcome` для каждого индикатора компетенций
     выбранных BupDiscipline (как в АРМ — таблица сразу появляется заполненной
-    индикаторами, текст и средство оценки преподаватель вписывает сам)."""
+    индикаторами, текст и средство оценки преподаватель вписывает сам).
+
+    Идемпотентно: если outcome для индикатора у этой РПД уже есть (например,
+    скопирован из архивной РПД через based_on, или повторный вызов после
+    добавления новой BD-привязки) — НЕ создаём дубликат."""
     if not bd_ids:
         return
+    # Существующие outcomes этой РПД — индексируем по живому id_indicator
+    # И по snapshot-ключу (competency_code, indicator_code), чтобы не дублировать
+    # outcomes, у которых FK уже занулён (например, при based_on из РПД, БУП
+    # которой был удалён — у её outcomes id_indicator может быть None).
+    existing = await db.execute(
+        select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd.id_rpd)
+    )
+    existing_by_ind: set[int] = set()
+    existing_by_snap: set[tuple[str, str]] = set()
+    for lo in existing.scalars().all():
+        if lo.id_indicator is not None:
+            existing_by_ind.add(lo.id_indicator)
+        if lo.indicator_code:
+            existing_by_snap.add((lo.competency_code or "", lo.indicator_code))
+
     res = await db.execute(
         select(CompetencyIndicator)
         .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
@@ -390,6 +411,12 @@ async def _autofill_outcomes_from_bup_disciplines(
         .distinct()
     )
     for ind in res.scalars().all():
+        if ind.id_indicator in existing_by_ind:
+            continue
+        comp = ind.competency
+        snap_key = (comp.code if comp else "", ind.code or "")
+        if ind.code and snap_key in existing_by_snap:
+            continue
         lo = RpdLearningOutcome(
             id_rpd=rpd.id_rpd, id_indicator=ind.id_indicator,
             outcome_text=None, assessment_tool=None,
@@ -538,10 +565,11 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
 
     await _attach_rpd_to_bup_disciplines(rpd, db, bup_discipline_ids=data.bup_discipline_ids or None)
 
-    # Если выбран явный список БУП-дисциплин — авто-наполняем outcomes индикаторами
-    # из их компетенций. Это полностью соответствует АРМ: после выбора дисциплины
-    # БУП в разделе «Планируемые результаты» уже есть таблица индикаторов.
-    if data.bup_discipline_ids and not data.based_on_rpd_id:
+    # Авто-наполняем outcomes индикаторами компетенций выбранных BD. Это
+    # полностью соответствует АРМ: после выбора дисциплины БУП в разделе
+    # «Планируемые результаты» уже есть таблица индикаторов. Идемпотентно —
+    # дубликаты с based_on пропускаются.
+    if data.bup_discipline_ids:
         await _autofill_outcomes_from_bup_disciplines(rpd, data.bup_discipline_ids, db)
 
     await db.commit()
@@ -932,89 +960,84 @@ async def detach_bup_discipline(
 @router.get("/{rpd_id}/outcomes-table", response_model=list[OutcomeRowOut])
 async def get_outcomes_table(
     rpd_id: int,
-    bd_id: int | None = Query(default=None, description="Если задан — фильтровать только индикаторы этой привязанной БУП-дисциплины"),
+    bd_id: int | None = Query(default=None, description="Информационный параметр; не влияет на состав возвращаемых строк (см. ниже)"),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Вернуть таблицу планируемых результатов: индикаторы из компетенций БУП-дисциплин
-    этой РПД + текущий заполненный текст и средство оценки.
+    """Вернуть таблицу планируемых результатов раздела 2 РПД.
 
-    Если передан `bd_id` — возвращаются только индикаторы для компетенций этой
-    конкретной БУП-дисциплины (так АРМ работает: переключатель «Дисциплина БУП»
-    наверху раздела 2 фильтрует таблицу). Без параметра — все индикаторы всех
-    привязок (полезно для общего просмотра)."""
+    Источник истины — `RpdLearningOutcome` (создаются при создании РПД через
+    autofill из BUP'овских компетенций, плюс заполняется snapshot). После
+    удаления БУПа эти строки в РПД продолжают жить — снэпшот сохраняет
+    компетенцию и индикатор, и редактирование/сохранение работает по
+    `id_outcome`, не зависящему от живости BUP-данных.
+
+    Параметр `bd_id` сейчас игнорируется (оставлен в API для обратной
+    совместимости). В дальнейшем фильтр можно вернуть, но он должен опираться
+    на снэпшот, а не на живой JOIN — иначе после удаления БУПа таблица
+    «опустеет», как раньше."""
     rpd_res = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
         .options(
             selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
-            selectinload(Rpd.learning_outcomes),
+            selectinload(Rpd.learning_outcomes)
+                .selectinload(RpdLearningOutcome.indicator)
+                .selectinload(CompetencyIndicator.competency),
         )
     )
     rpd = rpd_res.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404)
 
-    rpd_bd_ids = [link.id_bup_discipline for link in rpd.bup_links if link.id_bup_discipline is not None]
-
-    if bd_id is not None:
-        if bd_id not in rpd_bd_ids:
-            raise HTTPException(status_code=400, detail="БУП-дисциплина не привязана к этой РПД")
-        scope_bd_ids = [bd_id]
-    else:
-        scope_bd_ids = rpd_bd_ids
+    # Self-heal для существующих РПД: если outcomes пустые, а живые BD ещё
+    # есть — заполняем сейчас. Полезно для РПД, созданных до этой правки.
+    live_bd_ids = [link.id_bup_discipline for link in rpd.bup_links if link.id_bup_discipline is not None]
+    if not rpd.learning_outcomes and live_bd_ids:
+        await _autofill_outcomes_from_bup_disciplines(rpd, live_bd_ids, db)
+        await db.commit()
+        # Перезагрузим, чтобы получить заполненный snapshot и FK.
+        rpd_res = await db.execute(
+            select(Rpd).where(Rpd.id_rpd == rpd_id)
+            .options(
+                selectinload(Rpd.learning_outcomes)
+                    .selectinload(RpdLearningOutcome.indicator)
+                    .selectinload(CompetencyIndicator.competency),
+            )
+        )
+        rpd = rpd_res.scalar_one()
 
     rows: list[OutcomeRowOut] = []
-    seen_keys: set[tuple] = set()  # (indicator_id) или ("snap", competency_code, indicator_code)
-    outcome_by_ind = {lo.id_indicator: lo for lo in rpd.learning_outcomes if lo.id_indicator}
-
-    if scope_bd_ids:
-        inds_res = await db.execute(
-            select(CompetencyIndicator, Competency)
-            .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
-            .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
-            .where(BupDisciplineCompetency.id_bup_discipline.in_(scope_bd_ids))
-            .order_by(Competency.code, CompetencyIndicator.code)
-        )
-        for ind, comp in inds_res.all():
-            key = ("ind", ind.id_indicator)
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            lo = outcome_by_ind.get(ind.id_indicator)
-            rows.append(OutcomeRowOut(
-                id_indicator=ind.id_indicator,
-                indicator_code=ind.code,
-                indicator_description=ind.description,
-                competency_code=comp.code,
-                competency_name=comp.name,
-                id_outcome=lo.id_outcome if lo else None,
-                outcome_text=lo.outcome_text if lo else None,
-                assessment_tool=lo.assessment_tool if lo else None,
-            ))
-
-    # Если bd_id не задан — добавляем «осиротевшие» outcomes (без живого индикатора)
-    # из snapshot. Это обычно случай, когда БУП был удалён, но РПД сохранила свои
-    # результаты обучения. В per-bd режиме их нельзя отобразить — нет привязки.
-    if bd_id is None:
-        for lo in rpd.learning_outcomes:
-            if lo.id_indicator is not None:
-                continue
-            if not lo.indicator_code:
-                continue
-            key = ("snap", lo.competency_code or "", lo.indicator_code)
-            if key in seen_keys:
-                continue
-            seen_keys.add(key)
-            rows.append(OutcomeRowOut(
-                id_indicator=0,
-                indicator_code=lo.indicator_code,
-                indicator_description=lo.indicator_description or "",
-                competency_code=lo.competency_code or "",
-                competency_name=lo.competency_name or "",
-                id_outcome=lo.id_outcome,
-                outcome_text=lo.outcome_text,
-                assessment_tool=lo.assessment_tool,
-            ))
+    seen_keys: set[tuple] = set()
+    # Сортировка стабильная — по competency_code, потом по indicator_code (как
+    # делал старый JOIN). После удаления БУПа берём snapshot-значения.
+    sorted_outcomes = sorted(
+        rpd.learning_outcomes,
+        key=lambda lo: (
+            lo.competency_code or (lo.indicator.competency.code if lo.indicator and lo.indicator.competency else ""),
+            lo.indicator_code or (lo.indicator.code if lo.indicator else ""),
+        ),
+    )
+    for lo in sorted_outcomes:
+        ind = lo.indicator
+        comp = ind.competency if ind else None
+        # Дедуп: уникальный ключ — (id_indicator если жив) или (competency_code, indicator_code).
+        if lo.id_indicator is not None:
+            key = ("ind", lo.id_indicator)
+        else:
+            key = ("snap", lo.competency_code or "", lo.indicator_code or "")
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        rows.append(OutcomeRowOut(
+            id_indicator=lo.id_indicator,
+            indicator_code=lo.indicator_code or (ind.code if ind else "") or "",
+            indicator_description=lo.indicator_description or (ind.description if ind else "") or "",
+            competency_code=lo.competency_code or (comp.code if comp else "") or "",
+            competency_name=lo.competency_name or (comp.name if comp else "") or "",
+            id_outcome=lo.id_outcome,
+            outcome_text=lo.outcome_text,
+            assessment_tool=lo.assessment_tool,
+        ))
     return rows
 
 
@@ -1025,43 +1048,47 @@ async def upsert_outcome(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Создать/обновить запись планируемого результата по `id_indicator`.
+    """Создать/обновить запись планируемого результата.
 
-    Если оба поля (текст и средство) пустые и запись существует — удаляет её.
+    Идентификация по `id_outcome` (приоритетно, для строк со snapshot) либо
+    по `id_indicator`. Запись с пустыми полями НЕ удаляется — после autofill
+    при создании РПД пустые строки нужны как «слоты» для будущего ввода;
+    удаление превращало бы переключатель «есть/нет» в одностороннее действие.
     """
-    res = await db.execute(
-        select(RpdLearningOutcome)
-        .where(RpdLearningOutcome.id_rpd == rpd_id)
-        .where(RpdLearningOutcome.id_indicator == data.id_indicator)
-        .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
-    )
-    lo = res.scalar_one_or_none()
+    lo: RpdLearningOutcome | None = None
+    if data.id_outcome:
+        res = await db.execute(
+            select(RpdLearningOutcome)
+            .where(RpdLearningOutcome.id_outcome == data.id_outcome)
+            .where(RpdLearningOutcome.id_rpd == rpd_id)
+            .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
+        )
+        lo = res.scalar_one_or_none()
+    elif data.id_indicator:
+        res = await db.execute(
+            select(RpdLearningOutcome)
+            .where(RpdLearningOutcome.id_rpd == rpd_id)
+            .where(RpdLearningOutcome.id_indicator == data.id_indicator)
+            .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
+        )
+        lo = res.scalar_one_or_none()
+
     text = (data.outcome_text or "").strip()
     tool = (data.assessment_tool or "").strip()
 
-    if lo:
-        if not text and not tool:
-            await db.delete(lo)
-            await db.commit()
-            return LearningOutcomeOut(
-                id_outcome=0, id_indicator=data.id_indicator,
-                indicator_code=None, competency_code=None,
-                outcome_text=None, assessment_tool=None,
-            )
-        lo.outcome_text = text or None
-        lo.assessment_tool = tool or None
-    else:
-        if not text and not tool:
-            return LearningOutcomeOut(
-                id_outcome=0, id_indicator=data.id_indicator,
-                indicator_code=None, competency_code=None,
-                outcome_text=None, assessment_tool=None,
-            )
+    if lo is None:
+        # Запись не нашлась. Создаём, если задан живой `id_indicator`. Без него —
+        # клиент ошибся (snapshot-строки всегда имеют id_outcome, его и шлёт фронт).
+        if not data.id_indicator:
+            raise HTTPException(status_code=400, detail="Не удалось найти запись результата для обновления")
         lo = RpdLearningOutcome(
             id_rpd=rpd_id, id_indicator=data.id_indicator,
             outcome_text=text or None, assessment_tool=tool or None,
         )
         db.add(lo)
+    else:
+        lo.outcome_text = text or None
+        lo.assessment_tool = tool or None
     await db.flush()
 
     # Reload with indicator+competency и снимаем snapshot (если индикатор живой).
