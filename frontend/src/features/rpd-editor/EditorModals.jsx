@@ -2,8 +2,6 @@ import { T, F } from "../../theme.js";
 import { Modal } from "../../components/Modal.jsx";
 import { Btn } from "../../components/Btn.jsx";
 
-// Унифицированный «футер» модалок: «Закрыть» справа снизу, нейтральный цвет.
-// Опциональная primary-кнопка (действие) — слева от «Закрыть».
 function ModalFooter({ children, onClose, closeLabel = "Закрыть" }) {
   return <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 20px", borderTop: "1px solid " + T.borderLight }}>
     {children}

@@ -2,18 +2,6 @@ import { forwardRef, useLayoutEffect, useRef, useState } from "react";
 import { T } from "../theme.js";
 import { ChevronDownIcon, ChevronUpIcon } from "./icons.jsx";
 
-/**
- * Обёртка над <textarea>, заменяющая native resize-handle на компактную
- * иконку-«стрелку» в правом-верхнем углу поля. В свёрнутом виде высота
- * капается через maxHeight (видны первые 3-4 строки + скролл при
- * необходимости). В развёрнутом — height = scrollHeight (текст влезает).
- *
- * Кнопка живёт прямо в углу textarea, поле остаётся «единым целым» — ни
- * шапки сверху, ни зарезервированного места справа. Native scrollbar
- * textarea НЕ пересекается с кнопкой благодаря классу
- * `.expandable-field-sm`: webkit-track имеет `margin-top: 28px`, поэтому
- * physical scroll-track начинается ниже нижней границы кнопки.
- */
 export const ExpandableTextarea = forwardRef(function ExpandableTextarea(
   { value, onChange, onBlur, placeholder, disabled, style, collapsedMaxHeight = 110, wrapperStyle, iconColor },
   externalRef,
@@ -34,10 +22,6 @@ export const ExpandableTextarea = forwardRef(function ExpandableTextarea(
     else el.style.height = "";
   }, [expanded, value]);
 
-  // Видимость иконки = текст не помещается (есть вертикальный скролл).
-  // Пересчёт срабатывает не только при изменении value, но и при изменении
-  // ширины самой textarea — иначе при сжатии колонки таблицы текст начинает
-  // переноситься и появляется скролл, а кнопка не показывается.
   useLayoutEffect(() => {
     if (expanded) { setOverflows(true); return; }
     const el = innerRef.current;
@@ -70,9 +54,7 @@ export const ExpandableTextarea = forwardRef(function ExpandableTextarea(
       }}
     />
     {showIcon && (
-      // Прижата к углу textarea: top/right: 1 (не налезть на 1px-border),
-      // без верхнего и правого бордера — визуально сливается с углом.
-      // Скруглён только верхне-правый (как у textarea) и слабо нижне-левый.
+
       <button
         type="button"
         onMouseDown={e => e.preventDefault()}

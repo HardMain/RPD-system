@@ -11,52 +11,23 @@ import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { LITERATURE_TYPES, ELS_OPTIONS } from "../catalogs.js";
 
-/**
- * Универсальный редактор разделов 6.1 (печатная) и 6.2 (электронная литература).
- * Шапка и группы 1:1 со структурой rpd_template.docx (TABLE 11/12) — то, что
- * увидит читатель в печатной форме.
- *
- * Печатная (6.1): группы по `source_type` (та же раскладка, что в backend
- *   PRINTED_BUCKETS), 3 колонки «№ п/п | Библиографическое описание | Количество
- *   экземпляров в библиотеке». Группа без записей таблицу не рисует — только
- *   заголовок и кнопку «+ Добавить запись».
- *
- * Электронная (6.2): одна общая таблица, 4 колонки «Вид литературы ЭБС |
- *   Наименование разработки | Ссылка на информационный ресурс | Доступность
- *   ЭБС». Дискриминатор «электронная» по факту наличия URL — это согласовано
- *   с backend (rpd_template_context.py: `if l.url: lit_el.append(...)`).
- *   Поэтому новой строке 6.2 кладём URL=" " (пробел), чтобы она не «утекла» в 6.1
- *   до того, как пользователь введёт настоящую ссылку.
- *
- * Inline-редактирование: значения правятся прямо в ячейках, сохранение по
- * onBlur (как в OutcomesEditor / SectionEditor). Корзина живёт справа за
- * границей таблицы — карточка редактора имеет 40px правого padding'а, в нём
- * как раз помещается иконка.
- */
 export function LiteratureEditor({ kind }) {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const isElectronic = kind === "electronic";
 
-  // Делим литературу по дискриминатору «есть URL — значит электронная».
-  // Совпадает с rpd_template_context.py.
   const items = (rpd.literature || []).filter(l => isElectronic ? !!l.url : !l.url);
 
   async function addRow(source_type) {
     const payload = isElectronic
       ? { source_type, title: "", url: " ", availability: [] }
-      // У печатной по умолчанию «0 экземпляров», а не null/прочерк. Чаще всего
-      // именно 0 и есть стартовое значение, а ставить «—» при добавлении и
-      // потом править — лишний шаг.
+
       : { source_type, title: "", copies_count: 0 };
     try { await api.addLiterature(rpdId, payload); await reload(); } catch {}
   }
 
   async function delRow(item) {
-    // Пустую строку — без подтверждения. Считаем «пустой», когда пользователь
-    // не ввёл ни одного поля и ничего не выбрал из выпадашек. Sentinel URL=" "
-    // у новой 6.2-строки после .trim() становится пустым. copies_count=0 —
-    // тоже считается пустым (это дефолт, выставленный кнопкой «+»).
+
     const filled = isElectronic
       ? ((item.title || "").trim() || (item.url || "").trim()
          || (item.source_type || "").trim() || (item.availability?.length > 0))
@@ -69,26 +40,20 @@ export function LiteratureEditor({ kind }) {
     try { await api.updateLiterature(item.id_literature, patch); await reload(); } catch {}
   }
 
-  // «1. Основная литература» — обязательный блок: автодобавляем одну пустую
-  // строку, чтобы преподаватель сразу видел, куда печатать. Срабатывает один
-  // раз на маунт редактора 6.1, в режиме редактирования. Пустая строка не
-  // попадает в печатную форму (фильтр в rpd_template_context.py).
   const autoAddedRef = useRef(false);
   useEffect(() => {
     if (isElectronic || !editable || autoAddedRef.current) return;
     autoAddedRef.current = true;
     const hasMain = items.some(l => l.source_type === "Учебные и научные издания");
     if (!hasMain) addRow("Учебные и научные издания");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [editable, isElectronic]);
 
   if (isElectronic) {
     return <ElectronicTable
       items={items}
       editable={editable}
-      // Новой 6.2-строке source_type=""  — в выпадашке покажется «Не выбрано»,
-      // и сама строка считается «пустой» до того, как пользователь что-то
-      // введёт/выберет. В печатную форму такая строка не попадает.
+
       onAdd={() => addRow("")}
       onDelete={delRow}
       onSave={saveField}
@@ -104,20 +69,6 @@ export function LiteratureEditor({ kind }) {
   />;
 }
 
-
-// ─── 6.1 Печатная литература ────────────────────────────────────────────────
-
-// Структура печатной литературы 1:1 с типовой формой РПД ПНИПУ:
-// 1. Основная литература (одна группа «Учебные и научные»)
-// 2. Дополнительная литература — три подгруппы 2.1 / 2.2 / 2.3
-// 3. Методические указания для студентов
-// 4. Учебно-методическое обеспечение СРС
-//
-// 2.1 «Учебные и научные» — отдельная подгруппа, отличается от 1-й только
-// контекстом (вспомогательная литература). Чтобы записи не путались, у них
-// отдельный source_type — «Учебные и научные издания (дополнительные)».
-// Бэкенд знает этот тип через PRINTED_BUCKETS и кладёт в bucket
-// `additional_study`.
 const ADDITIONAL_MAIN_TYPE = "Учебные и научные издания (дополнительные)";
 const PRINTED_SECTIONS = [
   {
@@ -142,13 +93,10 @@ const PRINTED_SECTIONS = [
   },
 ];
 
-// Все source_type, известные печатной форме (плоский список — для проверки и
-// fallback'a при бакетировании items).
 const PRINTED_TYPES = PRINTED_SECTIONS.flatMap(s => s.groups.map(g => g.source_type));
 
 function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
-  // Несовпавшие по виду (legacy/неизвестные source_type) — кладём в основную,
-  // как делает backend (PRINTED_BUCKETS fallback на main).
+
   const grouped = Object.fromEntries(PRINTED_TYPES.map(t => [t, []]));
   for (const it of items) {
     if (grouped[it.source_type] !== undefined) grouped[it.source_type].push(it);
@@ -171,8 +119,7 @@ function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
   return <div>
     {PRINTED_SECTIONS.map(section => (
       <div key={section.title} style={{ marginBottom: 22 }}>
-        {/* Заголовок-секция (1 / 2 / 3 / 4) — крупнее и с разделительной чертой,
-            чтобы на глаз отделять «Основную» от «Дополнительной» и т.д. */}
+
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid " + T.borderLight }}>
           {section.title}
         </div>
@@ -236,17 +183,9 @@ function PrintedGroup({ g, rows, editable, onAdd, onDelete, onSave }) {
 
 function PrintedRow({ item, index, editable, onSave }) {
   const [title, setTitle] = useState(item.title || "");
-  // copies всегда число: при стирании value сразу становится 0, как у
-  // HourInput в SectionEditor (раздел 4). Так пользователь не может оставить
-  // ячейку пустой / получить серый placeholder — минимум всегда 0.
+
   const [copies, setCopies] = useState(item.copies_count ?? 0);
-  // Защита от «отката» свежего ввода: пока пользователь правит ячейку, у этой
-  // строки может прилететь reload (например, blur на title в этой же строке
-  // или редактирование соседней). useEffect раньше безусловно перезатирал
-  // буфер значением с сервера — клик по спиннеру copies показывал «4», и через
-  // миг откатывал к «3». Сравниваем с предыдущим серверным значением: если
-  // local буфер уже отличается, не трогаем его — пусть live-ввод проживёт до
-  // своего blur'а.
+
   const titleRef = useRef(item.title || "");
   const copiesRef = useRef(item.copies_count ?? 0);
   useEffect(() => {
@@ -304,9 +243,6 @@ function PrintedRow({ item, index, editable, onSave }) {
   </tr>;
 }
 
-
-// ─── 6.2 Электронная литература ─────────────────────────────────────────────
-
 function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
   const tbodyRef = useRef(null);
   function delById(id) {
@@ -361,11 +297,9 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
 
 function ElectronicRow({ item, editable, onSave }) {
   const [title, setTitle] = useState(item.title || "");
-  // URL=" " — это sentinel, который backend трактует как «электронная». В инпуте
-  // показываем пусто, чтобы пользователь видел чистое поле и не подумал, что
-  // у него пробел в URL.
+
   const [url, setUrl] = useState(((item.url || "").trim() ? item.url : ""));
-  // см. PrintedRow — защита от «отката» свежего ввода при reload во время редактирования.
+
   const titleRef = useRef(item.title || "");
   const urlRef = useRef((item.url || "").trim() ? item.url : "");
   useEffect(() => {
@@ -384,8 +318,7 @@ function ElectronicRow({ item, editable, onSave }) {
     onSave({ title });
   }
   function commitUrl() {
-    // Если поле очистили — кладём sentinel " " (а не "" / null), иначе строка
-    // мигрирует из 6.2 в 6.1 (см. discriminator в backend и в верхнем фильтре).
+
     const clean = url.trim();
     const next = clean ? clean : " ";
     if (next === (item.url || "")) return;
@@ -414,9 +347,6 @@ function ElectronicRow({ item, editable, onSave }) {
     </tr>;
   }
 
-  // В 6.2 выпадашка не должна показывать «(дополнительные)» — этот тип нужен
-  // только для разделения 1-й и 2.1 групп в печатной 6.1; для электронной
-  // литературы (6.2) это бессмыслица.
   const typeOptions = LITERATURE_TYPES
     .filter(t => t !== ADDITIONAL_MAIN_TYPE)
     .map(t => ({ value: t, label: t }));
@@ -462,9 +392,6 @@ function ElectronicRow({ item, editable, onSave }) {
   </tr>;
 }
 
-
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const inlineTextarea = {
   width: "100%",
   padding: "4px 6px",
@@ -488,8 +415,6 @@ const inlineInput = {
   boxSizing: "border-box",
 };
 
-// `field-sizing: content` — ширина инпута следует за длиной цифры, чтобы
-// auto-layout колонки не схлопывал её в 0.
 const inlineNumber = {
   width: "auto",
   fieldSizing: "content",

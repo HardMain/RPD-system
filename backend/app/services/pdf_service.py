@@ -1,10 +1,7 @@
-"""PDF export: PyMuPDF fills the official ПНИПУ template title page,
-ReportLab generates content pages matching the same format.
-"""
 import io
 import os
 
-import fitz  # PyMuPDF
+import fitz
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
@@ -17,25 +14,21 @@ from reportlab.platypus import (
     Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle,
 )
 
-# ── Paths ──────────────────────────────────────────────────────────────────
 _HERE = os.path.dirname(__file__)
 _TEMPLATE_PDF = os.path.normpath(os.path.join(_HERE, "..", "templates", "rpd_template.pdf"))
 
-# Usable content width:  A4 210 mm − 25 mm left − 15 mm right = 170 mm
 _PW = 170 * mm
 
-# ── Font discovery ─────────────────────────────────────────────────────────
 _FONT_CANDIDATES = [
-    (  # Liberation Serif — metrically identical to Times New Roman
+    (
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
         "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
     ),
-    (  # DejaVu Sans — always present (fonts-dejavu-core in Dockerfile)
+    (
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
     ),
 ]
-
 
 def _pick_fonts():
     for reg, bold in _FONT_CANDIDATES:
@@ -43,12 +36,9 @@ def _pick_fonts():
             return reg, bold
     return None, None
 
-
 _FONT_REG, _FONT_BOLD = _pick_fonts()
 
-
 def _rl_font_names():
-    """Register fonts for ReportLab; return (regular_name, bold_name)."""
     if _FONT_REG:
         try:
             pdfmetrics.registerFont(TTFont("RpdFont", _FONT_REG))
@@ -58,32 +48,22 @@ def _rl_font_names():
             pass
     return "Helvetica", "Helvetica-Bold"
 
-
 _F, _FB = _rl_font_names()
 
 _HDR_BG = colors.Color(0.85, 0.85, 0.90)
 _BORDER  = colors.Color(0.40, 0.40, 0.40)
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PART 1 — title page via PyMuPDF
-# ═══════════════════════════════════════════════════════════════════════════
-
-# Coordinates of VALUE spans on title page (from text extraction):
-#   format: (y0, y1, field_key_or_value, bold?)
-# x range of value area: 228 … 543 (A4 pt width ≈ 595)
 _TITLE_FIELDS = [
     (367, 386, "discipline_name", True),
-    (408, 426, "__очная__",       False),   # fixed
+    (408, 426, "__очная__",       False),
     (447, 465, "degree_level",    False),
-    (487, 505, "__hours__",       False),   # computed
-    (532, 551, "__direction__",   False),   # computed
+    (487, 505, "__hours__",       False),
+    (532, 551, "__direction__",   False),
     (578, 597, "direction_profile", False),
 ]
 _YEAR_RECT = fitz.Rect(255, 788, 355, 808)
 _VALUE_X0, _VALUE_X1 = 228.0, 543.0
-_FS = 13.5   # font size matching template's 13.6 pt
-
+_FS = 13.5
 
 def _field_value(key: str, rpd: dict) -> str:
     if key == "__очная__":
@@ -98,10 +78,7 @@ def _field_value(key: str, rpd: dict) -> str:
         ])).strip()
     return (rpd.get(key) or "—").strip()
 
-
 def _fill_title_page(rpd_data: dict) -> bytes:
-    """Open the template PDF, white-out old values, insert new ones.
-    Returns single-page PDF bytes."""
     if not os.path.exists(_TEMPLATE_PDF):
         raise FileNotFoundError(f"Template not found: {_TEMPLATE_PDF}")
 
@@ -111,7 +88,6 @@ def _fill_title_page(rpd_data: dict) -> bytes:
     fitz_font_r = fitz.Font(fontfile=_FONT_REG)  if _FONT_REG  else fitz.Font("helv")
     fitz_font_b = fitz.Font(fontfile=_FONT_BOLD) if _FONT_BOLD else fitz.Font("helv")
 
-    # ── 1. Draw white rectangles over old values ──────────────────────────
     shape = page.new_shape()
     for y0, y1, _, __ in _TITLE_FIELDS:
         shape.draw_rect(fitz.Rect(_VALUE_X0, y0, _VALUE_X1, y1))
@@ -120,7 +96,6 @@ def _fill_title_page(rpd_data: dict) -> bytes:
     shape.finish(fill=(1, 1, 1), color=None, width=0)
     shape.commit()
 
-    # ── 2. Insert new values ──────────────────────────────────────────────
     for y0, y1, key, bold in _TITLE_FIELDS:
         text = _field_value(key, rpd_data)
         font = fitz_font_b if bold else fitz_font_r
@@ -129,7 +104,6 @@ def _fill_title_page(rpd_data: dict) -> bytes:
                   text, fontsize=_FS, font=font)
         tw.write_text(page)
 
-    # ── 3. Update year in "Пермь XXXX" ───────────────────────────────────
     year = (rpd_data.get("academic_year") or "")[:4]
     if year:
         label = f"Пермь {year}"
@@ -142,17 +116,10 @@ def _fill_title_page(rpd_data: dict) -> bytes:
     out.insert_pdf(doc, from_page=0, to_page=0)
     return out.tobytes()
 
-
 def _center_x(text: str, font: fitz.Font, x0: float, x1: float, y_base: float):
-    """Return (x, y_base) so that text is centered between x0 and x1."""
     tw = font.text_length(text, fontsize=_FS)
     x  = x0 + max(0.0, (x1 - x0 - tw) / 2)
     return (x, y_base)
-
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PART 2 — content pages via ReportLab
-# ═══════════════════════════════════════════════════════════════════════════
 
 def _styles():
     s = getSampleStyleSheet()
@@ -168,7 +135,6 @@ def _styles():
     s.add(ParagraphStyle("CellB",  fontName=_FB, fontSize=10, leading=13))
     s.add(ParagraphStyle("CellS",  fontName=_F,  fontSize=9,  leading=12))
     return s
-
 
 def _mktable(rows, col_widths, extra_style=None):
     base = [
@@ -186,9 +152,7 @@ def _mktable(rows, col_widths, extra_style=None):
     t.setStyle(TableStyle(base))
     return t
 
-
 def _boxed(content_para, width=_PW):
-    """Wrap a Paragraph in a single-cell bordered table (like the template)."""
     t = Table([[content_para]], colWidths=[width])
     t.setStyle(TableStyle([
         ("BOX",           (0, 0), (-1, -1), 0.5, _BORDER),
@@ -198,16 +162,13 @@ def _boxed(content_para, width=_PW):
     ]))
     return t
 
-
 def _text_paras(text: str, st, indent=True):
-    """Split text on newlines, return list of Paragraph flowables."""
     style = st["Body"] if indent else st["BodyNI"]
     result = []
     for line in (text or "").split("\n"):
         if line.strip():
             result.append(Paragraph(line.strip(), style))
     return result or [Paragraph("—", st["BodyNI"])]
-
 
 def _generate_content_pages(rpd_data: dict) -> bytes:
     buf = io.BytesIO()
@@ -222,7 +183,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
     def dash():
         story.append(Paragraph("—", st["BodyNI"]))
 
-    # ── 1. Общие положения ─────────────────────────────────────────────────
     story.append(Paragraph("1. Общие положения", st["H1"]))
 
     story.append(Paragraph("1.1. Цели и задачи дисциплины", st["H2"]))
@@ -240,7 +200,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
     else:
         story.extend(reqs)
 
-    # ── 2. Планируемые результаты обучения ─────────────────────────────────
     story.append(Paragraph("2. Планируемые результаты обучения по дисциплине", st["H1"]))
     outcomes = rpd_data.get("learning_outcomes", [])
     if outcomes:
@@ -264,7 +223,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
     else:
         dash()
 
-    # ── 3. Объём и виды учебной работы ─────────────────────────────────────
     story.append(Paragraph("3. Объём и виды учебной работы", st["H1"]))
 
     lec = rpd_data.get("lecture_hours")      or 0
@@ -294,7 +252,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
     ]))
     story.append(Spacer(1, 4 * mm))
 
-    # ── 4. Содержание дисциплины ────────────────────────────────────────────
     story.append(Paragraph("4. Содержание дисциплины", st["H1"]))
     sections = rpd_data.get("sections", [])
 
@@ -332,7 +289,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
         ]))
         story.append(Spacer(1, 4 * mm))
 
-        # Lab topics — теперь живут на самом РПД, без привязки к разделу
         all_topics = rpd_data.get("topics", [])
         lab_topics = [t for t in all_topics
                       if (t.get("topic_type") or "").lower() in ("lab", "лр", "лаб", "laboratory")]
@@ -346,7 +302,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
                                   [("ALIGN", (0, 0), (0, -1), "CENTER")]))
             story.append(Spacer(1, 4 * mm))
 
-        # Practice topics — теперь живут на самом РПД, без привязки к разделу
         prac_topics = [t for t in all_topics
                        if (t.get("topic_type") or "").lower() in ("practice", "пз", "практика", "seminar")]
         if prac_topics:
@@ -361,7 +316,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
     else:
         dash()
 
-    # ── 5. Организационно-педагогические условия ───────────────────────────
     story.append(Paragraph("5. Организационно-педагогические условия", st["H1"]))
 
     story.append(Paragraph(
@@ -380,7 +334,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
     else:
         dash()
 
-    # ── 6. Учебно-методическое обеспечение ─────────────────────────────────
     story.append(Paragraph(
         "6. Перечень учебно-методического и информационного обеспечения", st["H1"]))
 
@@ -449,7 +402,6 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
         st["H2"]))
     story.append(Paragraph("Не используется", st["BodyNI"]))
 
-    # ── 7. МТО ──────────────────────────────────────────────────────────────
     story.append(Paragraph(
         "7. Материально-техническое обеспечение образовательного процесса по дисциплине",
         st["H1"]))
@@ -469,27 +421,17 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
     else:
         dash()
 
-    # ── 8. ФОС ──────────────────────────────────────────────────────────────
     story.append(Paragraph("8. Фонд оценочных средств дисциплины", st["H1"]))
     story.append(_boxed(Paragraph("Описан в отдельном документе", st["BodyNI"])))
 
     doc.build(story)
     return buf.getvalue()
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# PUBLIC API
-# ═══════════════════════════════════════════════════════════════════════════
-
 def generate_rpd_pdf(rpd_data: dict) -> bytes:
-    """Fill the ПНИПУ RPD template (title page) with PyMuPDF,
-    generate content pages with ReportLab, merge and return PDF bytes."""
 
-    # Content pages are always generated
     content_bytes = _generate_content_pages(rpd_data)
 
     if not os.path.exists(_TEMPLATE_PDF):
-        # Template missing — return content-only PDF
         return content_bytes
 
     try:
@@ -497,7 +439,6 @@ def generate_rpd_pdf(rpd_data: dict) -> bytes:
     except Exception:
         return content_bytes
 
-    # Merge
     try:
         title_doc   = fitz.open("pdf", title_bytes)
         content_doc = fitz.open("pdf", content_bytes)

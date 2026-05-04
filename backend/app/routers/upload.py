@@ -1,4 +1,3 @@
-"""File upload endpoints for LLM context documents."""
 import os
 import uuid
 from pathlib import Path
@@ -19,10 +18,8 @@ router = APIRouter(prefix="/api/upload", tags=["upload"])
 ALLOWED_EXTENSIONS = {".pdf", ".docx", ".doc", ".txt", ".xlsx", ".xls"}
 MAX_SIZE = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
-
 def _ensure_upload_dir():
     os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
-
 
 @router.post("/{rpd_id}", response_model=UploadedDocumentOut, status_code=201)
 async def upload_document(
@@ -31,13 +28,11 @@ async def upload_document(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    # Check RPD exists
     result = await db.execute(select(Rpd).where(Rpd.id_rpd == rpd_id))
     rpd = result.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404, detail="РПД не найдена")
 
-    # Validate extension
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -45,19 +40,16 @@ async def upload_document(
             detail=f"Допустимые форматы: {', '.join(ALLOWED_EXTENSIONS)}"
         )
 
-    # Read file
     content = await file.read()
     if len(content) > MAX_SIZE:
         raise HTTPException(status_code=400, detail=f"Максимальный размер файла: {settings.MAX_UPLOAD_SIZE_MB} МБ")
 
-    # Save file
     _ensure_upload_dir()
     unique_name = f"{uuid.uuid4().hex}{ext}"
     file_path = os.path.join(settings.UPLOAD_DIR, unique_name)
     with open(file_path, "wb") as f:
         f.write(content)
 
-    # Save to DB
     doc = UploadedDocument(
         id_rpd=rpd_id,
         id_user=user.id_user,
@@ -71,7 +63,6 @@ async def upload_document(
     await db.refresh(doc)
     return doc
 
-
 @router.get("/{rpd_id}", response_model=list[UploadedDocumentOut])
 async def list_documents(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
@@ -80,7 +71,6 @@ async def list_documents(rpd_id: int, db: AsyncSession = Depends(get_db), user: 
         .order_by(UploadedDocument.uploaded_at.desc())
     )
     return result.scalars().all()
-
 
 @router.get("/download/{doc_id}")
 async def download_document(doc_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -94,7 +84,6 @@ async def download_document(doc_id: int, db: AsyncSession = Depends(get_db), use
         raise HTTPException(status_code=404, detail="Файл не найден на диске")
     return FileResponse(doc.file_path, filename=doc.filename)
 
-
 @router.delete("/{doc_id}", status_code=204)
 async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
@@ -103,7 +92,6 @@ async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db), user:
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404)
-    # Remove file from disk
     if os.path.exists(doc.file_path):
         os.remove(doc.file_path)
     await db.delete(doc)

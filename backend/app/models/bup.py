@@ -1,20 +1,8 @@
-"""BUP-domain models: учебный план + дисциплина БУП + закрепление компетенций.
-
-Концепция:
-- `Bup` — конкретный базовый учебный план (год, факультет, направление, профиль).
-- `BupDiscipline` — дисциплина в *этом* плане, со всеми атрибутами (часы по
-  семестрам, форма контроля, кафедра). 3НФ: атрибуты часов зависят от пары
-  (логическая дисциплина, БУП), поэтому хранятся здесь, а не в `Discipline`.
-- `BupDisciplineCompetency` — закрепление компетенции *в данном плане*.
-- `RpdBupDiscipline` — М:N между РПД и дисциплинами БУП (одна РПД может быть
-  прикреплена к нескольким дисциплинам разных БУПов, как в АРМ).
-"""
 from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
-
 
 class Bup(Base):
     __tablename__ = "bups"
@@ -33,7 +21,6 @@ class Bup(Base):
         order_by="BupDiscipline.code",
     )
 
-
 class BupDiscipline(Base):
     __tablename__ = "bup_disciplines"
     id_bup_discipline = Column(Integer, primary_key=True, autoincrement=True)
@@ -41,24 +28,19 @@ class BupDiscipline(Base):
     id_discipline = Column(Integer, ForeignKey("disciplines.id_discipline"), nullable=False)
     id_department = Column(Integer, ForeignKey("departments.id_department"), nullable=True)
 
-    code = Column(String(30))                # Б1.Б.01, Б1.В.05 и т.п.
-    semester = Column(String(30))            # «1», «1, 2», …
-    control_form = Column(String(255))       # «Экзамен», «Зачёт», «Экзамен, зачёт» и т.п.
+    code = Column(String(30))
+    semester = Column(String(30))
+    control_form = Column(String(255))
 
-    total_hours = Column(Integer)            # Общая трудоёмкость, ак.час
-    exam_hours = Column(Integer)             # Экзамен (общая трудоёмкость, C9 XLS-БУПа)
-    lecture_hours = Column(Integer)          # Лекции (агрегат по всем семестрам)
-    lab_hours = Column(Integer)              # Лабораторные
-    practice_hours = Column(Integer)         # Практические
-    ksr_hours = Column(Integer)              # КСР
-    self_study_hours = Column(Integer)       # СРС
-    zet = Column(Integer)                    # Зачётные единицы
+    total_hours = Column(Integer)
+    exam_hours = Column(Integer)
+    lecture_hours = Column(Integer)
+    lab_hours = Column(Integer)
+    practice_hours = Column(Integer)
+    ksr_hours = Column(Integer)
+    self_study_hours = Column(Integer)
+    zet = Column(Integer)
 
-    # Часы по каждому занятому семестру дисциплины. Список dict'ов:
-    # [{"number": 1, "lecture": 18, "lab": 0, "practice": 36, "ksr": 0, "srs": 30},
-    #  {"number": 2, ...}]. Заполняется парсером XLS из блоков C16-C55. Любое
-    # поле может быть None, если в XLS соответствующая ячейка пустая —
-    # печатная форма раздела 3 оставит её пустой, не подставляя «0».
     semesters_data = Column(JSONB, nullable=True)
 
     bup = relationship("Bup", back_populates="disciplines")
@@ -69,14 +51,10 @@ class BupDiscipline(Base):
         back_populates="bup_discipline",
         cascade="all, delete-orphan",
     )
-    # БЕЗ cascade: при hard-delete БУПа админ-эндпоинт сам нуллит
-    # `RpdBupDiscipline.id_bup_discipline` (предварительно записав снапшот),
-    # чтобы у уже созданных РПД сохранилась информация о плане.
     rpd_links = relationship(
         "RpdBupDiscipline",
         back_populates="bup_discipline",
     )
-
 
 class BupDisciplineCompetency(Base):
     __tablename__ = "bup_discipline_competencies"
@@ -91,16 +69,7 @@ class BupDisciplineCompetency(Base):
     bup_discipline = relationship("BupDiscipline", back_populates="competencies")
     competency = relationship("Competency", back_populates="bup_discipline_links")
 
-
 class RpdBupDiscipline(Base):
-    """Связка РПД ↔ дисциплина БУПа со снапшотом всех значимых полей плана.
-
-    Зачем снапшот: админ может удалить БУП. После hard-delete `id_bup_discipline`
-    зануляется (и сам ряд BupDiscipline уходит), но печатная форма РПД, часы,
-    направление и т.п. должны продолжать рендериться. Snapshot заполняется
-    в момент привязки/обновления; при чтении приоритет всегда у snapshot
-    (если он не пустой), иначе — резолв через `bup_discipline`.
-    """
     __tablename__ = "rpd_bup_disciplines"
     id_rpd_bup_discipline = Column(Integer, primary_key=True, autoincrement=True)
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
@@ -109,7 +78,6 @@ class RpdBupDiscipline(Base):
         nullable=True,
     )
 
-    # Snapshot БУПа и направления
     bup_name = Column(String(300))
     bup_year = Column(Integer)
     bup_profile = Column(String(200))
@@ -118,7 +86,6 @@ class RpdBupDiscipline(Base):
     direction_profile = Column(String(200))
     fgos_file_id = Column(Integer)
     fgos_file_name = Column(String(300))
-    # Snapshot самой BupDiscipline
     code = Column(String(30))
     semester = Column(String(30))
     control_form = Column(String(255))
@@ -130,11 +97,7 @@ class RpdBupDiscipline(Base):
     ksr_hours = Column(Integer)
     self_study_hours = Column(Integer)
     zet = Column(Integer)
-    # Snapshot почасового расклада по семестрам — переживает hard-delete БУПа.
-    # Формат тот же, что у `BupDiscipline.semesters_data`.
     semesters_data = Column(JSONB, nullable=True)
-    # Имя логической дисциплины — на случай, если её тоже удалят (например когда
-    # она использовалась только этим планом).
     discipline_name = Column(String(200))
 
     __table_args__ = (

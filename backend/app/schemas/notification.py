@@ -1,8 +1,6 @@
-"""Notification schemas."""
 from __future__ import annotations
 from pydantic import BaseModel
 from datetime import datetime
-
 
 class NotificationOut(BaseModel):
     id_notification: int

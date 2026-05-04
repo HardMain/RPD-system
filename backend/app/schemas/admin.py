@@ -1,8 +1,6 @@
-"""Admin schemas: user management, role/department lookups."""
 from __future__ import annotations
 from pydantic import BaseModel
 from datetime import datetime
-
 
 class UserCreate(BaseModel):
     ldap_uid: str
@@ -11,7 +9,6 @@ class UserCreate(BaseModel):
     id_role: int
     id_department: int
     password: str | None = None
-
 
 class UserDetailOut(BaseModel):
     id_user: int
@@ -28,14 +25,12 @@ class UserDetailOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class RoleOut(BaseModel):
     id_role: int
     name: str
 
     class Config:
         from_attributes = True
-
 
 class DepartmentOut(BaseModel):
     id_department: int

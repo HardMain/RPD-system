@@ -4,9 +4,6 @@ import { hdr, tcell } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon } from "../components/icons.jsx";
 
-/* Колонки — теперь конфиг с ключом для сортировки и accessor'ом, по которому
-   достаётся значение для сравнения (и фильтрации). align управляет CSS,
-   sortable — кликабельность заголовка. */
 const COLS = [
   { key: "direction_code", label: "Направление", align: "left", sortable: true, accessor: r => r.direction_code || "" },
   { key: "discipline_name", label: "Дисциплина", align: "left", sortable: true, accessor: r => r.discipline_name || "" },
@@ -17,9 +14,6 @@ const COLS = [
   { key: "actions", label: "", align: "center", sortable: false },
 ];
 
-/* Все известные статусы РПД и их цвета. Логика: серый — нейтральная стартовая точка,
-   красный — есть проблема (вернули на доработку), оранжевый — в процессе ожидания,
-   зелёный — финал. */
 const STATUSES = [
   { value: "Черновик",        color: T.textMuted, bg: T.borderLight },
   { value: "На доработке",    color: T.red,       bg: "#fbe5e5" },
@@ -32,12 +26,10 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
   const canCreate = ["Зав. кафедрой", "Сотрудник УМУ", "Администратор"].includes(userRole);
 
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all"); // "all" | конкретный статус
-  // sort: dir asc/desc; null означает «как пришло с бэка» (по умолчанию по дисциплине asc).
+  const [statusFilter, setStatusFilter] = useState("all");
+
   const [sort, setSort] = useState({ key: "discipline_name", dir: "asc" });
 
-  // Счётчики статусов считаем ДО применения фильтра по статусу — чтобы в чипах
-  // всегда были видны полные числа, а не только то, что осталось после фильтра.
   const queryFiltered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return rpds;
@@ -172,8 +164,6 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
   </div>;
 }
 
-/** Бэйдж статуса РПД с цветовой схемой. Цвет — по value в STATUS_BY_VALUE,
- *  для неизвестных значений рендерится нейтральным. */
 export function StatusBadge({ status }) {
   const s = STATUS_BY_VALUE[status];
   const color = s ? s.color : T.text;
@@ -190,8 +180,6 @@ export function StatusBadge({ status }) {
   }}>{status || "—"}</span>;
 }
 
-/** Чип фильтра «Все / Статус (N)». Активный — заполнен соответствующим цветом
- *  статуса (или акцентом для «Все»), неактивный — серый контур. */
 function FilterChip({ label, count, active, color, bg, onClick }) {
   const isActive = active && count >= 0;
   const activeColor = color || T.accent;

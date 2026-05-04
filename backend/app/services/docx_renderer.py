@@ -1,16 +1,3 @@
-"""
-Рендер РПД из DOCX-шаблона через docxtpl + LibreOffice.
-
-Зависимости (pip):
-    docxtpl      — заполнение DOCX-шаблона по Jinja2-синтаксису
-    python-docx  — нужна docxtpl как транзитивная
-    lxml         — для пост-обработки XML таблиц
-
-Системные зависимости:
-    libreoffice  — для конвертации DOCX → PDF в headless-режиме
-                   (Linux: apt install libreoffice --no-install-recommends
-                    Windows: установить с libreoffice.org и добавить в PATH)
-"""
 from __future__ import annotations
 
 import os
@@ -24,25 +11,17 @@ from pathlib import Path
 from docxtpl import DocxTemplate
 from lxml import etree
 
-
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W = f"{{{W_NS}}}"
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 0. Pre-обработка: починка разорванных Jinja-тегов в XML документа
-# ─────────────────────────────────────────────────────────────────────────────
 _JINJA_TAG_RE = re.compile(r"(\{[{%])(.*?)([%}]\})", re.DOTALL)
 _XML_INSIDE_RE = re.compile(r"<[^>]+>")
-
 
 def _clean_jinja_tag(match: re.Match) -> str:
     opener, inner, closer = match.group(1), match.group(2), match.group(3)
     return opener + _XML_INSIDE_RE.sub("", inner) + closer
 
-
 def _repair_docx_tags(src_docx: Path, dst_docx: Path) -> None:
-    """Копирует src → dst, попутно чиня разорванные Jinja-теги."""
     with zipfile.ZipFile(src_docx, "r") as zin, zipfile.ZipFile(
         dst_docx, "w", zipfile.ZIP_DEFLATED
     ) as zout:
@@ -58,19 +37,12 @@ def _repair_docx_tags(src_docx: Path, dst_docx: Path) -> None:
                 data = xml.encode("utf-8")
             zout.writestr(item, data)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 1. Post-обработка: починка таблиц после {%tc for %}
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 def _get_grid_span(tc: etree._Element) -> int:
     tcPr = tc.find(f"{W}tcPr")
     if tcPr is None:
         return 1
     gs = tcPr.find(f"{W}gridSpan")
     return int(gs.get(f"{W}val", 1)) if gs is not None else 1
-
 
 def _set_grid_span(tc: etree._Element, val: int) -> None:
     tcPr = tc.find(f"{W}tcPr")
@@ -86,7 +58,6 @@ def _set_grid_span(tc: etree._Element, val: int) -> None:
         gs = etree.SubElement(tcPr, f"{W}gridSpan")
     gs.set(f"{W}val", str(val))
 
-
 def _set_tcw_dxa(tc: etree._Element, value: int) -> None:
     tcPr = tc.find(f"{W}tcPr")
     if tcPr is None:
@@ -97,7 +68,6 @@ def _set_tcw_dxa(tc: etree._Element, value: int) -> None:
         tcW = etree.SubElement(tcPr, f"{W}tcW")
     tcW.set(f"{W}w", str(int(value)))
     tcW.set(f"{W}type", "dxa")
-
 
 def _fix_tables_in_xml(xml_bytes: bytes) -> bytes:
     tree = etree.fromstring(xml_bytes)
@@ -151,16 +121,6 @@ def _fix_tables_in_xml(xml_bytes: bytes) -> bytes:
                         widest = (col, col + s)
                 col += s
 
-        # Если у gridCol больше колонок, чем нужно plain-строкам (loop {%tc for%}
-        # в шаблоне выдал меньше ячеек, чем было заложено) — лишние gridCol
-        # «осиротели», просто удаляем их с конца. Раньше мы переливали их
-        # ширину в widest-секцию (чтобы общая ширина таблицы оставалась как
-        # в шаблоне), но это меняло визуальное масштабирование у соседних
-        # колонок: при 4 семестрах вместо 8 заложенных «Вид работы» и
-        # «Всего часов» оставались прежней ширины, а семестровые тянулись.
-        # Теперь общая ширина таблицы уменьшается — но первые колонки и
-        # семестровые сохраняют ровно ту ширину, что заложена в шаблоне
-        # (по одной семестровой колонке ↔ по одной gridCol из шаблона).
         if widest and len(grid_cols) > target:
             while len(grid_cols) > target:
                 tblGrid.remove(grid_cols[-1])
@@ -199,7 +159,6 @@ def _fix_tables_in_xml(xml_bytes: bytes) -> bytes:
         tree, xml_declaration=True, encoding="UTF-8", standalone=True
     )
 
-
 def _fix_document_after_render(docx_path: Path) -> None:
     with zipfile.ZipFile(docx_path, "r") as z:
         xml_bytes = z.read("word/document.xml")
@@ -219,18 +178,11 @@ def _fix_document_after_render(docx_path: Path) -> None:
             zout.writestr(item, data)
     shutil.move(str(tmp), str(docx_path))
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Публичные функции
-# ─────────────────────────────────────────────────────────────────────────────
-
-
 def fill_docx_template(
     template_path: Path,
     context: dict,
     output_docx_path: Path,
 ) -> Path:
-    """Pre → Render → Post."""
     template_path = Path(template_path)
     output_docx_path = Path(output_docx_path)
     if not template_path.exists():
@@ -256,14 +208,11 @@ def fill_docx_template(
 
     return output_docx_path
 
-
 def _find_soffice() -> str | None:
-    """Найти исполняемый файл LibreOffice."""
     for name in ("libreoffice", "soffice", "soffice.exe"):
         path = shutil.which(name)
         if path:
             return path
-    # Стандартные пути для Windows
     win_paths = [
         r"C:\Program Files\LibreOffice\program\soffice.exe",
         r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
@@ -273,13 +222,11 @@ def _find_soffice() -> str | None:
             return p
     return None
 
-
 def convert_docx_to_pdf(
     docx_path: Path,
     output_pdf_path: Path,
     timeout: int = 120,
 ) -> Path:
-    """Конвертирует DOCX в PDF через LibreOffice в headless-режиме."""
     docx_path = Path(docx_path)
     output_pdf_path = Path(output_pdf_path)
     if not docx_path.exists():
@@ -296,7 +243,6 @@ def convert_docx_to_pdf(
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
-        # Изолированный профиль, чтобы параллельные конвертации не блокировали друг друга
         user_profile = tmp / "lo_profile"
         result = subprocess.run(
             [
@@ -325,14 +271,12 @@ def convert_docx_to_pdf(
 
     return output_pdf_path
 
-
 def render_rpd_pdf(
     template_path: Path,
     context: dict,
     output_pdf_path: Path,
     keep_docx: bool = False,
 ) -> Path:
-    """Высокоуровневая функция: шаблон + данные → PDF."""
     output_pdf_path = Path(output_pdf_path)
     docx_path = output_pdf_path.with_suffix(".docx")
 
@@ -345,9 +289,7 @@ def render_rpd_pdf(
 
     return output_pdf_path
 
-
 def render_rpd_pdf_bytes(template_path: Path, context: dict) -> bytes:
-    """Удобная обёртка: вернуть PDF как bytes."""
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "rpd.pdf"
         render_rpd_pdf(Path(template_path), context, out, keep_docx=False)

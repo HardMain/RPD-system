@@ -1,7 +1,3 @@
-"""Read-only endpoints для БУПов и дисциплин БУПа.
-
-Создание/редактирование/импорт XLS — этап 2 (через админ-роутер с storage_service).
-"""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,7 +8,6 @@ from app.models import Bup, BupDiscipline
 from app.schemas import BupOut, BupDetailOut, BupDisciplineOut
 
 router = APIRouter(prefix="/api/bups", tags=["bups"])
-
 
 def _bup_out(b: Bup) -> BupOut:
     return BupOut(
@@ -25,7 +20,6 @@ def _bup_out(b: Bup) -> BupOut:
         direction_code=b.direction.code if b.direction else None,
         direction_name=b.direction.name if b.direction else None,
     )
-
 
 def _bd_out(bd: BupDiscipline) -> BupDisciplineOut:
     return BupDisciplineOut(
@@ -47,7 +41,6 @@ def _bd_out(bd: BupDiscipline) -> BupDisciplineOut:
         department_name=bd.department.name if bd.department else None,
     )
 
-
 @router.get("/", response_model=list[BupOut])
 async def list_bups(
     direction_id: int | None = None,
@@ -60,19 +53,11 @@ async def list_bups(
     result = await db.execute(q)
     return [_bup_out(b) for b in result.scalars().all()]
 
-
 @router.get("/disciplines", response_model=list[BupDisciplineOut])
 async def list_bup_disciplines_global(
     id_discipline: int | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Список БУП-дисциплин, обогащённый контекстом БУПа (имя плана, год, профиль,
-    направление). С фильтром по логической дисциплине — для UI создания РПД,
-    где после выбора дисциплины нужно показать все её БУП-инстансы (одна и та же
-    дисциплина может встречаться в нескольких БУПах одного направления).
-
-    Объявлен ВЫШЕ `/{bup_id}`, иначе FastAPI разрулит `/disciplines` как `bup_id="disciplines"`.
-    """
     q = (
         select(BupDiscipline)
         .options(
@@ -98,7 +83,6 @@ async def list_bup_disciplines_global(
         out.append(item)
     return out
 
-
 @router.get("/{bup_id}", response_model=BupDetailOut)
 async def get_bup(bup_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -115,7 +99,6 @@ async def get_bup(bup_id: int, db: AsyncSession = Depends(get_db)):
     base = _bup_out(b)
     return BupDetailOut(**base.model_dump(), disciplines=[_bd_out(bd) for bd in b.disciplines])
 
-
 @router.get("/{bup_id}/disciplines", response_model=list[BupDisciplineOut])
 async def list_bup_disciplines(bup_id: int, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -127,7 +110,6 @@ async def list_bup_disciplines(bup_id: int, db: AsyncSession = Depends(get_db)):
         .order_by(BupDiscipline.code)
     )
     return [_bd_out(bd) for bd in result.scalars().all()]
-
 
 @router.get("/disciplines/{bup_discipline_id}", response_model=BupDisciplineOut)
 async def get_bup_discipline(bup_discipline_id: int, db: AsyncSession = Depends(get_db)):

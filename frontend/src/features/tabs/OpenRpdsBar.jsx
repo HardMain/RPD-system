@@ -1,10 +1,7 @@
 import { T, F } from "../../theme.js";
 
-/* Чип-вкладка одной открытой РПД. Drag → переезд в другую панель. */
 function TabChip({ tab, isCurrent, pairNumber, isDragging, onDragStart, onDragEnd, onClick, onClose }) {
-  // Когда РПД открыта одновременно в режиме E и V (пара) — обоим чипам приписываем
-  // одну и ту же цифру (E1/V1, E2/V2, …), чтобы было видно, какая вкладка слева
-  // соответствует какой справа. Без пары — просто E или V без номера.
+
   const tag = (tab.mode === "edit" ? "E" : "V") + (pairNumber ?? "");
   const isPaired = pairNumber != null;
   return <div
@@ -42,8 +39,6 @@ export function OpenRpdsBar({
     return null;
   };
 
-  // Нумерация пар: id_rpd, у которых открыто >=2 вкладки, нумеруются 1, 2, …
-  // в порядке появления в openRpds. Обе вкладки одной РПД получают одну цифру.
   const pairNumberByRpd = {};
   const seenForPair = new Set();
   let pairCounter = 0;
@@ -87,12 +82,6 @@ export function OpenRpdsBar({
   const ratioPct = (splitRatio * 100).toFixed(3);
   const invRatioPct = ((1 - splitRatio) * 100).toFixed(3);
 
-  // Чтобы стык в строке вкладок СОВПАДАЛ с разделителем редактора снизу, обе группы
-  // должны делиться от ПОЛНОЙ ширины контейнера, а не от «оставшейся после метки/кнопки».
-  // Поэтому метка живёт ВНУТРИ левой группы, кнопка — внутри правой; внешний padding 0.
-  // Padding-top держим на дочерних группах (где сидят чипы), а не на самом
-  // OpenRpdsBar — иначе центральная вертикальная линия с alignSelf:stretch
-  // отступает на эти 4px от верха и не упирается в нав-полосу выше.
   return <div style={{ display: "flex", alignItems: "stretch", background: T.bg, borderBottom: "1px solid " + T.border, minHeight: 32 }}>
     {!panes.right ? (
       <div style={{ flex: 1, display: "flex", alignItems: "stretch", padding: "4px 12px 0", minWidth: 0, boxSizing: "border-box" }}>
@@ -109,13 +98,7 @@ export function OpenRpdsBar({
             {leftTabRpds.map(renderTab)}
           </div>
         </div>
-        {/* Центральная линия в строке вкладок РПД. Цвет — приглушённый T.border,
-            чтобы на главной странице разделитель не лез в глаза. Сидит строго
-            внутри OpenRpdsBar (без negative margin'ов): на главной экране это
-            важно, чтобы линия не «вылезала» за границы своей панели. С нижним
-            split-разделителем редактора (App.jsx, splitContainerRef) сходится
-            через 1px borderBottom OpenRpdsBar — этот пиксель того же цвета
-            (T.border), визуально стык чистый. */}
+
         <div title="Стык панелей" style={{ width: 2, alignSelf: "stretch", background: T.border, flexShrink: 0 }} />
         <div style={{ width: `calc(${invRatioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "4px 12px 0 6px", minWidth: 0, boxSizing: "border-box" }}>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto", flex: 1, minWidth: 0 }}>

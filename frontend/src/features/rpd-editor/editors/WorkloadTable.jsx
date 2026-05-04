@@ -1,28 +1,10 @@
 import { T } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 
-/**
- * Раздел 3 «Объём и виды учебной работы» — read-only визуализация,
- * 1:1 со структурой rpd_template.docx (TABLE 5).
- *
- * Колонок верхнего уровня три: Вид работы | Всего часов | Распределение по
- * семестрам в часах. Третья дробится на N подколонок — по одной на каждый
- * РЕАЛЬНЫЙ семестр дисциплины (берём из BD.semesters_data, который парсится
- * из блоков C16-C55 XLS-БУПа). Если у одной РПД multi-БУП (несколько привязок
- * с одинаковой нагрузкой) — семестры объединяются (по `number`); часы должны
- * совпадать по дизайну (один макет покрывает только БУПы с равными часами).
- *
- * Пустые ячейки (None в семестре) отображаются как «—», а явный 0 — как «0».
- * Это соответствует требованию XLS: незаполненная ячейка остаётся пустой и
- * в печатной форме.
- */
 export function WorkloadTable({ rpd }) {
   const bds = rpd?.bup_disciplines || [];
 
-  // Собираем уникальные семестры со всех привязок. Если у привязки нет
-  // semesters_data (старый формат БУПа без per-semester блоков) — fallback
-  // на агрегатные поля BD как один-семестровый блок.
-  const semesterMap = new Map(); // number → { lecture, lab, practice, ksr, srs, total }
+  const semesterMap = new Map();
   for (const bd of bds) {
     const sd = bd.semesters_data;
     if (sd && sd.length > 0) {
@@ -56,26 +38,14 @@ export function WorkloadTable({ rpd }) {
     .sort((a, b) => a[0] - b[0])
     .map(([n, v]) => ({ number: n, ...v }));
 
-  // Контрольная форма: чтобы строки «Экзамен/Зачёт/Курсовая…» отмечались
-  // только в нужном семестре. Парсим с любой привязки (multi-БУП обязан
-  // иметь одинаковую форму контроля по дизайну create_rpd).
   const controlMap = parseControlForm(bds[0]?.control_form || rpd?.control_form || "");
 
-  // Часы экзамена — общее значение из колонки «Экзамен» XLS-БУПа (C9). По ФГОС
-  // ВО на каждый экзамен ставится 36 ч (1 з.е.), поэтому если экзаменов
-  // несколько, в C9 кладётся суммарное (72 для двух экзаменов и т.п.). На
-  // уровне семестра делим суммарное на количество семестров с экзаменом —
-  // получим часы экзамена в каждом конкретном семестре. Если у БУПа поле
-  // exam_hours пустое (legacy/не распарсилось) — fallback на 36 ч за каждый
-  // экзамен (стандарт ФГОС).
   const examTotalHours = bds.reduce((acc, bd) => acc || bd.exam_hours || 0, 0);
   const examSemesterCount = countSemestersWith(controlMap, "экзамен");
   const examHoursPerSemester = examSemesterCount > 0
     ? Math.round(examTotalHours / examSemesterCount) || 36
     : 36;
 
-  // Ширины: «Вид работы» ≈ 49%, «Всего часов» ≈ 9%, «Распределение по семестрам»
-  // ≈ 42% — равномерно делится на N. Совпадает со структурой TABLE 5 в шаблоне.
   const SEM_GROUP_PCT = 42;
   const semColPct = (SEM_GROUP_PCT / semesters.length).toFixed(3) + "%";
 
@@ -112,7 +82,7 @@ export function WorkloadTable({ rpd }) {
               </td>
             </tr>;
           }
-          // total per row across semesters: sum of numbers, ignoring blanks
+
           const cellValues = semesters.map(s => r.value(s, controlMap, examHoursPerSemester));
           const total = cellValues.reduce((acc, v) => typeof v === "number" ? acc + v : acc, 0);
           const totalDisplay = cellValues.some(v => typeof v === "number") ? total : "";
@@ -135,25 +105,21 @@ export function WorkloadTable({ rpd }) {
   </div>;
 }
 
-
-// ─── helpers ────────────────────────────────────────────────────────────────
-
 function fmtCell(v) {
-  // Различаем null/undefined (пустая XLS-ячейка) и явный 0. Пустую отдаём
-  // как тире, как принято в БУПах ПНИПУ; явный 0 — как «0».
+
   if (v === null || v === undefined || v === "") return "";
   return String(v);
 }
 
 function sumNullable(...vals) {
-  // Сумма с поддержкой пустых ячеек: если ВСЕ пусты — None; иначе сумма чисел.
+
   const nums = vals.filter(v => typeof v === "number");
   if (nums.length === 0) return null;
   return nums.reduce((a, b) => a + b, 0);
 }
 
 function parseControlForm(raw) {
-  // «Экзамен (3), Зачёт (2)» → { 3: ['экзамен'], 2: ['зачёт'] }
+
   const out = {};
   if (!raw) return out;
   const re = /([А-Яа-яёЁ.\s]+?)\s*\(\s*([\d,\s]+)\s*\)/g;
@@ -201,13 +167,9 @@ function rpdTotalHours(rpd, bds) {
   return rpd.total_hours || 0;
 }
 
-
 const ROWS = [
   { heading: true, label: "1. Проведение учебных занятий (включая текущий контроль успеваемости) в форме:" },
-  // «Контактная аудиторная работа» в БУПах ПНИПУ = Лек + Лаб + ПЗ + КСР
-  // (ровно так заполняется колонка «Аудиторные» в XLS-БУПе). КСР затем
-  // повторно отображается отдельной строкой «из них» — это та же раскладка,
-  // что в шапке БУПа «Аудиторные → из них → Лек/Лаб/ПЗ/КСР».
+
   { label: "1.1. Контактная аудиторная работа, из них:", indent: 0,
     value: (s) => sumNullable(s.lecture, s.lab, s.practice, s.ksr) },
   { label: "— лекции (Л)", indent: 1, value: (s) => s.lecture },
@@ -217,10 +179,7 @@ const ROWS = [
   { label: "— контрольная работа", indent: 1, value: () => null },
   { label: "1.2. Самостоятельная работа студентов (СРС)", indent: 0, value: (s) => s.srs },
   { heading: true, label: "2. Промежуточная аттестация" },
-  // Часы экзамена приходят из BD.exam_hours (колонка «Экзамен» XLS-БУПа,
-  // C9). На уровне семестра — это `examHoursPerSemester` (общая сумма
-  // делится на число семестров с экзаменом). Передаём третьим аргументом
-  // в value(), чтобы не трогать парсер БУПа на каждой ячейке.
+
   { label: "Экзамен", indent: 0,
     value: (s, ctrl, examPerSem) => hasControl(ctrl, s.number, "экзамен") ? examPerSem : null },
   { label: "Дифференцированный зачёт", indent: 0,

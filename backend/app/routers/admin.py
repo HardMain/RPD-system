@@ -1,4 +1,3 @@
-"""Admin endpoints for user management and system config."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -11,11 +10,9 @@ from app.schemas import UserCreate, UserDetailOut, RoleOut, DepartmentOut
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-
 def _require_admin(user: User):
     if not user.role or user.role.name != "Администратор":
         raise HTTPException(status_code=403, detail="Доступ только для администратора")
-
 
 @router.get("/users", response_model=list[UserDetailOut])
 async def list_users(
@@ -40,7 +37,6 @@ async def list_users(
         for u in rows
     ]
 
-
 @router.post("/users", response_model=UserDetailOut, status_code=201)
 async def create_user(
     data: UserCreate,
@@ -48,7 +44,6 @@ async def create_user(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    # Check uniqueness
     existing = await db.execute(select(User).where(User.ldap_uid == data.ldap_uid))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Пользователь с таким логином уже существует")
@@ -77,7 +72,6 @@ async def create_user(
         id_role=u.id_role, id_department=u.id_department,
         created_at=u.created_at,
     )
-
 
 @router.patch("/users/{user_id}", response_model=UserDetailOut)
 async def update_user(
@@ -117,7 +111,6 @@ async def update_user(
         created_at=u.created_at,
     )
 
-
 @router.delete("/users/{user_id}", status_code=204)
 async def deactivate_user(
     user_id: int,
@@ -132,13 +125,11 @@ async def deactivate_user(
     target.is_active = False
     await db.commit()
 
-
 @router.get("/roles", response_model=list[RoleOut])
 async def list_roles(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     _require_admin(user)
     result = await db.execute(select(Role).order_by(Role.id_role))
     return result.scalars().all()
-
 
 @router.get("/departments", response_model=list[DepartmentOut])
 async def list_departments(db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -146,16 +137,12 @@ async def list_departments(db: AsyncSession = Depends(get_db), user: User = Depe
     result = await db.execute(select(Department).order_by(Department.name))
     return result.scalars().all()
 
-
-# ── Search users (for developer picker) ──
-
 @router.get("/users/search", response_model=list[UserDetailOut])
 async def search_users(
     q: str = "",
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Search users by name (available to all authenticated users for developer assignment)."""
     query = select(User).options(selectinload(User.role), selectinload(User.department))
     if q:
         query = query.where(User.full_name.ilike(f"%{q}%"))

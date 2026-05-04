@@ -9,15 +9,6 @@ import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { SOFTWARE_TYPES } from "../catalogs.js";
 
-/**
- * 6.4 «Лицензионное и свободно распространяемое программное обеспечение».
- * Шапка 1:1 с rpd_template.docx (TABLE 14): «Вид ПО | Наименование ПО».
- * На бэке колонка вида исторически называется `license_type`, переиспользуется
- * под «Вид ПО» — на UI это видно из дропдауна с SOFTWARE_TYPES.
- *
- * Inline-редактирование: значения правятся прямо в ячейках, сохранение по
- * onBlur. Пустую строку (без названия) удаляем без подтверждения.
- */
 export function SoftwareEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
@@ -36,7 +27,7 @@ export function SoftwareEditor() {
     const item = items.find(it => String(it.id_software) === String(id));
     if (item) await delRow(item);
   }
-  // PUT принимает SoftwareCreate целиком — шлём актуальное состояние всей строки.
+
   async function saveRow(item, patch) {
     try {
       await api.updateSoftware(item.id_software, {
@@ -89,7 +80,6 @@ export function SoftwareEditor() {
   </div>;
 }
 
-
 function SoftwareRow({ item, editable, onSave }) {
   const [name, setName] = useState(item.name || "");
   useEffect(() => { setName(item.name || ""); }, [item.name]);
@@ -133,9 +123,6 @@ function SoftwareRow({ item, editable, onSave }) {
     </td>
   </tr>;
 }
-
-
-// ─── Styles ─────────────────────────────────────────────────────────────────
 
 const inlineInput = {
   width: "100%",

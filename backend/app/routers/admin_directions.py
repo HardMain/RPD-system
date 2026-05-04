@@ -1,4 +1,3 @@
-"""Админ-эндпоинты управления направлениями подготовки и их ФГОС-файлами."""
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -11,7 +10,6 @@ from app.services import storage_service
 
 router = APIRouter(prefix="/api/admin/directions", tags=["admin-directions"])
 
-
 class DirectionAdminOut(BaseModel):
     id_direction: int
     code: str
@@ -21,11 +19,9 @@ class DirectionAdminOut(BaseModel):
     fgos_file_id: int | None = None
     fgos_file_name: str | None = None
 
-
 def _require_admin(user: User):
     if not user.role or user.role.name != "Администратор":
         raise HTTPException(status_code=403, detail="Доступ только для администратора")
-
 
 def _to_out(d: Direction) -> DirectionAdminOut:
     fgos = d.fgos_file
@@ -35,7 +31,6 @@ def _to_out(d: Direction) -> DirectionAdminOut:
         fgos_file_id=fgos.id_file if fgos else None,
         fgos_file_name=fgos.original_name if fgos else None,
     )
-
 
 @router.get("/", response_model=list[DirectionAdminOut])
 async def admin_list_directions(
@@ -48,7 +43,6 @@ async def admin_list_directions(
         select(Direction).options(selectinload(Direction.fgos_file)).order_by(Direction.code)
     )
     return [_to_out(d) for d in res.scalars().all()]
-
 
 @router.post("/{direction_id}/fgos", response_model=DirectionAdminOut, status_code=201)
 async def admin_upload_fgos(
@@ -66,7 +60,6 @@ async def admin_upload_fgos(
         raise HTTPException(status_code=400, detail="Ожидается PDF")
     content = await file.read()
 
-    # Удалить старый файл, если был
     if direc.id_fgos_file:
         old = await db.get(StoredFile, direc.id_fgos_file)
         if old:
@@ -90,7 +83,6 @@ async def admin_upload_fgos(
         .options(selectinload(Direction.fgos_file))
     )
     return _to_out(res.scalar_one())
-
 
 @router.delete("/{direction_id}/fgos", status_code=204)
 async def admin_remove_fgos(

@@ -2,9 +2,7 @@ import { useEffect } from "react";
 import { T } from "../theme.js";
 
 export function Modal({ children, onClose, width }) {
-  // Закрытие по Esc — стандартный паттерн для модалок: пользователь жмёт
-  // Escape, окно закрывается. Слушаем события клавиатуры на document, чтобы
-  // не зависело от того, какой элемент сейчас в фокусе внутри модалки.
+
   useEffect(() => {
     const handler = (e) => { if (e.key === "Escape") onClose(); };
     document.addEventListener("keydown", handler);

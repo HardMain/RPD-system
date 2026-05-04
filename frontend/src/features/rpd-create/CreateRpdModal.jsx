@@ -5,20 +5,6 @@ import { Modal } from "../../components/Modal.jsx";
 import { Btn } from "../../components/Btn.jsx";
 import { Input } from "../../components/Input.jsx";
 
-/**
- * Создание РПД (макета).
- *
- * Поток как в АРМ ПНИПУ:
- *   1) выбираем логическую дисциплину (например «Базы данных» в направлении
- *      09.03.04 «Программная инженерия»);
- *   2) показываем все БУП-инстансы этой дисциплины (одна и та же дисциплина
- *      обычно встречается в нескольких БУПах одного направления — разные годы,
- *      профили, факультеты), выбираем те, на которые этот макет распространяется.
- *
- * Бэк гарантирует, что все выбранные БУП-инстансы относятся к одной логической
- * дисциплине (см. валидацию в create_rpd). Создатель — зав. кафедрой / УМУ /
- * админ (ограничено на уровне UI в RpdListPage).
- */
 export function CreateRpdModal({ onClose, onCreated }) {
   const [disciplines, setDisciplines] = useState([]);
   const [discFilter, setDiscFilter] = useState("");
@@ -65,10 +51,6 @@ export function CreateRpdModal({ onClose, onCreated }) {
     setBdIds(prev => prev.size === bupDisciplines.length ? new Set() : new Set(bupDisciplines.map(b => b.id_bup_discipline)));
   }
 
-  // Multi-БУП имеет смысл только для БУПов с одинаковой нагрузкой (часы / семестр /
-  // форма контроля) — это разные редакции одной и той же дисциплины. Если различаются —
-  // должны быть отдельные РПД. Подсчитываем расхождение клиентом, чтобы дать мгновенную
-  // обратную связь и заблокировать «Создать»; та же проверка дублируется на бэке.
   const PARAM_LABELS = {
     total_hours: "общие часы",
     lecture_hours: "часы лекций",
@@ -129,7 +111,6 @@ export function CreateRpdModal({ onClose, onCreated }) {
     <div style={{ padding: 20 }}>
       <Input label="Учебный год" value={year} onChange={e => setYear(e.target.value)} />
 
-      {/* ── Шаг 1: дисциплина ─────────────────────────────────────────── */}
       <div style={{ marginBottom: 14 }}>
         <label style={labelStyle}>Дисциплина</label>
         <input
@@ -164,7 +145,6 @@ export function CreateRpdModal({ onClose, onCreated }) {
         </div>
       </div>
 
-      {/* ── Шаг 2: БУП-инстансы дисциплины ───────────────────────────── */}
       {discId && (
         <div style={{ marginBottom: 14 }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>

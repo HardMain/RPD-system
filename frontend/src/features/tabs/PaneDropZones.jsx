@@ -1,13 +1,8 @@
 import { T } from "../../theme.js";
 
-/* Зоны сброса (drop zones) — появляются только во время перетаскивания вкладки.
-   z-index выше редакторов; pointer-events:auto только у самих зон, чтобы клики
-   ниже были «съедены» только целевыми областями. */
 export function PaneDropZones({ draggingTabId, dragOverSide, onSetDragOverSide, onDropToSide }) {
   if (draggingTabId === null) return null;
 
-  // Стиль зоны: «активная» (мышь над ней) — насыщенный фон + двойная толщина рамки.
-  // «пассивная» — приглушённая. Видно куда конкретно сейчас бросишь.
   const zoneStyle = (side) => {
     const active = dragOverSide === side;
     return {

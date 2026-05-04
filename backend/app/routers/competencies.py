@@ -1,4 +1,3 @@
-"""Competencies and indicators endpoints."""
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,7 +11,6 @@ from app.schemas import CompetencyOut, IndicatorOut, DisciplineCompetencyOut
 
 router = APIRouter(prefix="/api/competencies", tags=["competencies"])
 
-
 @router.get("/", response_model=list[CompetencyOut])
 async def list_competencies(
     direction_id: int | None = None,
@@ -24,7 +22,6 @@ async def list_competencies(
     q = q.order_by(Competency.code)
     result = await db.execute(q)
     return result.scalars().all()
-
 
 def _comp_to_out(comp: Competency) -> DisciplineCompetencyOut:
     return DisciplineCompetencyOut(
@@ -41,15 +38,11 @@ def _comp_to_out(comp: Competency) -> DisciplineCompetencyOut:
         ],
     )
 
-
 @router.get("/by-discipline/{discipline_id}", response_model=list[DisciplineCompetencyOut])
 async def competencies_by_discipline(
     discipline_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Объединение всех компетенций, закреплённых в любой БУП-дисциплине,
-    относящейся к данной логической дисциплине. Сохранено для совместимости
-    с текущим UI; точечный выбор — `/by-bup-discipline/{id}`."""
     result = await db.execute(
         select(BupDisciplineCompetency)
         .join(BupDiscipline, BupDiscipline.id_bup_discipline == BupDisciplineCompetency.id_bup_discipline)
@@ -63,13 +56,11 @@ async def competencies_by_discipline(
         seen.setdefault(link.competency.id_competency, link.competency)
     return [_comp_to_out(c) for c in sorted(seen.values(), key=lambda c: c.code)]
 
-
 @router.get("/by-bup-discipline/{bup_discipline_id}", response_model=list[DisciplineCompetencyOut])
 async def competencies_by_bup_discipline(
     bup_discipline_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    """Компетенции, закреплённые в данной дисциплине БУП (как в АРМ РПД)."""
     result = await db.execute(
         select(BupDisciplineCompetency)
         .where(BupDisciplineCompetency.id_bup_discipline == bup_discipline_id)

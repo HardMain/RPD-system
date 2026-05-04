@@ -13,9 +13,6 @@ export function SectionEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
 
-  // Список семестров дисциплины: уникальные `number` из semesters_data всех
-  // привязок. Если ни у одной нет per-semester блоков (старый БУП) — fallback
-  // на первый числовой токен `bd.semester` ("1, 2" → 1).
   const planSemesters = computePlanSemesters(rpd);
   const isMultiSemester = planSemesters.length > 1;
   const fallbackSem = planSemesters[0] || 1;
@@ -37,11 +34,6 @@ export function SectionEditor() {
     } catch {}
   }
 
-  // Auto-add: каждой группе-семестру нужна хотя бы одна стартовая строка,
-  // чтобы пользователь видел, куда вводить. Срабатывает один раз на маунт
-  // редактора per group; после удаления всех строк группы повторное
-  // авто-добавление не запускается. В печатную форму пустые строки не
-  // попадают (фильтр в rpd_template_context).
   const autoAddedRef = useRef(new Set());
   useEffect(() => {
     if (!editable) return;
@@ -52,14 +44,13 @@ export function SectionEditor() {
       const has = (rpd.sections || []).some(s =>
         sem === null ? true : (s.semester === sem)
       );
-      // Для одного семестра — пустая строка появляется, если разделов нет вообще.
-      // Для multi — пустая строка нужна в каждом семестре, где её ещё нет.
+
       const needsEmpty = sem === null
         ? (rpd.sections || []).length === 0
         : !has;
       if (needsEmpty) addEmpty(sem);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [editable, isMultiSemester]);
 
   function isSectionEmpty(s) {
@@ -96,9 +87,6 @@ export function SectionEditor() {
     } catch {}
   }
 
-  // Группируем разделы по семестру. Разделы без явного semester (старые данные
-  // или одно-семестровая дисциплина) попадают в `fallbackSem`. Если у дисциплины
-  // один семестр — рисуем одну общую таблицу без заголовков-семестров.
   const sectionsBySem = new Map();
   if (isMultiSemester) {
     for (const n of planSemesters) sectionsBySem.set(n, []);
@@ -116,9 +104,7 @@ export function SectionEditor() {
 
   return <div>
     <PlanSummary bupDisciplines={rpd.bup_disciplines} sections={rpd.sections} />
-    {/* Шапка 1:1 со шаблоном rpd_template.docx (TABLE 6). Если семестров много —
-        перед каждой группой строк рисуем подзаголовок-«N-й семестр» и итоговую
-        строку «Итого» в конце группы. */}
+
     <div style={{ position: "relative" }}>
     <div className="table-scroll">
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -166,10 +152,7 @@ export function SectionEditor() {
               />
             );
           }
-          // Сначала кнопка добавления, потом «Итого» — иначе добавление шло бы
-          // ПОСЛЕ итогов, что выглядело странно (новый раздел вылезал ниже строки
-          // итогов). Кнопка живёт в конце группы перед итогом, чтобы по клику
-          // строка добавлялась прямо над итогом.
+
           if (editable) {
             groupRows.push(
               <tr key={`sem-${semNum}-add`}>
@@ -198,7 +181,7 @@ export function SectionEditor() {
           }
           return groupRows;
         })}
-        {/* Итог по всей дисциплине — для multi-semester. */}
+
         {isMultiSemester && (() => {
           const all = rpd.sections || [];
           const tLec = all.reduce((a, s) => a + (s.lecture_hours || 0), 0);
@@ -228,9 +211,6 @@ export function SectionEditor() {
   </div>;
 }
 
-// Список реальных семестров дисциплины — uniqueified по semesters_data всех
-// её BUP-привязок. Если ни у одной нет per-semester данных (старый БУП до
-// миграции этой правки), парсим первый числовой токен `bd.semester` строки.
 function computePlanSemesters(rpd) {
   const set = new Set();
   for (const bd of (rpd?.bup_disciplines || [])) {
@@ -251,21 +231,9 @@ function computePlanSemesters(rpd) {
   return [...set].sort((a, b) => a - b);
 }
 
-
-// ─── Row with inline editing ────────────────────────────────────────────────
-//
-// Все поля редактируются прямо в ячейках (как в разделе 2 — outcome textarea):
-// onChange меняет локальный буфер, onBlur коммитит изменения на бэк, если они
-// есть. Кнопка-корзина живёт ВНУТРИ последней ячейки (СРС), но визуально
-// плавает справа от таблицы за счёт left:calc(100%+8px) + overflow:visible
-// у td. Таблица при этом сохраняет ширину 100% — как у разделов 3/6/7.
 function SectionRow({ section, number, editable, onSave }) {
   const [local, setLocal] = useState(section);
-  // Локальные правки имеют приоритет над приходящим section: при clicks на спиннер
-  // input'а type="number" родитель reload'ится и шлёт «свежий» section с прежним
-  // значением (бэк ещё не сохранил), а наш буфер уже инкрементирован — без этой
-  // защиты значение откатывалось бы назад. Дёргаем setLocal только если у пользователя
-  // нет несохранённых правок (буфер совпадает по всем полям с прошлым section).
+
   const lastSyncedRef = useRef(section);
   useEffect(() => {
     const prev = lastSyncedRef.current;
@@ -351,9 +319,6 @@ function HourInput({ value, onChange, onBlur }) {
   />;
 }
 
-
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const cellNum = { ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" };
 
 const inlineInput = {
@@ -380,10 +345,6 @@ const inlineTextarea = {
   outline: "none",
 };
 
-// `field-sizing: content` — input ширится/сужается ровно под цифру внутри,
-// а не растягивается на 100% ячейки. Колонка таблицы при auto-layout берёт
-// min-content по своим ячейкам, и цифра остаётся видна, даже если соседние
-// колонки сжимаются. Поддержка: Chrome/Edge 123+, Firefox 122+, Safari 17.4+.
 const hourInput = {
   width: "auto",
   fieldSizing: "content",

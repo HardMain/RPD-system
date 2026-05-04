@@ -12,14 +12,10 @@ export function OutcomesEditor() {
   const [rows, setRows] = useState([]);
   const [tools, setTools] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  // Переключатель «текущая БУП-дисциплина». Без него при multi-БУП в таблице
-  // вперемешку оказываются индикаторы разных привязок — как в АРМ ПНИПУ это
-  // решено выпадающим списком сверху раздела 2.
+
   const bds = rpd?.bup_disciplines || [];
   const [currentBdId, setCurrentBdId] = useState(() => bds[0]?.id_bup_discipline || null);
 
-  // Если состав привязок поменялся (после reload), синхронизируем выбор: первая
-  // оставшаяся, либо null если ничего не привязано.
   useEffect(() => {
     if (bds.length === 0) { setCurrentBdId(null); return; }
     if (!bds.some(b => b.id_bup_discipline === currentBdId)) {
@@ -40,11 +36,6 @@ export function OutcomesEditor() {
     api.getAssessmentTools().then(r => setTools(r.data)).catch(() => setTools([]));
   }, [reloadRows]);
 
-  // Сохранение по blur — отправляем upsert и обновляем локальную строку.
-  // Идентифицируем запись по `id_outcome` (он всегда живой даже после удаления
-  // БУПа), `id_indicator` отправляем только как fallback для совместимости со
-  // старыми данными. После создания РПД autofill заранее ставит id_outcome
-  // каждой строке таблицы.
   async function saveRow(idx, patch) {
     const row = rows[idx];
     const next = { ...row, ...patch };
@@ -77,12 +68,7 @@ export function OutcomesEditor() {
 
   const wrap = { wordBreak: "normal", overflowWrap: "break-word" };
   return <div>
-    {/* Переключатель «текущая БУП-дисциплина»: даже если привязана одна — показываем
-        её реквизиты (БУП-код, направление), как в АРМ. Если несколько — выпадающим
-        списком переключаемся между привязками; таблица перерисовывается под её
-        компетенции. Outcomes хранятся per-индикатор, поэтому если у двух привязок
-        совпадают индикаторы (например, общая компетенция), заполненный текст там и
-        там одинаковый. */}
+
     <div style={{ marginBottom: 14, padding: "10px 12px", background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", flexShrink: 0 }}>
@@ -115,9 +101,7 @@ export function OutcomesEditor() {
       </div>
     ) : (
     <div className="table-scroll">
-    {/* Шапка и порядок колонок 1:1 с шаблоном rpd_template.docx (TABLE 4):
-         Компетенция | Индекс индикатора | Планируемые результаты обучения...
-         | Индикатор достижения компетенции... | Средства оценки */}
+
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
         <col style={{ width: "10%" }} />
@@ -135,8 +119,7 @@ export function OutcomesEditor() {
       </tr></thead>
       <tbody>
         {rows.map((r, idx) => (
-          // id_outcome — самый стабильный ключ (живёт после удаления БУПа). Для
-          // legacy-РПД, где outcome ещё не создан — fallback на id_indicator.
+
           <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`}>
             <td style={{ ...td, ...wrap }}><b>{r.competency_code}</b></td>
             <td style={{ ...td, ...wrap }}>{r.indicator_code}</td>
@@ -165,7 +148,6 @@ export function OutcomesEditor() {
   </div>;
 }
 
-
 function OutcomeTextarea({ value, disabled, onSave }) {
   const [local, setLocal] = useState(value);
   useEffect(() => { setLocal(value); }, [value]);
@@ -182,14 +164,11 @@ function OutcomeTextarea({ value, disabled, onSave }) {
   />;
 }
 
-
 function AssessmentToolPicker({ value, tools, disabled, onSave }) {
   if (disabled) {
     return <div style={{ padding: "6px 8px", fontSize: 13, color: T.text }}>{value || ""}</div>;
   }
-  // Значения средств оценки уникальны по name (так же ключуем backend-список),
-  // поэтому value/label дропдауна — это просто name. clearLabel позволяет
-  // вернуться в «не выбрано», без отдельной кнопки X.
+
   const options = tools.map(t => ({ value: t.name, label: t.name }));
   return <Dropdown
     value={value || ""}

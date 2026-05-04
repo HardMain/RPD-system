@@ -1,15 +1,7 @@
-"""Curriculum-domain models: directions, disciplines, competencies and indicators.
-
-Discipline здесь — это *логический* справочник имён дисциплин по направлению.
-Атрибуты часов, семестра, формы контроля и закрепления компетенций живут
-в `BupDiscipline` (см. `app.models.bup`), потому что они зависят от пары
-(дисциплина, БУП), а не только от дисциплины.
-"""
 from sqlalchemy import Column, Integer, String, Text, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
-
 
 class Direction(Base):
     __tablename__ = "directions"
@@ -24,24 +16,13 @@ class Direction(Base):
     bups = relationship("Bup", back_populates="direction", cascade="all, delete-orphan")
     fgos_file = relationship("StoredFile", foreign_keys=[id_fgos_file])
 
-
 class Discipline(Base):
-    """Логический справочник имён дисциплин — независимый от направления.
-
-    Одна и та же дисциплина (например, «Базы данных») может читаться на разных
-    направлениях, и преподаватель ведёт её как одну сущность. Контекст направления/
-    профиля/факультета хранится на уровне `BupDiscipline` (через её БУП), а не на
-    уровне самой дисциплины. Это нужно, чтобы один макет РПД мог покрывать одну
-    и ту же дисциплину сразу в нескольких направлениях с одинаковой нагрузкой,
-    но разными формируемыми компетенциями (как multi-БУП в АРМ ПНИПУ).
-    """
     __tablename__ = "disciplines"
     id_discipline = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False, unique=True)
 
     rpds = relationship("Rpd", back_populates="discipline")
     bup_disciplines = relationship("BupDiscipline", back_populates="discipline")
-
 
 class Competency(Base):
     __tablename__ = "competencies"
@@ -54,7 +35,6 @@ class Competency(Base):
     indicators = relationship("CompetencyIndicator", back_populates="competency")
     bup_discipline_links = relationship("BupDisciplineCompetency", back_populates="competency")
 
-
 class CompetencyIndicator(Base):
     __tablename__ = "competency_indicators"
     id_indicator = Column(Integer, primary_key=True, autoincrement=True)
@@ -64,12 +44,7 @@ class CompetencyIndicator(Base):
 
     competency = relationship("Competency", back_populates="indicators")
 
-
 class AssessmentTool(Base):
-    """Справочник «Средства оценки» (Экзамен, Зачёт, Защита лаб. работы и т.п.).
-
-    Используется как dropdown при заполнении РПД. Админ может расширять список.
-    """
     __tablename__ = "assessment_tools"
     id_assessment_tool = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(200), nullable=False, unique=True)

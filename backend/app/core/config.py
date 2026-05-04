@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings
 
-
 class Settings(BaseSettings):
     DATABASE_URL: str = "postgresql+asyncpg://rpd_user:rpd_secret@db:5432/rpd_db"
     SECRET_KEY: str = "super-secret-dev-key-change-in-prod"
@@ -11,8 +10,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "/app/uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
 
-    # Файловое хранилище
-    STORAGE_BACKEND: str = "s3"  # 'local' | 's3' (MinIO / любой S3-совместимый)
+    STORAGE_BACKEND: str = "s3"
     S3_ENDPOINT: str = "minio:9000"
     S3_BUCKET: str = "rpd-files"
     S3_ACCESS_KEY: str = "rpd_minio"
@@ -22,6 +20,5 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
-
 
 settings = Settings()

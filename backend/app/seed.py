@@ -1,9 +1,3 @@
-"""Demo seed data — populates the database with roles, departments, users,
-directions, disciplines, BUP, BUP-disciplines, competencies and 4 sample RPDs
-on first startup.
-
-Idempotent: if any role exists, the seed is skipped.
-"""
 from sqlalchemy import select
 
 from app.core.database import async_session
@@ -16,10 +10,7 @@ from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
 )
 
-
 async def seed_reference():
-    """Идемпотентно засеять справочники, не зависящие от демо-данных
-    (средства оценки и т.п.). Запускается при каждом старте."""
     async with async_session() as db:
         existing = await db.execute(select(AssessmentTool))
         if existing.scalars().first():
@@ -43,16 +34,13 @@ async def seed_reference():
             db.add(AssessmentTool(name=name))
         await db.commit()
 
-
 async def seed_data():
-    """Populate database with demo data matching the prototype."""
     await seed_reference()
     async with async_session() as db:
         existing = await db.execute(select(Role))
         if existing.scalars().first():
             return
 
-        # ── Roles ──
         r_teacher = Role(name="Преподаватель")
         r_head = Role(name="Зав. кафедрой")
         r_umu = Role(name="Сотрудник УМУ")
@@ -60,7 +48,6 @@ async def seed_data():
         db.add_all([r_teacher, r_head, r_umu, r_admin])
         await db.flush()
 
-        # ── Department ──
         dept = Department(
             name="Информационных технологий и автоматизированных систем",
             faculty="Электротехнический факультет",
@@ -68,7 +55,6 @@ async def seed_data():
         db.add(dept)
         await db.flush()
 
-        # ── Users ──
         pwd = hash_password("password")
         teacher = User(
             id_role=r_teacher.id_role, id_department=dept.id_department,
@@ -93,7 +79,6 @@ async def seed_data():
         db.add_all([teacher, teacher2, head, admin_user])
         await db.flush()
 
-        # ── Direction ──
         dir1 = Direction(
             code="09.03.04", name="Программная инженерия",
             profile="Разработка программно-информационных систем",
@@ -102,7 +87,6 @@ async def seed_data():
         db.add(dir1)
         await db.flush()
 
-        # ── Competencies ──
         comp1 = Competency(
             id_direction=dir1.id_direction, code="ОПК-1",
             name="Способен применять естественнонаучные и общеинженерные знания, методы математического анализа и моделирования",
@@ -134,7 +118,6 @@ async def seed_data():
         db.add_all([ci1, ci2, ci3, ci4, ci4b, ci5, ci7a, ci7b, ci7c])
         await db.flush()
 
-        # ── Disciplines (логический справочник, независимый от направления) ──
         d_inf = Discipline(name="Информатика")
         d_kg = Discipline(name="Компьютерная графика")
         d_phys = Discipline(name="Физика")
@@ -143,7 +126,6 @@ async def seed_data():
         db.add_all([d_inf, d_kg, d_phys, d_db, d_algo])
         await db.flush()
 
-        # ── BUP (демонстрационный учебный план направления ПИ-2024) ──
         bup1 = Bup(
             id_direction=dir1.id_direction,
             name="2024 ЭТФ ПИ б (полный)",
@@ -154,11 +136,6 @@ async def seed_data():
         db.add(bup1)
         await db.flush()
 
-        # ── BupDiscipline (часы и атрибуты в плане) ──
-        # Незанятые виды часов оставляем как None (а не 0): печатная форма
-        # раздела 3 ставит «—» на None, а 0 — это явный «ноль часов» (т.е.
-        # вид занятий есть, но нагрузки не запланировано). В XLS-БУПе они
-        # тоже в этих ячейках именно пустые, а не нули.
         bd_inf = BupDiscipline(
             id_bup=bup1.id_bup, id_discipline=d_inf.id_discipline,
             id_department=dept.id_department,
@@ -166,8 +143,6 @@ async def seed_data():
             total_hours=252, exam_hours=36,
             lecture_hours=26, lab_hours=56, practice_hours=None,
             ksr_hours=None, self_study_hours=126, zet=7,
-            # Часы по семестрам — берём из inf_sections ниже (sum по группам
-            # 1–10 = 1 сем., 11–14 = 2 сем.).
             semesters_data=[
                 {"number": 1, "lecture": 18, "lab": 32, "practice": None, "ksr": None, "srs": 90},
                 {"number": 2, "lecture": 8,  "lab": 24, "practice": None, "ksr": None, "srs": 36},
@@ -221,7 +196,6 @@ async def seed_data():
         db.add_all([bd_inf, bd_kg, bd_phys, bd_db, bd_algo])
         await db.flush()
 
-        # ── BupDiscipline-Competency links (закрепление в плане) ──
         db.add_all([
             BupDisciplineCompetency(id_bup_discipline=bd_inf.id_bup_discipline, id_competency=comp1.id_competency),
             BupDisciplineCompetency(id_bup_discipline=bd_inf.id_bup_discipline, id_competency=comp2.id_competency),
@@ -236,7 +210,6 @@ async def seed_data():
         ])
         await db.flush()
 
-        # ── RPDs ──
         rpd1 = Rpd(id_discipline=d_inf.id_discipline, id_author=teacher.id_user, academic_year="2025/2026", status="Черновик")
         rpd2 = Rpd(
             id_discipline=d_kg.id_discipline, id_author=teacher.id_user,
@@ -314,7 +287,6 @@ async def seed_data():
         db.add_all([rpd1, rpd2, rpd3, rpd4])
         await db.flush()
 
-        # ── Привязка РПД к BupDiscipline (multi-БУП-связки) ──
         rpd_bd_pairs = [
             (rpd1, bd_inf), (rpd2, bd_kg), (rpd3, bd_phys), (rpd4, bd_inf),
         ]
@@ -322,8 +294,6 @@ async def seed_data():
             db.add(RpdBupDiscipline(id_rpd=r.id_rpd, id_bup_discipline=bd.id_bup_discipline))
         await db.flush()
 
-        # ── Sections for rpd2 (КГ) — один семестр (5), поле semester можно
-        #    не выставлять, UI рисует одну общую таблицу.
         kg_sections = [
             ("Введение в компьютерную графику", "История, классификация, области применения КГ.", 4, 0, 4, 16),
             ("Растровая графика", "Алгоритмы растеризации, заполнение областей.", 6, 0, 8, 24),
@@ -336,9 +306,6 @@ async def seed_data():
                               lecture_hours=lec, practice_hours=prac, lab_hours=lab, self_study_hours=srs,
                               semester=5))
 
-        # ── Sections for rpd3 (Физика) — два семестра. Первые 5 разделов
-        #    — 1-й семестр (механика+термодинамика), последние 4 — 2-й
-        #    семестр (электричество, оптика, кванты).
         phys_sections = [
             (1, "Кинематика", "Основные понятия кинематики, виды движения.", 4, 2, 2, 8),
             (1, "Динамика", "Законы Ньютона, силы в природе.", 4, 2, 2, 8),
@@ -355,10 +322,6 @@ async def seed_data():
                               lecture_hours=lec, practice_hours=prac, lab_hours=lab, self_study_hours=srs,
                               semester=sem))
 
-        # ── Sections for rpd4 (Информатика, архивная) — по примеру из ПНИПУ ──
-        # Кортеж: (semester, title, content, lec, prac, lab, srs).
-        # Первые 10 разделов — 1-й семестр, последние 4 — 2-й семестр
-        # (соответствует суммам в bd_inf.semesters_data выше).
         inf_sections = [
             (1, "Основные понятия теории информации",
              "Цели и задачи информатики. Понятие информации, общая характеристика процессов сбора, передачи, обработки и накопления информации. Свойства информации. Данные. Операции с данными. Кодирование текстовых, числовых, графических данных. Основные структуры: линейные, табличные, иерархические. Системы счисления. Единицы представления, измерения и хранения данных.",
@@ -409,8 +372,6 @@ async def seed_data():
                               semester=sem))
         await db.flush()
 
-        # ── Тематика лабораторных работ для rpd4 ──
-        # Темы хранятся плоским списком на самом РПД (без разделов).
         lab_topic_titles = [
             "Разработка программной документации",
             "Линейные алгоритмы",
@@ -424,26 +385,19 @@ async def seed_data():
         for title in lab_topic_titles:
             db.add(RpdTopic(id_rpd=rpd4.id_rpd, topic_type="lab", title=title))
 
-        # ── Literature ──
-        # source_type — один из видов литературы из новой формы 6.1/6.2.
-        # Электронные записи (с url) могут содержать `availability` — список ЭБС.
         UCH = "Учебные и научные издания"
         METH = "Методические указания для студентов по освоению дисциплины"
-        # КГ
         db.add_all([
             RpdLiterature(id_rpd=rpd2.id_rpd, source_type=UCH, title="Компьютерная графика и геометрическое моделирование (Никулин Е.А., БХВ-Петербург, 2021)"),
             RpdLiterature(id_rpd=rpd2.id_rpd, source_type=UCH, title="Основы компьютерной графики (Шикин Е.В., Боресков А.В., Диалог-МИФИ, 2020)"),
             RpdLiterature(id_rpd=rpd2.id_rpd, source_type=UCH, title="OpenGL. Программирование компьютерной графики (Боресков А.В., Питер, 2019)"),
         ])
-        # Физика
         db.add_all([
             RpdLiterature(id_rpd=rpd3.id_rpd, source_type=UCH, title="Курс общей физики. Т. 1-3 (Савельев И.В., Лань, 2020)"),
             RpdLiterature(id_rpd=rpd3.id_rpd, source_type=UCH, title="Курс физики (Трофимова Т.И., Академия, 2019)"),
             RpdLiterature(id_rpd=rpd3.id_rpd, source_type=UCH, title="Задачи по общей физике (Иродов И.Е., Бином, 2021)"),
         ])
-        # Информатика — по примеру из ПНИПУ
         db.add_all([
-            # Печатная литература (с copies_count)
             RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
                           title="Информатика. Базовый курс: учебное пособие для втузов. 3-е изд. (Симонович С.В. и др., Питер, 2020)",
                           copies_count=30),
@@ -462,7 +416,6 @@ async def seed_data():
             RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
                           title="C/C++. Структурное и объектно-ориентированное программирование: практикум (Павловская Т.А., Щупак Ю.А., Питер, 2011)",
                           copies_count=14),
-            # Электронные (url + availability)
             RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
                           title="Язык программирования C (Керниган Б.В., 2017)",
                           url="http://www.iprbookshop.ru/73736.html",
@@ -477,8 +430,6 @@ async def seed_data():
                           availability=["IPRsmart"]),
         ])
 
-        # ── Software for rpd4 (Информатика) ──
-        # license_type — Вид ПО, name — Наименование ПО.
         db.add_all([
             RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Операционные системы", name="Debian (GNU GPL)"),
             RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Операционные системы", name="Windows 10 (Azure Dev Tools for Teaching)"),
@@ -488,14 +439,11 @@ async def seed_data():
             RpdSoftware(id_rpd=rpd4.id_rpd, license_type="СУБД", name="PostgreSQL (PostgreSQL License)"),
         ])
 
-        # ── Material-Tech for rpd4 ──
         db.add_all([
             RpdMaterialTech(id_rpd=rpd4.id_rpd, room_type="Лабораторная работа", equipment="Персональный компьютер", quantity=30),
             RpdMaterialTech(id_rpd=rpd4.id_rpd, room_type="Лекция", equipment="Мультимедийный проектор", quantity=1),
         ])
 
-        # ── Базы данных и ИСС для rpd4 (стандартный перечень ПНИПУ) ──
-        # db_type — Вид БД, name — Наименование БД.
         db.add_all([
             RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Полнотекстовая", name="Elsevier «Freedom Collection»"),
             RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Полнотекстовая", name="Springer Nature e-books"),
@@ -507,7 +455,6 @@ async def seed_data():
             RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Информационно-справочная", name="Техэксперт: нормы, правила, стандарты и законодательства России"),
         ])
 
-        # ── Learning outcomes for rpd4 (ОПК-2, ОПК-7) ──
         db.add_all([
             RpdLearningOutcome(id_rpd=rpd4.id_rpd, id_indicator=ci3.id_indicator,
                                outcome_text="Знает современные информационные технологии и программные средства отечественного и зарубежного производства, способные решать задачи в рамках заданной предметной области",
@@ -529,19 +476,16 @@ async def seed_data():
                                assessment_tool="Экзамен"),
         ])
 
-        # ── Software for rpd2 (КГ) ──
         db.add_all([
             RpdSoftware(id_rpd=rpd2.id_rpd, name="Visual Studio Code", license_type="Свободное ПО", purpose="Редактор кода"),
             RpdSoftware(id_rpd=rpd2.id_rpd, name="Blender", license_type="GPL", purpose="3D-моделирование"),
         ])
 
-        # ── Material-Tech for rpd3 ──
         db.add_all([
             RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Лекционная аудитория", equipment="Проектор, экран, компьютер преподавателя"),
             RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Физическая лаборатория", equipment="Лабораторные стенды, измерительные приборы"),
         ])
 
-        # ── Learning outcomes for rpd3 ──
         db.add_all([
             RpdLearningOutcome(id_rpd=rpd3.id_rpd, id_indicator=ci1.id_indicator,
                                outcome_text="Применяет методы физического анализа при решении инженерных задач",
@@ -551,12 +495,10 @@ async def seed_data():
                                assessment_tool="Лабораторная работа"),
         ])
 
-        # ── Developers ──
         db.add(RpdDeveloper(id_rpd=rpd2.id_rpd, id_user=teacher.id_user))
         db.add(RpdDeveloper(id_rpd=rpd3.id_rpd, id_user=teacher.id_user))
         db.add(RpdDeveloper(id_rpd=rpd4.id_rpd, id_user=teacher.id_user))
 
-        # ── Notifications ──
         db.add_all([
             Notification(id_user=teacher.id_user, id_rpd=rpd3.id_rpd, message="РПД Физика отправлена на согласование", is_read=False),
             Notification(id_user=teacher.id_user, id_rpd=rpd4.id_rpd, message="РПД Информатика согласована", is_read=False),

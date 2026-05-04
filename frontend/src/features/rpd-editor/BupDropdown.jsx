@@ -1,22 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { T, F } from "../../theme.js";
 
-/**
- * Кастомный выпадающий список БУП-привязок. Используется в редакторе раздела 2
- * («Дисциплина БУП») и в PDF-тулбаре.
- *
- * Сделан вместо нативного `<select>` потому что:
- * - native-select раскрывается шире контейнера, если самый длинный option
- *   длиннее, и улетает за границу страницы;
- * - native-select не умеет переносить текст опции на несколько строк, у нас же
- *   подписи привязок длинные («2015 ЭТФ ПИ б (полный) · Б1.Б.08»).
- *
- * Этот дропдаун:
- * - в закрытом виде показывает текущую подпись с обрезкой по ellipsis,
- *   справа — стрелка ▾, текст не наезжает на стрелку (у кнопки правый паддинг);
- * - в раскрытом — попап шириной ровно как кнопка, длинные подписи переносятся
- *   по словам.
- */
 export function BupDropdown({ bds, value, onChange, compact = false, title }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
@@ -41,10 +25,7 @@ export function BupDropdown({ bds, value, onChange, compact = false, title }) {
     `${b.bup_year ? b.bup_year + " " : ""}${b.bup_name || "БУП"}${b.code ? ` · ${b.code}` : ""}`;
 
   const fontSize = compact ? 12 : 13;
-  // В compact-режиме (PDF-тулбар) дропдаун визуально выравнивается с соседними
-  // Btn small («↻ Обновить», «Скачать»): шрифт 12/600, padding 4×12, скругление 5,
-  // высота определяется паддингом, а не fixed height, чтобы кнопка не выглядела
-  // мельче/толще соседей.
+
   const buttonStyle = compact
     ? { padding: "4px 28px 4px 12px", fontWeight: 600, borderRadius: 5 }
     : { padding: "6px 26px 6px 10px", borderRadius: 4 };

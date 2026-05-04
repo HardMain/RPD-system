@@ -1,7 +1,5 @@
-"""Curriculum schemas: directions, disciplines, competencies."""
 from __future__ import annotations
 from pydantic import BaseModel
-
 
 class DirectionOut(BaseModel):
     id_direction: int
@@ -13,15 +11,7 @@ class DirectionOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class DisciplineOut(BaseModel):
-    """Логическая дисциплина (справочник имён, независимый от направления).
-
-    Контекст направления/часов/семестра живёт в BupDiscipline. Поля часов
-    остались опциональными — некоторые эндпоинты заполняют их из
-    «представительной» BupDiscipline для совместимости с UI, который
-    привык получать всё в одном объекте.
-    """
     id_discipline: int
     name: str
     code: str | None = None
@@ -36,7 +26,6 @@ class DisciplineOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class IndicatorOut(BaseModel):
     id_indicator: int
     code: str
@@ -44,7 +33,6 @@ class IndicatorOut(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 class CompetencyOut(BaseModel):
     id_competency: int
@@ -55,10 +43,7 @@ class CompetencyOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class DisciplineCompetencyOut(BaseModel):
-    """Backwards-compat: сейчас под капотом тянем из BupDiscipline-связки,
-    схема ответа осталась прежней."""
     id_competency: int
     code: str
     name: str

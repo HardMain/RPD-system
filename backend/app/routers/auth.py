@@ -11,7 +11,6 @@ from app.schemas import LoginRequest, TokenResponse, UserOut
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
-
 @router.post("/login", response_model=TokenResponse)
 async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
@@ -34,7 +33,6 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = 
             department=user.department.name if user.department else "",
         ),
     )
-
 
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)):

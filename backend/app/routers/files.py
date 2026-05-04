@@ -1,4 +1,3 @@
-"""Просмотр/скачивание файлов из stored_files. Доступно всем авторизованным."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -8,7 +7,6 @@ from app.models import StoredFile, User
 from app.services import storage_service
 
 router = APIRouter(prefix="/api/files", tags=["files"])
-
 
 @router.get("/{file_id}")
 async def download_file(

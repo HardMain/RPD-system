@@ -4,10 +4,6 @@ import { hdr, tcell } from "../styles.js";
 import { DownloadIcon, EyeIcon } from "../components/icons.jsx";
 import { StatusBadge } from "./RpdListPage.jsx";
 
-/* В архиве лежат только согласованные РПД, поэтому фильтра по статусу нет.
-   Поиск, сортировка по колонкам и цветной бэйдж статуса — те же, что на
-   главной странице, чтобы UI был единообразным. Действия — только просмотр
-   и скачивание PDF: редактировать архивную РПД нельзя. */
 const COLS = [
   { key: "direction_code", label: "Направление", align: "left", sortable: true, accessor: r => r.direction_code || "" },
   { key: "discipline_name", label: "Дисциплина", align: "left", sortable: true, accessor: r => r.discipline_name || "" },

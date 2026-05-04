@@ -8,13 +8,6 @@ import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 
-/**
- * Раздел 7 «Материально-техническое обеспечение». Шапка 1:1 с rpd_template.docx
- * (TABLE 15): «Вид занятий | Наименование необходимого основного оборудования
- * | Количество единиц». На бэке поле «Вид занятий» исторически называется
- * `room_type` — переиспользуется под template-семантику (см. backend
- * rpd_template_context.py: lesson_type ← room_type).
- */
 export function MtechEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
@@ -88,14 +81,11 @@ export function MtechEditor() {
   </div>;
 }
 
-
 function MtechRow({ item, editable, onSave }) {
   const [roomType, setRoomType] = useState(item.room_type || "");
   const [equipment, setEquipment] = useState(item.equipment || "");
   const [quantity, setQuantity] = useState(item.quantity == null ? "" : String(item.quantity));
-  // Защита от «отката» свежего ввода: useEffect больше не перезатирает буфер
-  // безусловно — только если пользователь не успел напечатать что-то новое
-  // (live-ввод сравнивается с предыдущим серверным значением через ref).
+
   const roomRef = useRef(item.room_type || "");
   const equipRef = useRef(item.equipment || "");
   const qtyRef = useRef(item.quantity == null ? "" : String(item.quantity));
@@ -171,9 +161,6 @@ function MtechRow({ item, editable, onSave }) {
   </tr>;
 }
 
-
-// ─── Styles ─────────────────────────────────────────────────────────────────
-
 const inlineInput = {
   width: "100%",
   padding: "4px 6px",
@@ -197,8 +184,6 @@ const inlineTextarea = {
   outline: "none",
 };
 
-// `field-sizing: content` — ширина инпута по содержимому цифры, чтобы при
-// сжатии таблицы колонка не схлопывалась в 0.
 const inlineNumber = {
   width: "auto",
   fieldSizing: "content",

@@ -2,19 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { T, F } from "../theme.js";
 
-/**
- * Множественный выбор с чекбоксами в выпадающем списке.
- *
- * options — массив строк (значение и подпись совпадают; при необходимости
- *           переделать на { value, label } по образцу Dropdown).
- * value   — массив выбранных строк.
- * onChange(arr) — вызывается с новым массивом при отметке/снятии чекбокса.
- *
- * Стилизован одинаково с Dropdown: закрытое — кнопка с подписью «X выбрано» /
- * списком выбранных через запятую, открытое — попап со списком вариантов и
- * чекбоксами слева. Попап через React-портал в body, чтобы не клипаться внутри
- * `overflow-x: auto` (горизонтальный скролл таблицы).
- */
 export function MultiSelectDropdown({ value, onChange, options, placeholder = "Не выбрано", disabled = false, title }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState(null);

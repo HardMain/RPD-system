@@ -1,11 +1,3 @@
-"""Импортёр распарсенного БУПа в БД.
-
-Превращает `ParsedBup` в записи `Bup`, `BupDiscipline`, `BupDisciplineCompetency`,
-а также при необходимости создаёт справочные `Direction`, `Discipline`,
-`Competency`, `Department`. Идемпотентен по паре `(name, year, id_direction)`:
-если БУП с тем же именем и годом для направления уже есть, импорт перевыкатывает
-его дисциплины (старые удаляются каскадом).
-"""
 from __future__ import annotations
 
 import re
@@ -20,15 +12,10 @@ from app.models import (
 )
 from app.services.bup_parser import ParsedBup, ParsedDiscipline, ParsedSemester
 
-
 def _normalize_competency_code(code: str) -> str:
-    """Привести код к канонической форме: 'ОК-2', 'ОПК-1', 'ПК-23', 'ПСК-1'.
-
-    XLS использует неразрывный дефис ‑, лишние пробелы — нормализуем."""
     s = code.replace("‑", "-").strip()
     s = re.sub(r"\s+", "", s)
     return s
-
 
 async def _get_or_create_direction(
     db: AsyncSession, code: str | None, name: str | None, profile: str | None
@@ -43,7 +30,6 @@ async def _get_or_create_direction(
     res = await db.execute(q)
     d = res.scalars().first()
     if d:
-        # обновим профиль, если был не задан
         if profile and not d.profile:
             d.profile = profile
         return d
@@ -57,24 +43,13 @@ async def _get_or_create_direction(
     await db.flush()
     return d
 
-
 def _normalize_discipline_name(raw: str) -> str:
-    """Нормализуем имя дисциплины перед поиском/созданием. Без этого один и тот же
-    предмет в двух XLS-БУПах часто оказывается двумя разными записями: где-то
-    лишние пробелы, где-то неразрывный пробел (U+00A0), где-то перенос строки.
-    Тогда multi-БУП «не подхватывает» дисциплину как одну."""
     if not raw:
         return ""
-    # Заменяем неразрывный пробел на обычный, затем схлопываем все пробельные
-    # последовательности (включая табы и переносы) в одиночный пробел и обрезаем края.
     s = raw.replace(" ", " ").replace(" ", " ").replace(" ", " ")
     s = " ".join(s.split())
-    # Чиним латинские буквы-омоглифы среди кириллицы. Типичная очепятка в XLS:
-    # «Физическaя культура» — латинская `a` вместо русской `а», визуально
-    # идентично, но строки сравниваются по-разному и дисциплина задваивается.
     s = _fix_latin_homoglyphs(s)
     return s
-
 
 _LATIN_TO_CYRILLIC_HOMOGLYPHS = {
     "A": "А", "a": "а", "B": "В", "C": "С", "c": "с", "E": "Е", "e": "е",
@@ -82,11 +57,7 @@ _LATIN_TO_CYRILLIC_HOMOGLYPHS = {
     "T": "Т", "X": "Х", "x": "х", "y": "у", "Y": "У",
 }
 
-
 def _fix_latin_homoglyphs(s: str) -> str:
-    """Заменяем латинские буквы-омоглифы на кириллические — но только там, где
-    соседняя буква уже кириллица. Не трогаем легитимные латинские слова
-    (`MS Office`, `C++`, `IDEF0`)."""
     def is_cyr(ch: str) -> bool:
         return "Ѐ" <= ch <= "ӿ"
     out: list[str] = []
@@ -101,11 +72,7 @@ def _fix_latin_homoglyphs(s: str) -> str:
         out.append(ch)
     return "".join(out)
 
-
 async def _get_or_create_discipline(db: AsyncSession, name: str) -> Discipline:
-    """Найти или создать логическую дисциплину по имени. Дисциплина больше не
-    привязана к направлению — одна и та же дисциплина может встречаться в БУПах
-    разных направлений (см. модель Discipline)."""
     name = _normalize_discipline_name(name)
     if not name:
         raise ValueError("Имя дисциплины пустое после нормализации")
@@ -117,7 +84,6 @@ async def _get_or_create_discipline(db: AsyncSession, name: str) -> Discipline:
     db.add(d)
     await db.flush()
     return d
-
 
 async def _get_or_create_department(
     db: AsyncSession, name: str | None, faculty: str | None,
@@ -133,7 +99,6 @@ async def _get_or_create_department(
     await db.flush()
     return d
 
-
 async def _get_or_create_competency(
     db: AsyncSession, code: str, id_direction: int
 ) -> Competency:
@@ -147,21 +112,13 @@ async def _get_or_create_competency(
     if c:
         await _ensure_at_least_one_indicator(db, c)
         return c
-    # Имя пока не знаем — placeholder; админ может дозаполнить вручную позже.
     c = Competency(code=code, name="(требуется заполнение)", id_direction=id_direction)
     db.add(c)
     await db.flush()
     await _ensure_at_least_one_indicator(db, c)
     return c
 
-
 async def _ensure_at_least_one_indicator(db: AsyncSession, comp: Competency) -> None:
-    """Гарантируем, что у компетенции есть хотя бы один индикатор. Без этого
-    раздел 2 «Планируемые результаты» в РПД будет пустым: outcomes хранятся
-    per-индикатор, и при отсутствии индикаторов JOIN в `get_outcomes_table`
-    возвращает пустую таблицу. XLS-импорт о реальных индикаторах не знает,
-    поэтому создаём плейсхолдер `<КОД>.1` — админ сможет его переименовать или
-    добавить рядом настоящие индикаторы через админ-панель."""
     res = await db.execute(
         select(CompetencyIndicator).where(CompetencyIndicator.id_competency == comp.id_competency).limit(1)
     )
@@ -174,11 +131,7 @@ async def _ensure_at_least_one_indicator(db: AsyncSession, comp: Competency) -> 
     ))
     await db.flush()
 
-
 def _semesters_to_jsonb(semesters: list[ParsedSemester]) -> list[dict] | None:
-    """Сериализуем `list[ParsedSemester]` в JSONB-формат, ожидаемый моделью.
-    None значит «семестров нет в XLS» — UI и шаблон возьмут агрегатные поля
-    BupDiscipline и сделают вид, что семестр один (legacy-сценарий)."""
     if not semesters:
         return None
     return [
@@ -193,9 +146,7 @@ def _semesters_to_jsonb(semesters: list[ParsedSemester]) -> list[dict] | None:
         for s in semesters
     ]
 
-
 def _build_bup_name(parsed: ParsedBup, year: int | None) -> str:
-    """Сборка человекочитаемого имени БУПа: '2024 ЭТФ ПИ б (полный)'."""
     parts: list[str] = []
     if year:
         parts.append(str(year))
@@ -207,7 +158,6 @@ def _build_bup_name(parsed: ParsedBup, year: int | None) -> str:
         parts.append(parsed.direction_name)
     return " — ".join(parts) or "Без названия"
 
-
 async def import_parsed_bup(
     db: AsyncSession,
     parsed: ParsedBup,
@@ -216,20 +166,11 @@ async def import_parsed_bup(
     name_override: str | None = None,
     id_source_file: int | None = None,
 ) -> Bup:
-    """Импортировать ParsedBup в БД и вернуть созданный/обновлённый Bup.
-
-    Идемпотентность: ищем существующий БУП по (name, year, id_direction).
-    Если найден — обновляем его дисциплины *по индексу* (Б1.Б.01 и т.п.):
-    существующие BupDiscipline остаются с теми же id (RpdBupDiscipline-ссылки
-    у уже созданных РПД не теряются), новые добавляются, лишние удаляются.
-    """
     direction = await _get_or_create_direction(
         db, parsed.direction_code, parsed.direction_name, parsed.profile,
     )
     name = name_override or _build_bup_name(parsed, year)
 
-    # Идемпотентный поиск с eager-load существующих BupDiscipline (и их компетенций),
-    # чтобы дальше не упасть на async lazy-load при обращении к bup.disciplines.
     res = await db.execute(
         select(Bup)
         .where(Bup.id_direction == direction.id_direction)
@@ -269,8 +210,6 @@ async def import_parsed_bup(
         existing = existing_by_code.get(pd.code or "")
         sems_jsonb = _semesters_to_jsonb(pd.semesters)
         if existing is not None:
-            # Обновляем поля существующей строки — id_bup_discipline сохраняется,
-            # привязки RpdBupDiscipline у уже созданных РПД остаются валидны.
             seen_codes.add(pd.code or "")
             existing.id_discipline = disc.id_discipline
             existing.id_department = dept.id_department if dept else None
@@ -285,8 +224,6 @@ async def import_parsed_bup(
             existing.self_study_hours = pd.self_study_hours
             existing.zet = pd.zet
             existing.semesters_data = sems_jsonb
-            # Перезагружаем компетенции: проще снести и собрать заново — это
-            # дочерняя коллекция, на неё никто извне не ссылается.
             for link in list(existing.competencies):
                 await db.delete(link)
             await db.flush()
@@ -322,9 +259,6 @@ async def import_parsed_bup(
                 id_competency=comp.id_competency,
             ))
 
-    # Удаляем дисциплины, которых нет в новой версии xls (обычно ничего —
-    # реимпорт того же файла идентичен). Каскад снесёт competency-link и любой
-    # «сирота» RpdBupDiscipline у теоретически устаревших позиций.
     if existing_by_code:
         for code, bd in existing_by_code.items():
             if code not in seen_codes:

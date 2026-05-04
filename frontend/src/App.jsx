@@ -24,31 +24,24 @@ import { OpenRpdsBar } from "./features/tabs/OpenRpdsBar.jsx";
 import { PaneDropZones } from "./features/tabs/PaneDropZones.jsx";
 import { RpdEditor } from "./features/rpd-editor/RpdEditor.jsx";
 
-// Используем bundled-воркер (Vite сам собирает его как Web Worker с правильным MIME)
 pdfjs.GlobalWorkerOptions.workerPort = new PdfJsWorker();
 
 export default function App() {
   const [user, setUser] = useState(null); const [checking, setChecking] = useState(true);
   const [activeTab, setActiveTab] = useState("my");
   const [rpds, setRpds] = useState([]);
-  // Каждая открытая вкладка: { tabId: string, id_rpd: number, mode: "edit"|"view", ...rpd_metadata }.
-  // tabId уникален (одна РПД может одновременно занимать ДВЕ вкладки — одну в edit, одну в view),
-  // mode хранится отдельно и не зашит в tabId, поэтому переключение режима «на месте» не меняет ID
-  // (и не дёргает React переидентификацию вкладки в panes.tabs).
+
   const [openRpds, setOpenRpds] = useState([]);
-  // Состояние сплита: левая панель есть всегда, правая опциональна (null — обычный одиночный режим).
-  // tabs/activeId — это tabId-строки.
+
   const [panes, setPanes] = useState({ left: { tabs: [], activeId: null }, right: null });
   const [draggingTabId, setDraggingTabId] = useState(null);
-  // На какую половину сейчас наведена перетаскиваемая вкладка ("left" | "right" | null) —
-  // нужно для подсветки целевой зоны во время drag.
+
   const [dragOverSide, setDragOverSide] = useState(null);
-  // Соотношение ширины левой панели к общей (0.2…0.8). Используется только когда сплит активен.
+
   const [splitRatio, setSplitRatio] = useState(0.5);
   const splitContainerRef = useRef(null);
   const resizingSplitRef = useRef(false);
-  // Счётчики «перезагрузить» по tabId. Когда edit-вкладка сохраняется, App дёргает счётчики
-  // ОСТАЛЬНЫХ вкладок этой же РПД — те видят изменение пропа и перечитывают данные/PDF.
+
   const [tabReloadKeys, setTabReloadKeys] = useState({});
   const [showNotif, setShowNotif] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -56,29 +49,20 @@ export default function App() {
   useEffect(() => {
     const t = localStorage.getItem("token");
     if (t) {
-      // .catch() ловит и 401 (токен протух / БД пересоздана), и сетевую ошибку
-      // (контейнеры ещё не поднялись). В обоих случаях токен снимаем — иначе
-      // последующие запросы будут уходить со старым Authorization-заголовком и
-      // пользователь не сможет залогиниться без F5.
+
       api.getMe().then(r => setUser(r.data))
         .catch(() => localStorage.removeItem("token"))
         .finally(() => setChecking(false));
     } else setChecking(false);
   }, []);
 
-  // Сразу после логина бэкенд иногда ещё дожимает БД (DB здоров, но первое
-  // подключение SQLAlchemy инициализируется не мгновенно). Раньше в случае
-  // сбоя список РПД оставался пустым, и пользователь думал, что ничего нет
-  // — пока сам не нажмёт F5. Теперь повторяем с экспоненциальным backoff'ом
-  // пока не получится. Полностью замолкаем после нескольких неудач —
-  // лучше тихо отстать, чем бесконечно дёргать сервер.
   const loadRpds = useCallback(async () => {
     const maxAttempts = 6;
     for (let i = 0; i < maxAttempts; i++) {
       try { const r = await api.getRpds(); setRpds(r.data); return; }
       catch {
         if (i === maxAttempts - 1) return;
-        await new Promise(res => setTimeout(res, 500 * Math.pow(2, i))); // 0.5s, 1s, 2s, 4s, 8s
+        await new Promise(res => setTimeout(res, 500 * Math.pow(2, i)));
       }
     }
   }, []);
@@ -104,18 +88,16 @@ export default function App() {
 
   function openRpdFn(rpd, editMode, options = {}) {
     const mode = editMode ? "edit" : "view";
-    // Если эта же (id_rpd, mode) уже открыта — просто фокусируемся.
+
     const sameTab = openRpds.find(t => t.id_rpd === rpd.id_rpd && t.mode === mode);
     if (sameTab) { focusTab(sameTab.tabId); return; }
-    // Если уже открыта другая «версия» этой РПД (другой mode), новую кладём в ПРОТИВОПОЛОЖНУЮ
-    // панель — чтобы edit и view сразу оказались side-by-side.
+
     const other = openRpds.find(t => t.id_rpd === rpd.id_rpd);
     let targetSide = options.targetSide;
     if (!targetSide) targetSide = other ? oppositeSide(findPaneOf(other.tabId)) : "left";
 
     const tabId = newTabId(rpd.id_rpd, mode);
-    // ВНИМАНИЕ к порядку: rpd может прилетать как существующая запись openRpds (из openPairFor),
-    // у неё есть свои tabId/mode/id_rpd — поэтому spread ИДЁТ ПЕРВЫМ, а наши значения после.
+
     setOpenRpds(prev => [...prev, { ...rpd, tabId, id_rpd: rpd.id_rpd, mode }]);
     setPanes(prev => {
       if (targetSide === "right") {
@@ -137,14 +119,12 @@ export default function App() {
   function toggleTabMode(tabId) {
     const tab = openRpds.find(t => t.tabId === tabId); if (!tab) return;
     const newMode = tab.mode === "edit" ? "view" : "edit";
-    // Если рядом уже есть пара в нужном режиме — блокируем toggle (в редакторе кнопка вообще
-    // спрятана), здесь страховка на случай вызова другим путём.
+
     const sibling = openRpds.find(t => t.id_rpd === tab.id_rpd && t.mode === newMode);
     if (sibling) { focusTab(sibling.tabId); return; }
     setOpenRpds(prev => prev.map(t => t.tabId === tabId ? { ...t, mode: newMode } : t));
   }
-  // Открыть копию текущей РПД в противоположном режиме во второй панели (или просто рядом,
-  // если панели одна). Это и есть discoverable-механизм для пары edit+view.
+
   function openPairFor(tabId) {
     const tab = openRpds.find(t => t.tabId === tabId); if (!tab) return;
     const otherMode = tab.mode === "edit" ? "view" : "edit";
@@ -216,11 +196,10 @@ export default function App() {
   }
   function swapPanes() {
     setPanes(prev => prev.right ? { left: prev.right, right: prev.left } : prev);
-    // Зеркалим соотношение ширин: было 70/30 → станет 30/70, чтобы визуальный
-    // «вес» панелей поехал вместе с их содержимым, а не наоборот.
+
     setSplitRatio(r => 1 - r);
   }
-  // Дёргаем «соседей по id_rpd», но не саму initiator-вкладку: она только что сама всё перечитала.
+
   function notifyRpdChanged(initiatorTabId) {
     const init = openRpds.find(t => t.tabId === initiatorTabId); if (!init) return;
     const others = openRpds.filter(t => t.id_rpd === init.id_rpd && t.tabId !== initiatorTabId);
@@ -269,15 +248,10 @@ export default function App() {
     setUser(null); setOpenRpds([]);
     setPanes({ left: { tabs: [], activeId: null }, right: null });
     setTabReloadKeys({});
-    // Сбрасываем активную вкладку — иначе если админ был на «БУПы» и зашёл
-    // снова под преподавателем, conditional-рендер всё равно нарисовал бы
-    // AdminBupsPage, хотя в навбаре у преподавателя такой вкладки нет.
+
     setActiveTab("my");
   };
 
-  // Защита: если activeTab указывает на вкладку, недоступную текущей роли
-  // (например, после смены пользователя через токен), мгновенно
-  // переключаемся на «Мои РПД».
   useEffect(() => {
     if (!user) return;
     const r = user.role;
@@ -305,7 +279,6 @@ export default function App() {
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
     <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}@keyframes savedFade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-2px)}}.saved-fade{animation:savedFade 1.5s ease-in-out;display:inline-block}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}.expandable-field::-webkit-scrollbar{width:8px}.expandable-field::-webkit-scrollbar-track{background:" + T.bg + ";margin:28px 0 4px 0;border-radius:4px}.expandable-field::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:4px;border:none}.expandable-field::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.expandable-field-sm::-webkit-scrollbar{width:6px}.expandable-field-sm::-webkit-scrollbar-track{background:" + T.bg + ";margin:24px 0 2px 0;border-radius:3px}.expandable-field-sm::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:3px;border:none}.expandable-field-sm::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
 
-    {/* TopBar */}
     <div style={{ flexShrink: 0, zIndex: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", height: 44, background: T.headerBg, color: T.headerText }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -341,7 +314,6 @@ export default function App() {
       />
     </div>
 
-    {/* Pages */}
     {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={r => openRpdFn(r, false)} onEdit={r => openRpdFn(r, true)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} userRole={role} />}
     {activeTab === "approval" && <ApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, true)} />}
     {activeTab === "archive" && <ArchivePage rpds={rpds} onOpen={r => openRpdFn(r, false)} onExportPdf={handleExportPdf} />}
@@ -349,10 +321,6 @@ export default function App() {
     {activeTab === "adminDirections" && <AdminDirectionsPage />}
     {activeTab === "system" && <SystemInfoPage />}
 
-    {/* Зона редакторов. Все открытые РПД остаются смонтированными — переключение вкладок и
-        переезд между панелями (drag-n-drop) не должны сбрасывать PDF, скролл и автоген-состояние.
-        Поэтому каждая <RpdEditor /> обёрнута в position:absolute контейнер; меняется лишь геометрия,
-        DOM-узел тот же → React не размонтирует. Контейнер-обёртка показывается только на «edit». */}
     <div ref={splitContainerRef} style={{ display: activeTab === "edit" ? "block" : "none", flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
       {openRpds.map(t => {
         const paneSide = findPaneOf(t.tabId);
@@ -389,11 +357,10 @@ export default function App() {
           />
         </div>;
       })}
-      {/* Плейсхолдеры для пустых панелей. */}
+
       {panes.right && panes.right.activeId == null && <div style={{ position: "absolute", left: (splitRatio * 100).toFixed(3) + "%", top: 0, width: ((1 - splitRatio) * 100).toFixed(3) + "%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", color: T.textMuted, fontSize: 13 }}>Правая панель пуста</div>}
       {panes.left.activeId == null && panes.left.tabs.length === 0 && !panes.right && <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: T.textMuted, fontSize: 13 }}>Нет открытых РПД</div>}
-      {/* Разделитель + кнопка swap. Сидят поверх стыка панелей, мышью можно тянуть.
-          Двойной клик по разделителю — сброс к 50/50. */}
+
       {panes.right && <>
         <div
           onMouseDown={startSplitResize}

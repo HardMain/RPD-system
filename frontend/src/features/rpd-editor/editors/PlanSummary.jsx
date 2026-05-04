@@ -1,31 +1,5 @@
 import { T } from "../../../theme.js";
 
-/**
- * Шапка «по плану vs распределено» для раздела «Содержание дисциплины».
- *
- * Помогает преподавателю видеть, сколько часов он уже раскидал по разделам
- * относительно плана БУПа — и где не хватает или, наоборот, перебор.
- *
- * Структура:
- *   • Карточка на каждую BUP-привязку (multi-БУП — несколько карточек).
- *     В шапке карточки — код / БУП / семестр / форма контроля.
- *   • Внутри карточки — таблица: «Всего | Лек | Лаб | Пр | СРС».
- *     КСР в раздел 4 не распределяется (в РПД пользователь раскидывает только
- *     Л/ЛР/ПЗ/СРС по разделам), поэтому колонка КСР здесь намеренно скрыта —
- *     иначе у строки «Распределено» она всегда была бы 0 и подсвечивалась
- *     красным «не сходится с планом». Полный план КСР видно в разделе 3.
- *   • Если у дисциплины один семестр: две строки — «По плану» и
- *     «Распределено». Если несколько — те же две строки на каждый семестр,
- *     плюс финальная «Всего по дисциплине» (план целиком; красным то, что
- *     не сходится с распределённым).
- *   • Пустая ячейка в БУПе (None в semesters_data) показывается как «0»,
- *     чтобы преподаватель видел: «здесь часов не запланировано».
- *   • Красная подсветка — на любой ячейке распределения, которая не равна
- *     соответствующей ячейке плана.
- *
- * `sections` — массив RpdSection, по которым считаем распределённое.
- * `bupDisciplines` — массив RpdDetailOut.bup_disciplines.
- */
 export function PlanSummary({ bupDisciplines, sections }) {
   if (!bupDisciplines || bupDisciplines.length === 0) {
     return <div style={{ padding: 10, marginBottom: 12, background: T.orangeLight, border: "1px solid " + T.orange, borderRadius: 6, fontSize: 12, color: T.orange }}>
@@ -40,11 +14,8 @@ export function PlanSummary({ bupDisciplines, sections }) {
   </div>;
 }
 
-
 function BdCard({ bd, sections }) {
-  // Реальные семестры дисциплины: либо из semesters_data (заполняет XLS-парсер
-  // из блоков с часами на семестр), либо один блок-fallback по агрегатным
-  // полям BD (старые данные / БУП без per-semester блоков).
+
   const semesters = (bd.semesters_data && bd.semesters_data.length > 0)
     ? bd.semesters_data.map(s => ({
         number: s.number,
@@ -58,16 +29,12 @@ function BdCard({ bd, sections }) {
   const isMulti = semesters.length > 1;
   const fallbackSem = semesters[0]?.number ?? 1;
 
-  // Часы разделов, сгруппированные по семестру. Раздел без явного
-  // section.semester (старые данные / single-семестр) попадает в fallback.
   function distributedFor(semNum) {
     const inGroup = (sections || []).filter(s => {
       const sec = s.semester ?? fallbackSem;
       return sec === semNum;
     });
-    // КСР преподаватель не раскидывает по разделам — поэтому он не входит в
-    // распределённое и не отображается в таблице PlanSummary (см. шапку
-    // компонента). План КСР живёт в разделе 3 (WorkloadTable).
+
     return {
       lec: inGroup.reduce((a, s) => a + (s.lecture_hours || 0), 0),
       lab: inGroup.reduce((a, s) => a + (s.lab_hours || 0), 0),
@@ -76,21 +43,13 @@ function BdCard({ bd, sections }) {
     };
   }
 
-  // Итог по всем семестрам (для multi). План — сумма по semesters_data,
-  // фактическое распределение — сумма всех разделов.
   const planAll = sumPlanOver(semesters);
   const distAll = sumDistOver(semesters.map(s => distributedFor(s.number)));
 
-  // Список «Семестр N — <форма контроля>» — по строке на каждую форму
-  // (Экзамен / Диф. зачет / Зачёт / КП / КР). Если у одной формы контроля
-  // несколько семестров — они перечисляются через запятую («Семестр 2, 3 —
-  // Диф. зачет»). Семестры без формы контроля не показываются — это редкий
-  // случай и обычно ошибка в БУПе, не нужно подсвечивать его в шапке.
   const semesterLines = formatSemesterControlLines(bd, semesters);
 
   return <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
-    {/* Шапка карточки — мета BD: код, имя БУПа, и список «Семестр N — Форма
-        контроля» под ним отдельной строкой. */}
+
     <div style={{ padding: "8px 12px", background: T.bg, borderBottom: "1px solid " + T.borderLight }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
         <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px" }}>{bd.code || "—"}</span>
@@ -142,10 +101,8 @@ function BdCard({ bd, sections }) {
   </div>;
 }
 
-
 function SemBlock({ sem, dist, showHeader }) {
-  // «Всего» — план без КСР (т.к. КСР сюда не распределяется и колонка скрыта,
-  // включать его в total означало бы постоянное рассогласование с распред.).
+
   const planTotal = (z(sem.lec)) + (z(sem.lab)) + (z(sem.pr)) + (z(sem.srs));
   const distTotal = dist.lec + dist.lab + dist.pr + dist.srs;
   return <>
@@ -173,10 +130,8 @@ function SemBlock({ sem, dist, showHeader }) {
   </>;
 }
 
-
 function TotalRow({ plan, dist }) {
-  // Строка «Всего по дисциплине»: показываем плановую сумму без КСР. Если
-  // распределённая сумма не совпадает — ячейка подсвечена красным.
+
   const planTotal = plan.lec + plan.lab + plan.pr + plan.srs;
   const distTotal = dist.lec + dist.lab + dist.pr + dist.srs;
   return <tr>
@@ -189,19 +144,11 @@ function TotalRow({ plan, dist }) {
   </tr>;
 }
 
-
-// ─── helpers ────────────────────────────────────────────────────────────────
-
-// Парсит «Экзамен (3), Диф. зачет (2)» → группирует семестры по форме
-// контроля и возвращает массив строк {sems: "2, 3", label: "Диф. зачет"}.
-// Если у формы только один семестр — sems="1" (без запятой). Если control_form
-// не распарсился, но у дисциплины известны semesters — возвращаем строку с
-// перечислением семестров без формы контроля.
 function formatSemesterControlLines(bd, semesters) {
   const raw = bd?.control_form || "";
-  // Группа: контроль → отсортированный список семестров.
-  const groups = []; // [{ label, sems: number[] }]
-  // Сохраняем порядок появления формы контроля в исходной строке.
+
+  const groups = [];
+
   const order = new Map();
   const re = /([А-Яа-яёЁ.\s]+?)\s*\(\s*([\d,\s]+)\s*\)/g;
   let m;
@@ -221,9 +168,7 @@ function formatSemesterControlLines(bd, semesters) {
     for (const n of sems) if (!g.sems.includes(n)) g.sems.push(n);
   }
   if (groups.length === 0) {
-    // Не удалось распарсить — fallback: показываем известные семестры одной
-    // строкой без формы. Если и семестров нет — возвращаем пусто, шапка
-    // тогда останется без второй строки.
+
     if (!semesters || semesters.length === 0) return [];
     const sems = semesters.map(s => s.number).sort((a, b) => a - b);
     return [{ sems: sems.join(", "), label: raw.trim() || "форма контроля не указана" }];
@@ -236,18 +181,17 @@ function formatSemesterControlLines(bd, semesters) {
 
 function normalizeControlLabel(s) {
   const lower = s.toLowerCase().replace(/\s+/g, " ").trim();
-  // Каноничные подписи — те же варианты, что использует WorkloadTable.
+
   if (lower === "экзамен") return "Экзамен";
   if (lower === "зачёт" || lower === "зачет") return "Зачёт";
   if (lower === "диф. зачет" || lower === "диф.зачет"
       || lower === "дифференцированный зачёт" || lower === "дифференцированный зачет") return "Диф. зачет";
   if (lower === "курсовой проект") return "Курсовой проект";
   if (lower === "курсовая работа") return "Курсовая работа";
-  // Незнакомая форма — оставляем как есть, но с заглавной первой буквы.
+
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-// Конвертация null/undefined → 0 (для отображения плановых ячеек).
 function z(v) { return typeof v === "number" ? v : 0; }
 
 function sumPlanOver(semesters) {
@@ -268,16 +212,12 @@ function sumDistOver(distArr) {
   };
 }
 
-// Стиль ячейки «распределено»: красный, если не совпало с планом; нейтральный,
-// если совпало.
 function mismatch(actual, planned) {
   return (actual || 0) === (planned || 0)
     ? numCell
     : { ...numCell, color: T.red, fontWeight: 700, background: "#fde6e3" };
 }
 
-// Тот же подход в финальной строке «Всего по дисциплине», но мы рендерим
-// плановое число — а подсветка красным включается, когда РАСПРЕДЕЛЕНО ≠ ПЛАН.
 function mismatchTotal(actual, planned) {
   return (actual || 0) === (planned || 0)
     ? { ...numCell, fontWeight: 700, background: T.bg }

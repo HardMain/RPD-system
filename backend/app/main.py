@@ -1,8 +1,3 @@
-"""FastAPI application bootstrap.
-
-Keeps things tiny: schema creation + seed (on startup), CORS, router wiring,
-health endpoint. The demo seed itself lives in `app/seed.py`.
-"""
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,17 +11,11 @@ from app.routers import (
 )
 from app.seed import seed_data
 
-
 async def _apply_schema_patches() -> None:
-    """Лёгкий ad-hoc «миграционник» для новых колонок без alembic.
-    Идемпотентно добавляет недостающие столбцы — нужно для уже существующих БД,
-    где create_all() новые колонки не подтянет."""
     async with engine.begin() as conn:
-        # Прошлые ревизии оставили эти артефакты — выкатываем чистый hard-delete.
         await conn.execute(text("ALTER TABLE rpd DROP COLUMN IF EXISTS deleted_bup_names"))
         await conn.execute(text("ALTER TABLE bups DROP COLUMN IF EXISTS deleted_at"))
 
-        # rpd_bup_disciplines: id_bup_discipline теперь nullable, добавлены snapshot-поля.
         await conn.execute(text(
             "ALTER TABLE rpd_bup_disciplines ALTER COLUMN id_bup_discipline DROP NOT NULL"
         ))
@@ -55,7 +44,6 @@ async def _apply_schema_patches() -> None:
                 f"ALTER TABLE rpd_bup_disciplines ADD COLUMN IF NOT EXISTS {col} {ddl}"
             ))
 
-        # rpd_learning_outcomes: id_indicator nullable + snapshot.
         await conn.execute(text(
             "ALTER TABLE rpd_learning_outcomes ALTER COLUMN id_indicator DROP NOT NULL"
         ))
@@ -69,7 +57,6 @@ async def _apply_schema_patches() -> None:
                 f"ALTER TABLE rpd_learning_outcomes ADD COLUMN IF NOT EXISTS {col} {ddl}"
             ))
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
@@ -77,7 +64,6 @@ async def lifespan(app: FastAPI):
     await _apply_schema_patches()
     await seed_data()
     yield
-
 
 app = FastAPI(
     title="ИС формирования РПД",
@@ -108,7 +94,6 @@ app.include_router(admin_directions.router)
 app.include_router(reference.router)
 app.include_router(files.router)
 app.include_router(fos.router)
-
 
 @app.get("/api/health")
 async def health():

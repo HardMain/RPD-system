@@ -28,12 +28,6 @@ import { DocsUpload } from "./editors/DocsUpload.jsx";
 import { FosEditor } from "./editors/FosEditor.jsx";
 import { RpdMetaModal } from "./RpdMetaModal.jsx";
 
-
-// Слепок полей РПД, реально влияющих на печатную форму. Если две «версии»
-// этого слепка совпадают — печатная форма ничем не отличается, и помечать
-// её «устаревшей» не надо. Пустые элементы (раздел без названия, пустая
-// строка литературы, тема без текста) фильтруются — пользователь только
-// добавил каркас, в печатной форме его нет.
 function pdfRelevantSnapshot(r) {
   if (!r) return "";
   const norm = (v) => (v == null ? "" : String(v).trim());
@@ -112,16 +106,13 @@ function pdfRelevantSnapshot(r) {
   });
 }
 
-
 export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
   const [showMeta, setShowMeta] = useState(false);
-  // Свёрнутые разделы в режиме редактирования (как стрелочки сворачивания
-  // заголовков в Word). Множество ключей: "1.1", "2", "4", "8", и т.д.
-  // По умолчанию все развёрнуты.
+
   const [collapsedSet, setCollapsedSet] = useState(() => new Set());
   const isCollapsed = useCallback((key) => collapsedSet.has(key), [collapsedSet]);
   const toggleCollapse = useCallback((key) => {
@@ -131,30 +122,18 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       return next;
     });
   }, []);
-  // У каждого режима — своя «активная вкладка»: при переключении просмотр ↔ редактирование
-  // в сайдбаре сразу подсвечивается последняя секция этого режима, а не «протекает» из другого.
+
   const [activeSecPdf, setActiveSecPdf] = useState("title");
   const [activeSecEdit, setActiveSecEdit] = useState("title");
   const [saving, setSaving] = useState(false);
-  // «Сохранено» — короткая подсказка в нижней панели (живёт ~1.5с после
-  // успешного сохранения, плавно появляется и затухает). Используем число-
-  // счётчик, а не bool: при каждом сохранении инкрементим, и React-key
-  // элемента берётся отсюда — так анимация перезапускается на каждом сейве,
-  // даже если предыдущая «Сохранено» ещё не успела затухнуть.
+
   const [savedTick, setSavedTick] = useState(0);
   const savedTimeoutRef = useRef(null);
   const [pdfData, setPdfData] = useState(null); const [pdfLoading, setPdfLoading] = useState(false); const [pdfError, setPdfError] = useState(null);
   const [pdfReloadKey, setPdfReloadKey] = useState(0);
-  // «Печатная форма устарела»: взводится, когда парная edit-вкладка сохранила
-  // что-то после того, как мы последний раз рендерили PDF. Авто-перерендер
-  // мы НЕ делаем (это раздражало — каждый онBlur приводил к пересборке через
-  // LibreOffice). Вместо этого показываем плашку и кнопку «Обновить».
+
   const [pdfStale, setPdfStale] = useState(false);
-  // Текущая БУП-дисциплина для рендера печатной формы. При multi-БУП (одна РПД
-  // покрывает несколько БУПов) каждой привязке соответствует своя печатная форма
-  // — отличается титульником и разделом 2 (отфильтрован по её компетенциям),
-  // содержимое (разделы, литература, методички) общее. По умолчанию — первая
-  // привязанная.
+
   const [pdfBdId, setPdfBdId] = useState(null);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
@@ -168,69 +147,43 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const pdfPageObserverRef = useRef(null);
   const pdfScrollPosRef = useRef(0);
   const editScrollPosRef = useRef(0);
-  // Сохранённая ДО ручного/внешнего reload позиция скролла. Нужно потому, что pdfData=null
-  // или setLoading(true) обнуляют DOM/контент, и автоклэмп scrollTop=0 затирает обычные
-  // pdfScrollPosRef/editScrollPosRef через onScroll. Тег режима защищает от случая, когда
-  // pending был сохранён в одном режиме, а юзер успел переключиться в другой.
-  const pendingScrollRestoreRef = useRef(null); // { mode: "pdf"|"edit", value: number } | null
-  // Цель текущего программного скролла в PDF-режиме (клик по разделу в сайдбаре):
-  // { key, top, deadline }. Пока ref не nil — scroll-spy не пересчитывает activeSec, а удерживает
-  // подсветку на key. Снимается, когда scrollTop ≈ top (приехали) или истёк deadline.
+
+  const pendingScrollRestoreRef = useRef(null);
+
   const pdfNavTargetRef = useRef(null);
-  // true, пока tryRestore тащит scrollTop к целевой позиции после смены режима/
-  // возврата на вкладку. Сбрасывается ровно когда восстановление завершилось
-  // (scrollHeight дорос и scrollTop встал на target) или исчерпан лимит попыток.
+
   const restoringScrollRef = useRef(false);
   const preferredActiveSecRef = useRef(null);
-  // Цель текущего программного скролла в edit-режиме: { key, top, deadline }.
-  // flash-рамка у раздела запускается, когда scrollTop приехал к top (или истёк deadline).
+
   const pendingFlashRef = useRef(null);
-  // Глобальная блокировка обновления подсветки сайдбара. Взводится в reloadPdf и handleSave,
-  // снимается, когда документ догрузился и скролл реально вернулся на сохранённую позицию
-  // (для PDF — в tryRestore при достижении target; для edit — через 2 кадра после save'а,
-  // когда дочерние редакторы перерендерились). Логика одна и та же для обеих кнопок:
-  // подсветка не дёргается, пока «всё не уляжется».
+
   const sidebarLockRef = useRef(false);
   const pageInputFocusedRef = useRef(false);
   const resizingRef = useRef(false);
   const scrollRef = useRef(null);
-  // PDF считается «грязным» (требует перерендера на сервере), если данные РПД
-  // могли поменяться: после load() с сервера, сохранения, изменения статуса
-  // или явного нажатия «↻ Обновить». Между переключениями режима без правок
-  // PDF переиспользуется — серверный рендер не дёргается заново.
+
   const pdfDirtyRef = useRef(true);
   const initialLoadRef = useRef(true);
-  // Snapshot полей РПД, которые реально попадают в печатную форму. Сравниваем
-  // на каждом перечитывании: если ничего значимого не изменилось (например,
-  // юзер просто добавил пустую строку — она отфильтрована в шаблоне), то
-  // плашку «форма устарела» НЕ показываем.
+
   const prevPdfSnapRef = useRef(null);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
   const isEdit = editMode; const isHead = userRole === "Зав. кафедрой";
   const showPdf = !isEdit;
   const activeSec = showPdf ? activeSecPdf : activeSecEdit;
 
-  // silent=true — перечитываем РПД, не дёргая loading-флаг. Нужно, чтобы при «Сохранить»
-  // в режиме редактирования форма не размонтировалась в спиннер (вся страница мерцает,
-  // скролл-контейнер пересоздаётся и иногда восстанавливается не туда, куда нужно).
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const res = await api.getRpd(rpdId); const r = res.data; setRpd(r);
-      // 1.1 «Цели и задачи дисциплины» — единый текстовый блок. Старые РПД могли
-      // иметь раздельные goals_text/tasks_text — на загрузку склеиваем их через
-      // пустую строку, в шаблон и далее отдаётся только goals_text.
+
       const mergedGoals = [r.goals_text, r.tasks_text].map(s => (s || "").trim()).filter(Boolean).join("\n\n");
       setEditTexts({ goals: mergedGoals, objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
 
-      // Сравниваем «печатно-значимый» снапшот: если он не изменился (например,
-      // только добавилась пустая строка таблицы), считаем что PDF не устарел.
       const newSnap = pdfRelevantSnapshot(r);
       let pdfChanged = false;
       if (initialLoadRef.current) {
         initialLoadRef.current = false;
-        // Первый load — PDF и так ещё не загружен, грязным не помечаем,
-        // только запоминаем baseline-снапшот.
+
       } else {
         pdfChanged = newSnap !== prevPdfSnapRef.current;
         if (pdfChanged) pdfDirtyRef.current = true;
@@ -245,10 +198,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   }, [rpdId]);
   useEffect(() => { load(); }, [load]);
 
-  // Синхронизация pdfBdId с реальным составом привязок: при первой загрузке
-  // ставим первую, при последующих изменениях rpd.bup_disciplines (например,
-  // после reload в парной вкладке) — если выбранная пропала, переключаемся на
-  // первую оставшуюся.
   const bdsForPdf = rpd?.bup_disciplines || [];
   useEffect(() => {
     if (!rpd) return;
@@ -257,11 +206,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       setPdfBdId(bdsForPdf[0].id_bup_discipline);
     }
   }, [rpd, bdsForPdf, pdfBdId]);
-  // При смене БУП-привязки — перерендер PDF (титульник и раздел 2 поменяются).
-  // Захватываем scrollTop ДО reload, чтобы tryRestore вернул его на место для
-  // новой печатной формы (актуально при «Сохранить» в парной edit-вкладке —
-  // если view показывает не первую привязку, скролл иначе сбрасывался в 0,
-  // потому что pendingScrollRestoreRef был пустым).
+
   const initialPdfBdRef = useRef(true);
   useEffect(() => {
     if (initialPdfBdRef.current) { initialPdfBdRef.current = false; return; }
@@ -276,38 +221,18 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   }, [pdfBdId]);
 
   const reloadPdf = useCallback(() => {
-    // Захватываем актуальный scrollTop ДО setPdfData(null) → иначе автоклэмп схлопнувшегося
-    // контейнера сбросит pdfScrollPosRef в 0 через onScroll-хендлер, и восстанавливать будет нечего.
+
     const c = pdfScrollRef.current;
     if (c) pendingScrollRestoreRef.current = { mode: "pdf", value: c.scrollTop };
     pdfDirtyRef.current = true;
-    // Если перед ↻ юзер нажимал на пункт сайдбара (6.4 / 7 / 8 и т.п.) — pdfNavTargetRef
-    // остаётся выставленным на 8 секунд. Без сброса compute после reload первым же кадром
-    // принудительно подсветит nav.key, даже если scrollTop восстановился на другую точку,
-    // и подсветка моргнёт. Сбрасываем — пусть scroll-spy спокойно посчитает по реальной позиции.
+
     pdfNavTargetRef.current = null;
     preferredActiveSecRef.current = null;
-    // Замок снимется в tryRestore, когда документ дорендерится до сохранённой позиции
-    // и scrollTop реально встанет на target. До тех пор scroll-spy НЕ трогает activeSec.
+
     sidebarLockRef.current = true;
     setPdfReloadKey(k => k + 1);
   }, []);
 
-  // Внешний триггер «перечитать всё» (например, парная edit-вкладка сохранилась → notifyRpdChanged
-  // у App'а инкрементит reloadKey этой view-вкладки). На первом монтировании ничего не делаем —
-  // load() уже отрабатывает в основном эффекте.
-  // Поведение: данные РПД (статус, разделы, литература) подгружаем тихо, чтобы
-  // боковая панель и т.п. оставались актуальными. Печатная форма (PDF) НЕ
-  // пересобирается автоматически — просто помечается устаревшей; пользователь
-  // нажмёт «↻ Обновить» в верхнем тулбаре, когда захочет увидеть свежий PDF.
-  // Это сделано из-за UX-фидбэка: автоматический перерендер при каждом
-  // потере фокуса (onBlur) в edit-парной вкладке выглядел беспокойно — PDF
-  // дёргался каждые несколько секунд, пока преподаватель печатал.
-  //
-  // Плашку «форма устарела» взводим только если перечитанный РПД реально
-  // меняет печатную форму (см. pdfRelevantSnapshot — пустые строки/разделы
-  // отфильтрованы). Без этого добавление пустого раздела/строки литературы
-  // тоже триггерило бы плашку, хотя в PDF ничего бы не изменилось.
   const initialReloadRef = useRef(true);
   const reloadDebounceRef = useRef(null);
   useEffect(() => {
@@ -321,26 +246,14 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return () => { if (reloadDebounceRef.current) { clearTimeout(reloadDebounceRef.current); reloadDebounceRef.current = null; } };
   }, [reloadKey]);
 
-  // PDF preview for view mode.
-  // При showPdf=false (режим редактирования) PDF НЕ сбрасывается — blob URL
-  // остаётся в памяти, и при возврате в режим просмотра компонент мгновенно
-  // покажет уже загруженный документ без обращения к серверу.
   useEffect(() => {
     if (!showPdf) return;
-    if (pdfData && !pdfDirtyRef.current) return; // PDF актуален — не дёргаем сервер
+    if (pdfData && !pdfDirtyRef.current) return;
     let cancelled = false; let createdUrl = null; let transferred = false;
-    // AbortController: при новом нажатии «↻ Обновить» / новом reloadKey предыдущий
-    // axios-запрос отменяется. Без этого 5 быстрых сохранений → 5 PDF-рендеров на сервере
-    // в очередь, и каждый занимает время LibreOffice. Отменённые ответы axios отдаст
-    // как CanceledError — флаг cancelled блокирует setState, ошибка пользователю не показывается.
+
     const controller = new AbortController();
     setPdfLoading(true); setPdfError(null); setPdfData(null); setPdfNumPages(0); setPdfCurrentPage(1);
-    // Намеренно НЕ сбрасываем pdfSectionMap к фоллбэку: старая (точная) разметка соответствует
-    // примерно той же структуре, что и новая, и используется compute сразу после tryRestore-успеха,
-    // ДО того как scanPdfForSections отсканирует свежий PDF. Иначе compute считает activeSec по
-    // фоллбэку с приблизительными координатами и моргает чужим разделом.
-    // pdfPageRefs тоже не зачищаем вручную — старые page-узлы и так размонтируются при смене pdfData,
-    // setPdfPageRef-callback при unmount удалит их из map.
+
     api.fetchPdfInline(rpdId, { signal: controller.signal }, pdfBdId).then(r => {
       if (cancelled) return;
       createdUrl = window.URL.createObjectURL(r.data);
@@ -352,21 +265,13 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return () => {
       cancelled = true;
       try { controller.abort(); } catch { }
-      // Если blob успел уйти в state — освобождением займётся cleanup-эффект ниже,
-      // здесь revoke только если запрос отменён ДО setPdfData.
+
       if (createdUrl && !transferred) try { window.URL.revokeObjectURL(createdUrl); } catch { }
     };
   }, [rpdId, showPdf, pdfReloadKey]);
 
-  // Освобождение прошлого blob URL при смене pdfData и при размонтировании.
   useEffect(() => () => { if (pdfData) try { window.URL.revokeObjectURL(pdfData); } catch { } }, [pdfData]);
 
-  // При переключении режима «Просмотр ↔ Редактирование» DOM скролл-контейнера
-  // пересоздаётся (scrollTop=0). pendingFlashRef сбрасываем — он принадлежал
-  // прошлой DOM-сессии. preferredActiveSecRef фиксируем на «активную вкладку
-  // нового режима»: пока restoringScrollRef=true, scroll-spy будет держать её
-  // и не «мигать» на «Титульник» по промежуточному scrollTop=0. Снятие флага
-  // делает сам tryRestore — когда scrollTop реально встанет на цель.
   const initialModeRef = useRef(true);
   useEffect(() => {
     if (initialModeRef.current) { initialModeRef.current = false; return; }
@@ -374,10 +279,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     preferredActiveSecRef.current = editMode ? activeSecEdit : activeSecPdf;
   }, [editMode]);
 
-  // Track current page by observing which PDF page is centered in the scroll container.
-  // IO держим в ref, чтобы page-узлы могли регистрироваться через ref-callback —
-  // после edit→view DOM пересоздаётся, и обычный effect-подход с массовой подпиской
-  // в один проход не успевал переподписаться на новые узлы (нумерация зависала).
   useEffect(() => {
     if (!showPdf) {
       if (pdfPageObserverRef.current) { pdfPageObserverRef.current.disconnect(); pdfPageObserverRef.current = null; }
@@ -393,15 +294,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       }
     }, { root, threshold: [0.3, 0.6] });
     pdfPageObserverRef.current = obs;
-    // Подписываемся на уже зарегистрированные узлы (если они есть).
+
     Object.values(pdfPageRefs.current).forEach(el => { if (el) obs.observe(el); });
     return () => { obs.disconnect(); if (pdfPageObserverRef.current === obs) pdfPageObserverRef.current = null; };
   }, [showPdf, pdfData]);
 
-  // Ref-callback для каждой страницы: при mount регистрируется в текущем IO,
-  // при unmount — отписывается. Так нумерация выживает любые ремонтажи DOM.
-  // Кэшируем колбэки по n, чтобы их идентичность не менялась между рендерами
-  // (иначе React-pdf отвязывал бы ref на каждом рендере).
   const pdfPageRefCallbacks = useRef({});
   const setPdfPageRef = useCallback((n) => {
     if (!pdfPageRefCallbacks.current[n]) {
@@ -423,28 +320,20 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return pdfPageRefCallbacks.current[n];
   }, []);
 
-  // Подсветка раздела сайдбара по реальной позиции скролла PDF (в режиме просмотра).
-  // Активным считается раздел, чей заголовок ближе всего сверху относительно текущего скролла.
   useEffect(() => {
     if (!showPdf || !pdfNumPages) return;
     const c = pdfScrollRef.current; if (!c) return;
     let raf = 0;
     function compute() {
-      // Замок reload/save — НИЧЕГО не пересчитываем: ни preferred, ни scrollTop. Подсветка
-      // остаётся ровно той, какой была до нажатия кнопки. Снимется в tryRestore по факту
-      // реального доскролла.
+
       if (sidebarLockRef.current) return;
-      // Пока идёт восстановление позиции после смены режима — держим preferred (если есть)
-      // и НЕ трогаем activeSec по реальному scrollTop, иначе мелькнёт «Титульник» на scroll=0.
+
       if (restoringScrollRef.current) {
         const preferred = preferredActiveSecRef.current;
         if (preferred) setActiveSecPdf(p => p === preferred ? p : preferred);
         return;
       }
-      // Пока активен программный smooth-скролл к разделу (клик по сайдбару),
-      // держим подсвеченным целевой раздел. Снимаем фиксацию ровно когда scrollTop ≈ top
-      // (а не по таймеру) — поэтому при долгом плавном скролле подсветка НЕ мигает на
-      // промежуточных секциях, через которые пробегает viewport.
+
       const nav = pdfNavTargetRef.current;
       if (nav) {
         setActiveSecPdf(p => p === nav.key ? p : nav.key);
@@ -475,59 +364,35 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return () => { c.removeEventListener("scroll", handler); cancelAnimationFrame(raf); };
   }, [showPdf, pdfNumPages, pdfSectionMap, pdfScale, pdfData]);
 
-  // Синхронизация значения поля ввода страницы с реальной текущей (если пользователь не печатает)
   useEffect(() => {
     if (pageInputFocusedRef.current) return;
     setPageInputValue(pdfCurrentPage);
   }, [pdfCurrentPage]);
 
-  // Очистка таймеров при размонтировании
   useEffect(() => () => {
     if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
     if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
   }, []);
 
-  // Восстановление позиции скролла:
-  //   • при возврате на вкладку с этой РПД,
-  //   • при переключении режима «Просмотр ↔ Редактирование» (DOM скролл-контейнера
-  //     пересоздаётся, scrollTop обнуляется — нужно вернуть сохранённое значение).
-  // Высота контента может быть ещё не готова (react-pdf постранично рендерит документ),
-  // поэтому пробуем восстановить scrollTop в течение нескольких кадров, пока scrollHeight
-  // не «дорастёт» до нужной позиции.
   useEffect(() => {
     if (!isActive) return;
-    // Сначала пробуем «pending»-цель (она заранее захвачена reloadPdf'ом или внешним reload-эффектом
-    // ДО автоклэмпа). Если pending'а нет ИЛИ он от другого режима — fallback на обычный scroll-ref.
+
     const currentMode = showPdf ? "pdf" : "edit";
     const pending = pendingScrollRestoreRef.current;
     const usingPending = !!(pending && pending.mode === currentMode);
     const target = usingPending ? pending.value : (showPdf ? pdfScrollPosRef.current : editScrollPosRef.current);
-    // target может быть legitimately = 0 (юзер был в самом верху). Раньше `!target` это
-    // съедал и преждевременно снимал замок. Сейчас сверяем с null/undefined.
+
     if (target == null) {
       restoringScrollRef.current = false;
       sidebarLockRef.current = false;
       if (usingPending) pendingScrollRestoreRef.current = null;
       return;
     }
-    // Взводим флаг ДО планирования rAF: scroll-spy эффект (зарегистрирован выше)
-    // в этом же цикле уже успеет дёрнуть свой rAF, и его compute() обязан увидеть
-    // флаг до того, как пересчитает activeSec по scrollTop=0.
+
     restoringScrollRef.current = true;
     let raf = 0; let attempts = 0;
     const MAX_ATTEMPTS = 600;
-    // Если maxScroll N кадров подряд не меняется — значит PDF дорендерился полностью.
-    // При недостижимой цели (юзер кликнул по 6.4/7/8 в конце доки и нажал ↻ — сохранённый
-    // scrollTop был = maxScroll старой версии, у новой может оказаться чуть меньше) этот
-    // цикл иначе крутился бы до MAX_ATTEMPTS, КАЖДЫЙ КАДР форся scrollTop = maxScroll и
-    // запирая пользователя — он не мог листать ни вверх ни вниз. Со стабильным выходом
-    // отпускаем замок раньше, юзер может листать свободно.
-    //
-    // ВАЖНО: «стабильность» считаем ТОЛЬКО после того, как PDF реально начал рендериться
-    // (maxScroll > 0 хотя бы раз). Иначе пока fetch ещё не вернулся и контейнер пуст,
-    // maxScroll остаётся = 0 на всех кадрах подряд — счётчик отстреливается за ~330мс,
-    // мы преждевременно вызываем finishRestore() и теряем pending-цель, а вернувшийся
-    // PDF уже не восстанавливает позицию (видим скролл в самом верху документа).
+
     const STABLE_THRESHOLD = 20;
     let lastMaxScroll = -1;
     let stableFrames = 0;
@@ -549,46 +414,37 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         if (maxScroll > 0) started = true;
         if (started) {
           if (maxScroll === lastMaxScroll) {
-            // Высота больше не растёт — PDF дорендерился, target недостижим. Не запираем.
+
             stableFrames++;
             if (stableFrames >= STABLE_THRESHOLD) { finishRestore(); return; }
           } else {
             stableFrames = 0;
             lastMaxScroll = maxScroll;
-            // Подкатываем сразу после прироста высоты, а не каждый кадр — иначе юзер
-            // не сможет проскроллить вверх вручную пока документ ещё подрисовывается.
+
             if (c.scrollTop < maxScroll) c.scrollTop = maxScroll;
           }
         }
-        // started=false (контейнер пуст, ждём фетч) — просто продолжаем кадры без счёта.
+
       }
       if (++attempts < MAX_ATTEMPTS) raf = requestAnimationFrame(tryRestore);
       else finishRestore();
     }
     raf = requestAnimationFrame(tryRestore);
-    // ВАЖНО: cleanup НЕ чистит pendingScrollRestoreRef — pdfData во время reload меняется
-    // дважды (blob → null → newBlob), эффект перезапускается, и следующий запуск должен
-    // снова найти ту же pending-цель и продолжить восстанавливать.
+
     return () => { cancelAnimationFrame(raf); restoringScrollRef.current = false; };
   }, [isActive, showPdf, pdfData, pdfNumPages, loading]);
 
-  // Scroll spy (only in edit mode). Если докрутили почти до конца — активируем последний sidebar-раздел,
-  // даже если его нельзя «поднять» к самому верху (документ короче, чем нужно).
-  // Во время программного smooth-скролла (после клика по вкладке) подсветка зафиксирована
-  // через preferredActiveSecRef, и flash-рамка у целевого раздела запускается, когда скролл реально приехал.
   useEffect(() => {
     if (showPdf) return;
     const c = scrollRef.current; if (!c) return; let raf = 0;
     function handler() {
       cancelAnimationFrame(raf);
       raf = requestAnimationFrame(() => {
-        // Замок reload/save для edit-режима работает так же, как и для PDF-режима.
+
         if (sidebarLockRef.current) return;
-        // Восстановление scrollTop после смены режима — держим прежний activeSec
-        // и не подсвечиваем «Титульник» по промежуточным значениям scrollTop=0.
+
         if (restoringScrollRef.current) return;
-        // Программный скролл активен — держим подсвеченным целевой раздел и ждём прибытия,
-        // чтобы запустить flash-рамку у него только в момент остановки скролла.
+
         if (pendingFlashRef.current) {
           const { key, top: targetTop, deadline } = pendingFlashRef.current;
           setActiveSecEdit(p => p === key ? p : key);
@@ -609,8 +465,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         }
         if (atBottom) found = SIDEBAR_KEYS[SIDEBAR_KEYS.length - 1];
         setActiveSecEdit(p => p === found ? p : found);
-        // Реальный пользовательский скролл — сбрасываем «преференс» от прошлого
-        // клика, чтобы он не оверрайдил подсветку при дальнейших движениях.
+
         preferredActiveSecRef.current = null;
       });
     }
@@ -630,8 +485,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     const el = pdfPageRefs.current[page]; const c = pdfScrollRef.current;
     if (!el || !c) return null;
     const yPx = (sec.y || 0) * pdfScale;
-    // Небольшой отступ сверху над заголовком — чтобы он не «прилипал» к верхней кромке viewport,
-    // но и не открывался текст из предыдущего раздела.
+
     const top = Math.max(0, el.offsetTop + yPx - 18);
     c.scrollTo({ top, behavior: "smooth" });
     return { page, top };
@@ -641,7 +495,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (!el) return;
     if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
     el.classList.remove("sec-flash");
-    void el.offsetWidth; // принудительный reflow — перезапуск анимации
+    void el.offsetWidth;
     el.classList.add("sec-flash");
     flashTimeoutRef.current = setTimeout(() => { el.classList.remove("sec-flash"); }, 1600);
   }
@@ -651,28 +505,19 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       preferredActiveSecRef.current = key;
       setActiveSecPdf(key);
       const result = scrollToPdfSection(key);
-      // Если smooth-скролл реально стартовал — фиксируем целевой scrollTop.
-      // compute() в scroll-spy будет удерживать подсветку на key, пока scrollTop не приедет
-      // к result.top (точное попадание ±6px) или не истечёт страховочный deadline.
-      // Это убирает «мигание» подсветки промежуточных разделов в конце долгого скролла.
+
       if (result) {
         const c = pdfScrollRef.current;
         if (c && Math.abs(c.scrollTop - result.top) < 6) {
-          pdfNavTargetRef.current = null; // уже на месте
+          pdfNavTargetRef.current = null;
         } else {
           pdfNavTargetRef.current = { key, top: result.top, deadline: Date.now() + 8000 };
         }
       }
-      // Подсветку самой PDF-страницы (flash-рамку) намеренно не запускаем — нужна только в edit-режиме.
+
       return;
     }
-    // Edit-режим. Если родительский раздел свёрнут — целевой узел не отрисован,
-    // refs[key].current === null. Сперва раскрываем родителя (синхронно вызовем
-    // setCollapsedSet), затем дожидаемся коммита (rAF×2) и выполняем тот же
-    // скролл-блок, что и обычно. Без рекурсивного вызова goTo — иначе stale
-    // closure: rAF-колбэк замыкается на старое `goTo` со старым `collapsedSet`,
-    // и условие «родитель свёрнут» всегда снова true → бесконечный rAF и зависшая
-    // подсветка.
+
     const performScroll = () => {
       const el = refs[key]?.current; const c = scrollRef.current;
       if (!el || !c) return;
@@ -695,8 +540,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         next.delete(parent);
         return next;
       });
-      // Подсветку перебрасываем сразу — иначе между раскрытием родителя и
-      // фактическим скроллом sidebar мигнёт «нормальной» (без активной) строкой.
+
       setActiveSecEdit(key);
       preferredActiveSecRef.current = key;
       requestAnimationFrame(() => requestAnimationFrame(performScroll));
@@ -705,12 +549,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     performScroll();
   }
 
-  // Сохраняем последнюю нормальную ширину, чтобы по «раскрыть» возвращаться
-  // именно к ней, а не к константе.
   const lastExpandedSidebarW = useRef(220);
-  // Минимально читаемая ширина сайдбара (надписи разделов помещаются). Меньше
-  // — снап в полоску шириной SIDEBAR_COLLAPSED_W (≈1см). Чтобы пользователь
-  // не «застревал» в промежуточном узком состоянии, где надписи обрезаны.
+
   const SIDEBAR_MIN_EXPANDED_W = 120;
   const SIDEBAR_MAX_W = 420;
   function startResize(e) {
@@ -718,10 +558,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     resizingRef.current = true;
     const startX = e.clientX;
     const startW = sidebarW;
-    // Запоминаем DOM-узел самой ручки, чтобы после drag принудительно сбросить
-    // её фон. Иначе если пользователь увёл курсор за пределы ручки во время
-    // drag (например, при сворачивании сайдбара ручка уехала вместе с ним),
-    // mouseLeave больше не сработает — и accent-цвет «прилипнет».
+
     const handleEl = e.currentTarget;
     function onMove(ev) {
       if (!resizingRef.current) return;
@@ -751,9 +588,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     document.body.style.cursor = "col-resize";
   }
 
-  // Маппинг ключа редактора на колонки таблицы Rpd. goals — это объединённый
-  // блок «Цели и задачи»: пишем его в goals_text, а tasks_text всегда чистим
-  // (легаси-колонка, отдельного редактирования больше нет).
   function _payloadForField(fieldKey, value) {
     if (fieldKey === "goals") return { goals_text: value || "", tasks_text: "" };
     if (fieldKey === "objects") return { objects_text: value || "" };
@@ -763,8 +597,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return null;
   }
 
-  // То же значение, которое load() кладёт в editTexts. Нужно для проверки
-  // «есть ли реальные правки» перед отправкой запроса.
   function _expectedValue(fieldKey, r) {
     if (!r) return "";
     if (fieldKey === "goals") {
@@ -777,13 +609,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return "";
   }
 
-  // Автосейв одного текстового блока. Вызывается editor'ом при потере фокуса
-  // (по-английски — onBlur) у textarea, а также сразу после автозаполнения
-  // через LLM. Аналог saveSec/saveRow в табличных редакторах.
   async function saveField(fieldKey) {
     const value = editTexts[fieldKey] || "";
-    // Если в буфере то же, что и в БД — не отправляем запрос. Это убирает
-    // лишние сейвы при «тыкнули в поле и ушли», когда правок не было.
+
     if (value === _expectedValue(fieldKey, rpd)) return;
     const patch = _payloadForField(fieldKey, value);
     if (!patch) return;
@@ -812,19 +640,13 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       const text = res.data.generated_text;
       const fieldMap = { goals: "goals", objects: "objects", requirements: "requirements", educational_tech: "educational_tech", methodical_recommendations: "methodical_recommendations" };
       if (fieldMap[key]) {
-        // Сначала кладём в локальный буфер, потом дописываем в БД через тот же
-        // saveField — иначе после autoFill пользователь должен ткнуться в textarea
-        // и увести фокус, чтобы оно записалось. Через короткий setTimeout, чтобы
-        // setEditTexts успел закоммититься в state — иначе saveField прочтёт ещё
-        // старые editTexts (closure через useState не получает свежий setState).
+
         setEditTexts(p => ({ ...p, [fieldMap[key]]: text }));
         setTimeout(() => saveFieldFromValue(fieldMap[key], text), 0);
       }
     } catch { } setGenerating(null);
   }
 
-  // Версия saveField, которой явно передаётся значение — обходим useState-
-  // closure при сохранении сразу после setEditTexts.
   async function saveFieldFromValue(fieldKey, value) {
     if (value === _expectedValue(fieldKey, rpd)) return;
     const patch = _payloadForField(fieldKey, value);
@@ -847,10 +669,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (ok && onAfterSave) onAfterSave();
   }
 
-  // «Финальный» сейв всех текстовых полей — нужен только перед отправкой на
-  // согласование, чтобы гарантированно записать любые правки, у которых ещё
-  // не сработал autosave (например, юзер ввёл текст и нажал «Отправить» не
-  // покидая поля, поэтому потеря фокуса (onBlur) не сработала).
   async function flushAllTexts() {
     setSaving(true);
     sidebarLockRef.current = true;
@@ -880,9 +698,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (!editTexts.requirements?.trim()) e.push({ secKey: "1.3", label: "1.3 Входные требования" });
     if (!editTexts.educational_tech?.trim()) e.push({ secKey: "5.1", label: "5.1 Образовательные технологии" });
     if (!editTexts.methodical_recommendations?.trim()) e.push({ secKey: "5.2", label: "5.2 Методические указания" });
-    // Пустые строки (без названия) автодобавляются для удобства редактора, но
-    // не считаются «настоящим» разделом — фильтр совпадает с тем, что в
-    // backend/services/rpd_template_context.py исключает их из печатной формы.
+
     if (!rpd.sections?.some(s => (s.title || "").trim())) e.push({ secKey: "4", label: "4. Содержание (нет ни одного заполненного раздела)" });
     if (!rpd.literature?.some(l => (l.title || "").trim())) e.push({ secKey: "6.1", label: "6.1 Литература (нет ни одного заполненного источника)" });
     return e;
@@ -900,18 +716,12 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   if (!rpd) return <div style={{ flex: 1, padding: 40, textAlign: "center", background: T.bg }}>РПД не найдена</div>;
 
   const canEdit = rpd.status === "Черновик" || rpd.status === "На доработке";
-  // Раздел 4.1 / 4.2 в режиме просмотра показываем только когда есть и часы
-  // соответствующего вида в содержании, и хоть одна заполненная тема. В режиме
-  // редактирования наличие раздела определяется только часами (см. TopicsEditor).
+
   const labHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.lab_hours || 0), 0);
   const practiceHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.practice_hours || 0), 0);
   const hasLabTopics = labHoursTotal > 0 && (rpd.topics || []).some(t => t.topic_type === "lab" && (t.title || "").trim());
   const hasPracticeTopics = practiceHoursTotal > 0 && (rpd.topics || []).some(t => t.topic_type === "practice" && (t.title || "").trim());
 
-  // Прогресс заполненности по обязательным разделам РПД. Тематики (4.1/4.2)
-  // и дополнительная литература (6.2) НЕ обязательны — преподаватель сам решает,
-  // нужны ли они конкретной дисциплине. Раздел 3 заполняется автоматически из
-  // БУПа, его в счётчик не включаем — нечего «делать пользователю».
   const requiredCompletion = (() => {
     const checks = [
       ["1.1", !!(editTexts.goals?.trim() || rpd.goals_text?.trim())],
@@ -931,19 +741,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return { total, filled, missing };
   })();
 
-  // reload для дочерних редакторов — тихий: setLoading(true) схлопнул бы весь
-  // редактор в спиннер на каждом blur'е/добавлении/удалении (раздел 2 моргал
-  // именно из-за этого), а данные мы и так перечитываем через setRpd.
-  // Без useCallback — иначе пришлось бы объявлять хук после ранних return'ов
-  // выше, а это нарушение правил хуков. Идентичность функции дочерним редакторам
-  // не важна: они вызывают reload только из обработчиков, не подписаны на него
-  // через useEffect.
-  // reload: тихо перечитывает РПД из БД (без спиннеров), мигает «Сохранено»
-  // в нижней панели и уведомляет парную вкладку (если есть). Используется
-  // всеми табличными редакторами после saveSec/saveRow — благодаря этому
-  // view-парная вкладка узнаёт о правках в таблицах так же, как и о правках
-  // в текстовых блоках, и одинаково ставит пометку «PDF устарел». Раньше
-  // подсказка «Сохранено» показывалась только при правках текстовых полей.
   const reloadAndNotify = async () => {
     await load(true);
     if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
@@ -974,21 +771,18 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           onOpenMeta={() => setShowMeta(true)}
           onExpand={() => setSidebarW(lastExpandedSidebarW.current || 220)}
         />
-        {/* RESIZER. Единственная drag-зона для изменения ширины сайдбара.
-            Двойной клик — toggle между «полоской» (≈1см) и последней нормальной
-            шириной. Сама свёрнутая полоска сайдбара — отдельная кнопка-раскрытие
-            (см. Sidebar.jsx), drag оттуда не запускается. */}
+
         <div onMouseDown={startResize}
           onDoubleClick={() => setSidebarW(prev => prev > SIDEBAR_COLLAPSED_W ? SIDEBAR_COLLAPSED_W : (lastExpandedSidebarW.current || 220))}
           title={sidebarW <= SIDEBAR_COLLAPSED_W ? "Потяните, чтобы изменить ширину · двойной клик — раскрыть" : "Потяните, чтобы изменить ширину · двойной клик — свернуть"}
           onMouseEnter={e => e.currentTarget.style.background = T.accent}
           onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = T.borderLight; }}
           style={{ width: 5, cursor: "col-resize", background: T.borderLight, flexShrink: 0, transition: "background .15s" }} />
-        {/* DOCUMENT */}
+
         {showPdf ? (
           <div style={{ flex: 1, display: "flex", flexDirection: "column", background: T.pdfBg, overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "6px 12px", background: T.surface, borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
-              {/* Page navigation */}
+
               <button onClick={() => scrollToPdfPage(Math.max(1, pdfCurrentPage - 1), false)} disabled={!pdfNumPages || pdfCurrentPage <= 1} style={pdfToolBtn(pdfCurrentPage <= 1 || !pdfNumPages)} title="Предыдущая страница">◀</button>
               <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: T.text }}>
                 <input type="number" min={1} max={pdfNumPages || 1} value={pageInputValue}
@@ -1012,19 +806,15 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               </div>
               <button onClick={() => scrollToPdfPage(Math.min(pdfNumPages || 1, pdfCurrentPage + 1), false)} disabled={!pdfNumPages || pdfCurrentPage >= pdfNumPages} style={pdfToolBtn(!pdfNumPages || pdfCurrentPage >= pdfNumPages)} title="Следующая страница">▶</button>
               <div style={{ width: 1, height: 18, background: T.borderLight }} />
-              {/* Zoom */}
+
               <button onClick={() => setPdfScale(s => Math.max(0.5, +(s - 0.1).toFixed(2)))} style={pdfToolBtn(false)} title="Уменьшить">−</button>
               <span style={{ fontSize: 12, color: T.text, minWidth: 38, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{Math.round(pdfScale * 100)}%</span>
               <button onClick={() => setPdfScale(s => Math.min(3, +(s + 0.1).toFixed(2)))} style={pdfToolBtn(false)} title="Увеличить">+</button>
               <button onClick={() => setPdfScale(1.1)} style={{ ...pdfToolBtn(false), fontSize: 11, padding: "3px 8px" }} title="Сбросить масштаб">1:1</button>
               <div style={{ flex: 1 }} />
-              {/* При multi-БУП — селектор «текущая БУП-привязка для печатной формы».
-                  Меняет титульник и раздел 2 в PDF; содержимое разделов 1/4-7 общее. */}
+
               {bdsForPdf.length > 1 && (
-                // flexShrink:0 + width:240 — поведение как у соседних Btn small:
-                // дропдаун не сжимается на маленькой ширине тулбара, толкая «↻ Обновить»
-                // и «Скачать» себе под низ/за край (тулбар обрезается общим overflow:hidden),
-                // а не схлопывается, позволяя соседям наезжать сверху.
+
                 <div style={{ width: 240, flexShrink: 0, display: "flex" }}>
                   <BupDropdown
                     bds={bdsForPdf}
@@ -1039,10 +829,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               <Btn small onClick={() => onExportPdf(rpdId, pdfBdId)}><DownloadIcon /> Скачать</Btn>
             </div>
             {pdfStale && (
-              // Цвет режима просмотра — голубой (T.blue), как и в остальных
-              // подсказках этого режима. В режиме редактирования аналогичные
-              // плашки оранжевые (T.orange) — два цвета визуально различают
-              // контекст.
+
               <div style={{ padding: "6px 12px", background: T.blueLight, borderBottom: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, textAlign: "center" }}>
                 Печатная форма устарела — нажмите «↻ Обновить», чтобы пересобрать PDF
               </div>
@@ -1072,10 +859,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           <div ref={scrollRef} onScroll={e => { editScrollPosRef.current = e.currentTarget.scrollTop; }} style={{ flex: 1, overflowY: "auto", padding: "24px 32px", background: T.bg }}>
             {isEdit && !canEdit && <div style={{ maxWidth: 820, margin: "0 auto 12px", padding: "9px 16px", borderRadius: 6, background: T.blueLight, border: "1px solid " + T.blue, color: T.blue, fontSize: 12, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>👁 РПД нельзя редактировать в текущем статусе</div>}
             <div style={{ maxWidth: 820, margin: "0 auto", background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 4, boxShadow: "0 2px 8px rgba(0,0,0,.06)", padding: "40px 40px 60px" }}>
-              {/* ТИТУЛЬНИК. Содержимое РПД (цели/разделы/литература) — общее на все
-                  привязанные БУП-дисциплины. Реквизиты титульника (направление, профиль,
-                  индекс плана) могут отличаться у разных привязок — показываем все,
-                  чтобы автор видел, для скольких печатных форм он сейчас пишет. */}
+
               <div ref={refs.title} style={{ marginBottom: 32, textAlign: "center", paddingTop: 20, paddingBottom: 20 }}>
                 <div style={{ fontSize: 11, marginBottom: 12, color: T.textMuted }}>Министерство науки и высшего образования Российской Федерации</div>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>Пермский национальный исследовательский</div>
@@ -1088,7 +872,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 <BupAttachmentsBlock bds={rpd.bup_disciplines || []} />
               </div>
               <HR />
-              {/* 1. Общие положения — целый раздел сворачивается через шеврон-on-hover */}
+
               <div>
                 <SectionHeading title="1. Общие положения" collapsed={isCollapsed("1")} onToggle={() => toggleCollapse("1")} />
                 {!isCollapsed("1") && <>
@@ -1106,13 +890,13 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </>}
               </div>
               <HR />
-              {/* 2. Результаты обучения */}
+
               <div ref={refs["2"]} style={{ marginBottom: 32 }}>
                 <SectionHeading title="2. Планируемые результаты обучения по дисциплине" collapsed={isCollapsed("2")} onToggle={() => toggleCollapse("2")} />
                 {!isCollapsed("2") && <OutcomesEditor />}
               </div>
               <HR />
-              {/* 3. Объём и виды учебной работы — read-only из БУП */}
+
               <div ref={refs["3"]} style={{ marginBottom: 32 }}>
                 <SectionHeading title="3. Объём и виды учебной работы" collapsed={isCollapsed("3")} onToggle={() => toggleCollapse("3")} marginBottom={8} />
                 {!isCollapsed("3") && <>
@@ -1121,7 +905,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </>}
               </div>
               <HR />
-              {/* 4. Содержание */}
+
               <div ref={refs["4"]} style={{ marginBottom: 32 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: isCollapsed("4") ? 0 : 16 }}>
                   <div style={{ flex: 1 }}>
@@ -1132,8 +916,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 {!isCollapsed("4") && <SectionEditor />}
                 {!isCollapsed("4") && <div style={{ marginTop: 32 }}>
                   <HR />
-                  {/* Порядок 4.1 / 4.2 как в rpd_template.docx: сначала практические
-                       (TABLE 7), потом лабораторные (TABLE 8). */}
+
                   <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных практических занятий</div>
                     <TopicsEditor kind="practice" />
@@ -1146,7 +929,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </div>}
               </div>
               <HR />
-              {/* 5. Орг.-пед. условия */}
+
               <div>
                 <SectionHeading title="5. Организационно-педагогические условия" collapsed={isCollapsed("5")} onToggle={() => toggleCollapse("5")} />
                 {!isCollapsed("5") && <>
@@ -1160,7 +943,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </>}
               </div>
               <HR />
-              {/* 6. Учебно-методическое обеспечение */}
+
               <div>
                 <SectionHeading title="6. Учебно-методическое и информационное обеспечение" collapsed={isCollapsed("6")} onToggle={() => toggleCollapse("6")} />
                 {!isCollapsed("6") && <>
@@ -1174,9 +957,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                     <LiteratureEditor kind="electronic" />
                   </div>
                   <HR />
-                  {/* Порядок 6.3/6.4 — как в rpd_template.docx: 6.3 — БД и ИСС,
-                       6.4 — ПО (раньше у нас было перепутано; шапки/смысл должны
-                       совпадать с печатной формой). */}
+
                   <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
                     <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.3. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
                     <DatabasesEditor />
@@ -1189,13 +970,13 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </>}
               </div>
               <HR />
-              {/* 7. МТО */}
+
               <div ref={refs["7"]} style={{ marginBottom: 32 }}>
                 <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса по дисциплине" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} />
                 {!isCollapsed("7") && <MtechEditor />}
               </div>
               <HR />
-              {/* 8. ФОС */}
+
               <div ref={refs["8"]} style={{ marginBottom: 32 }}>
                 <SectionHeading title="8. Фонд оценочных средств" collapsed={isCollapsed("8")} onToggle={() => toggleCollapse("8")} marginBottom={8} />
                 {!isCollapsed("8") && <>
@@ -1204,13 +985,13 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </>}
               </div>
               <HR />
-              {/* ДОКУМЕНТЫ для LLM */}
+
               <div ref={refs.docs} style={{ marginBottom: 32 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Загруженные документы (контекст для LLM)</div>
                 <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Не попадает в финальный РПД — используется только для автогенерации</div>
                 <DocsUpload />
               </div>
-              {/* ИСТОРИЯ */}
+
               {rpd.approvals?.length > 0 && <div style={{ marginTop: 32 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>История согласования</div>
                 {rpd.approvals.map(a => <div key={a.id_approval} style={{ padding: "8px 0", borderBottom: "1px solid " + T.borderLight, fontSize: 12 }}>
@@ -1257,21 +1038,10 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
 function HR() { return <div style={{ borderTop: "1px solid " + T.borderLight, margin: "32px 0" }} />; }
 
-/** Заголовок целого раздела со стрелкой сворачивания (как в Word).
- *  Стрелка скрыта по умолчанию — появляется при наведении на заголовок ИЛИ когда
- *  раздел свёрнут (тогда видна постоянно, чтобы было понятно что и как раскрыть).
- *  Внешняя обёртка-блок занимает всю строку (нужно для marginBottom раздела),
- *  а сама кликабельная кнопка — inline-block ровно по тексту + 22px слева под
- *  стрелку. То есть hover/click работают только когда курсор реально над текстом
- *  (или над стрелкой), а не над пустым местом справа от заголовка. */
 function SectionHeading({ title, collapsed, onToggle, marginBottom = 16 }) {
   const [hover, setHover] = useState(false);
   const visible = collapsed || hover;
-  // padding-left:22 расширяет hover/click-зону кнопки влево на 22px (туда, где
-  // появляется стрелка) — пользователь может попробовать кликнуть на саму
-  // стрелку, и это сработает. marginLeft:-22 компенсирует это смещение,
-  // чтобы текст визуально остался ровно там же, где был у обычного заголовка
-  // без кнопки. Получается «невидимая» 22-пиксельная hot-зона слева.
+
   return <div style={{ marginBottom: collapsed ? 0 : marginBottom }}>
     <button
       type="button"
@@ -1309,10 +1079,6 @@ function SectionHeading({ title, collapsed, onToggle, marginBottom = 16 }) {
   </div>;
 }
 
-/** Блок привязанных БУП-дисциплин на титульнике редактора.
- *  Один БУП — обычная подпись «Направление / Профиль / БУП-код». Несколько —
- *  список с пометкой «N печатных форм», по одной на привязку: содержимое РПД
- *  одно, а титульники в напечатанных PDF получаются разные. */
 function BupAttachmentsBlock({ bds }) {
   if (bds.length === 0) {
     return <div style={{ marginTop: 12, fontSize: 12, color: T.red, fontStyle: "italic" }}>

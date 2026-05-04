@@ -4,25 +4,7 @@ import { Btn } from "../../../components/Btn.jsx";
 import { ChevronDownIcon, ChevronUpIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 
-/**
- * Текстовый блок раздела (1.1 «Цели и задачи», 1.2, 1.3, 5.1, 5.2 и т.п.).
- *
- * В режиме редактирования отрисован как textarea, правки уезжают в БД сразу
- * после потери фокуса (по-английски — onBlur). Для подсказки пустого поля —
- * placeholder, чтобы блок не выглядел голым.
- *
- * Высота: по умолчанию ~4 строки (компактный вид). Если текст длиннее —
- * в правом-верхнем углу появляется маленькая кнопка-«стрелка». Клик по ней
- * выставляет inline-высоту textarea равной scrollHeight (полный текст
- * влезает) или возвращает компактный размер.
- *
- * Скроллбар textarea не пересекается с кнопкой благодаря классу
- * `.expandable-field`: webkit-track имеет `margin-top: 34px`, поэтому
- * physical scrollbar начинается ниже нижней границы кнопки. Поле выглядит
- * единым целым — кнопка прямо в его углу, без отдельной полосы или
- * зарезервированного места справа.
- */
-const COLLAPSED_HEIGHT = 110; // ~4 строки при fontSize 13 и lineHeight 1.7
+const COLLAPSED_HEIGHT = 110;
 const DEFAULT_PLACEHOLDER = "Введите текст для заполнения раздела…";
 
 export function EditableBlock({ skey, label, fieldKey, placeholder }) {
@@ -44,11 +26,6 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
     else el.style.height = "";
   }, [expanded, val, editable, generating]);
 
-  // Видимость кнопки = текст не помещается (есть вертикальный скролл).
-  // ResizeObserver — чтобы пересчитывать при изменении ширины контейнера
-  // (например, при изменении окна / split-pane'a). Без него: text при
-  // сужении начинает перетекать на новые строки, скролл появляется, а
-  // кнопка не реагирует.
   useLayoutEffect(() => {
     if (expanded) { setOverflows(true); return; }
     const el = editable ? taRef.current : divRef.current;
@@ -132,16 +109,8 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
   </div>;
 }
 
-
 function CornerToggleButton({ expanded, onClick }) {
-  // Кнопка прижата к правому-верхнему углу поля (top/right: 1, чтобы не
-  // налезать на 1px-border поля). У неё нет верхнего и правого бордера —
-  // визуально продолжает границу самого поля. Border-bottom + border-left
-  // отделяют её от текста снизу и слева. Border-radius повторяет угол поля
-  // справа-сверху (6) и слабо скруглён слева-снизу (4) — выглядит как
-  // «срезанный уголок».
-  // Scrollbar-track имеет margin-top равный высоте кнопки + 2px воздуха,
-  // поэтому виден с её нижней границы — границы скролла читаются ясно.
+
   return <button
     type="button"
     onMouseDown={e => e.preventDefault()}

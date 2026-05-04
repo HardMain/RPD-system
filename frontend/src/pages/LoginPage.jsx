@@ -16,9 +16,7 @@ export function LoginPage({ onLogin }) {
       localStorage.setItem("token", r.data.access_token);
       onLogin(r.data.user);
     } catch (e) {
-      // Раньше тут было `catch {}` — любой сбой выдавался как «неверные креды»,
-      // включая случай «контейнеры ещё не поднялись» (нет response → нет статуса).
-      // Различаем три случая.
+
       if (!e.response) {
         setErr("Сервер не отвечает. Подождите окончания запуска контейнеров и повторите.");
       } else if (e.response.status === 401) {

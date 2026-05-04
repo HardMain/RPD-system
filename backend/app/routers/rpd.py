@@ -29,19 +29,10 @@ from app.models import Bup
 
 router = APIRouter(prefix="/api/rpd", tags=["rpd"])
 
-
-# ── Helpers ──
-
-
 def _representative_link(r: Rpd):
-    """Первая bup-привязка РПД (источник часов/семестра/направления для UI,
-    который ещё не умеет в multi-БУП). При hard-delete БУПа `bup_discipline` у
-    линка может быть None — данные в этом случае берутся из snapshot самого
-    линка, поэтому возвращаем сам link, а не bd."""
     for link in r.bup_links or []:
         return link
     return None
-
 
 def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     d = r.discipline
@@ -81,9 +72,6 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     ) for doc in r.uploaded_documents]
 
     def _pick(link_value, fk_value):
-        """Если в snapshot пусто — берём live FK, иначе snapshot. Snapshot имеет
-        приоритет, потому что он специально заполняется на момент привязки и
-        переживает hard-delete БУПа."""
         return link_value if link_value not in (None, "") else fk_value
 
     def _bd_ref(link) -> BupDisciplineRefOut:
@@ -112,11 +100,8 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
             fgos_file_id=_pick(link.fgos_file_id, fgos.id_file if fgos else None),
             fgos_file_name=_pick(link.fgos_file_name, fgos.original_name if fgos else None),
             semesters_data=_pick(link.semesters_data, bd.semesters_data if bd else None),
-            # bup_deleted = у линка нет живого bd-FK. Snapshot ещё есть — рендерим как обычно,
-            # просто с маленькой пометкой «БУП удалён из БД».
             bup_deleted=bd is None,
         )
-    # Показываем все привязки, даже если bd-FK == None: snapshot держит данные.
     bup_disciplines = [_bd_ref(link) for link in (r.bup_links or [])]
 
     def _fos_out(link) -> FosFileOut:
@@ -130,7 +115,6 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     fos_main = next((_fos_out(f) for f in (r.fos_files or []) if f.role == "main"), None)
     fos_other = [_fos_out(f) for f in (r.fos_files or []) if f.role == "other"]
 
-    # «Представительная» привязка для top-level полей detail. Snapshot первичен.
     rep_bup = rep_bd.bup if rep_bd else None
     rep_dir = rep_bup.direction if rep_bup else None
     rep_link_pick = lambda val, fk: val if val not in (None, "") else fk
@@ -170,7 +154,6 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         created_at=r.created_at, updated_at=r.updated_at,
     )
 
-
 def _rpd_select_options():
     return [
         selectinload(Rpd.discipline),
@@ -193,7 +176,6 @@ def _rpd_select_options():
         selectinload(Rpd.approvals).selectinload(ApprovalStage.reviewer),
     ]
 
-
 async def _get_rpd_full(rpd_id: int, db: AsyncSession) -> Rpd:
     result = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id).options(*_rpd_select_options())
@@ -203,24 +185,13 @@ async def _get_rpd_full(rpd_id: int, db: AsyncSession) -> Rpd:
         raise HTTPException(status_code=404, detail="РПД не найдена")
     return rpd
 
-
-# ── Directions & Disciplines ──
-
 @router.get("/directions", response_model=list[DirectionOut])
 async def list_directions(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Direction).order_by(Direction.code))
     return result.scalars().all()
 
-
 @router.get("/disciplines", response_model=list[DisciplineOut])
 async def list_disciplines(db: AsyncSession = Depends(get_db)):
-    """Список логических дисциплин для модалки «Создать РПД».
-
-    Показываем только те, у которых есть хотя бы одна BupDiscipline (= хотя бы
-    один живой БУП их использует). Дисциплины, к которым уже привязаны РПД,
-    но БУП был удалён — физически остаются в БД (FK у РПД), но в этом списке
-    не появляются: создать новую РПД на них нельзя, прикреплять не к чему.
-    """
     result = await db.execute(
         select(Discipline)
         .order_by(Discipline.name)
@@ -246,9 +217,6 @@ async def list_disciplines(db: AsyncSession = Depends(get_db)):
         ))
     return out
 
-
-# ── RPD list ──
-
 @router.get("/", response_model=list[RpdListOut])
 async def list_rpds(
     status: str | None = None,
@@ -267,10 +235,6 @@ async def list_rpds(
             selectinload(Rpd.author),
         )
     )
-    # Все роли (преподаватель, зав.каф, админ) видят полный список РПД кафедры —
-    # как в АРМ ПНИПУ. Раньше преподавателю показывались только свои авторские
-    # РПД, из-за этого новые РПД от зав.каф/админа к нему не «доходили». Дальше
-    # вкладки фильтруют клиентски по статусу: «Мои» / «Согласование» / «Архив».
     if status:
         q = q.where(Rpd.status == status)
     if academic_year:
@@ -298,23 +262,12 @@ async def list_rpds(
         ))
     return out
 
-
-# ── RPD detail ──
-
 @router.get("/{rpd_id}", response_model=RpdDetailOut)
 async def get_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     rpd = await _get_rpd_full(rpd_id, db)
     return _build_rpd_detail(rpd)
 
-
-# ── Create RPD ──
-
 def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> None:
-    """Скопировать значимые поля из BupDiscipline+Bup+Direction+ФГОС в snapshot
-    у RpdBupDiscipline. Делаем при привязке и после правок плана. Нужно, чтобы
-    после hard-delete БУПа РПД продолжали корректно отображать свои часы/
-    направление и т.п.
-    """
     bup = bd.bup
     direc = bup.direction if bup else None
     fgos = direc.fgos_file if direc and direc.fgos_file else None
@@ -340,7 +293,6 @@ def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> No
     link.semesters_data = bd.semesters_data
     link.discipline_name = bd.discipline.name if bd.discipline else None
 
-
 def _fill_outcome_snapshot(lo: RpdLearningOutcome, ind: CompetencyIndicator) -> None:
     comp = ind.competency if ind else None
     lo.indicator_code = ind.code if ind else None
@@ -348,15 +300,9 @@ def _fill_outcome_snapshot(lo: RpdLearningOutcome, ind: CompetencyIndicator) -> 
     lo.competency_code = comp.code if comp else None
     lo.competency_name = comp.name if comp else None
 
-
 async def _attach_rpd_to_bup_disciplines(
     rpd: Rpd, db: AsyncSession, *, bup_discipline_ids: list[int] | None = None,
 ) -> None:
-    """Привязать РПД к BupDiscipline и снять snapshot.
-
-    Если передан явный `bup_discipline_ids` — используем его. Иначе берём все
-    BupDiscipline той же логической дисциплины (поведение АРМ-fallback).
-    """
     options = (
         selectinload(BupDiscipline.discipline),
         selectinload(BupDiscipline.bup).selectinload(Bup.direction).selectinload(Direction.fgos_file),
@@ -378,23 +324,11 @@ async def _attach_rpd_to_bup_disciplines(
         _fill_rpd_bup_disc_snapshot(link, bd)
         db.add(link)
 
-
 async def _autofill_outcomes_from_bup_disciplines(
     rpd: Rpd, bd_ids: list[int], db: AsyncSession,
 ) -> None:
-    """Создать пустые `RpdLearningOutcome` для каждого индикатора компетенций
-    выбранных BupDiscipline (как в АРМ — таблица сразу появляется заполненной
-    индикаторами, текст и средство оценки преподаватель вписывает сам).
-
-    Идемпотентно: если outcome для индикатора у этой РПД уже есть (например,
-    скопирован из архивной РПД через based_on, или повторный вызов после
-    добавления новой BD-привязки) — НЕ создаём дубликат."""
     if not bd_ids:
         return
-    # Существующие outcomes этой РПД — индексируем по живому id_indicator
-    # И по snapshot-ключу (competency_code, indicator_code), чтобы не дублировать
-    # outcomes, у которых FK уже занулён (например, при based_on из РПД, БУП
-    # которой был удалён — у её outcomes id_indicator может быть None).
     existing = await db.execute(
         select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd.id_rpd)
     )
@@ -428,13 +362,8 @@ async def _autofill_outcomes_from_bup_disciplines(
         _fill_outcome_snapshot(lo, ind)
         db.add(lo)
 
-
 @router.post("/", response_model=RpdDetailOut, status_code=201)
 async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    # Если переданы bup_discipline_ids — все они должны относиться к одной и той же
-    # логической дисциплине (Discipline). Это требование модели: у Rpd одно
-    # id_discipline, и все привязанные BupDiscipline-инстансы — это варианты ОДНОЙ
-    # и той же дисциплины в разных БУПах одного направления.
     id_discipline = data.id_discipline
     if data.bup_discipline_ids:
         rows = await db.execute(
@@ -450,11 +379,6 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
                 status_code=400,
                 detail="Все выбранные БУП-дисциплины должны относиться к одной и той же логической дисциплине",
             )
-        # Multi-БУП имеет смысл, только когда выбранные БУП-дисциплины — это разные
-        # редакции одной и той же нагрузки (одинаковые часы, семестр, форма контроля).
-        # В АРМ-практике именно так: один макет покрывает БУПы, отличающиеся только
-        # годом/индексом плана. Если часы реально различаются — это разные РПД,
-        # содержимое можно скопировать через «На основе архивной РПД».
         if len(bds) > 1:
             param_labels = {
                 "total_hours": "общие часы",
@@ -492,7 +416,6 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
         status="Черновик",
         based_on_rpd_id=data.based_on_rpd_id,
     )
-    # If based on archive, copy text fields and sections
     if data.based_on_rpd_id:
         base_result = await db.execute(
             select(Rpd).where(Rpd.id_rpd == data.based_on_rpd_id)
@@ -513,7 +436,6 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
             db.add(rpd)
             await db.flush()
 
-            # Copy sections
             for s in base.sections:
                 new_sec = RpdSection(
                     id_rpd=rpd.id_rpd, section_number=s.section_number,
@@ -523,14 +445,12 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
                 )
                 db.add(new_sec)
 
-            # Copy topics (live on RPD now, not on section)
             for t in base.topics:
                 db.add(RpdTopic(
                     id_rpd=rpd.id_rpd, topic_type=t.topic_type,
                     title=t.title, hours=t.hours, description=t.description,
                 ))
 
-            # Copy literature
             for lit in base.literature:
                 db.add(RpdLiterature(
                     id_rpd=rpd.id_rpd, source_type=lit.source_type,
@@ -538,21 +458,17 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
                     availability=lit.availability,
                 ))
 
-            # Copy software
             for sw in base.software:
                 db.add(RpdSoftware(
                     id_rpd=rpd.id_rpd, name=sw.name,
                     license_type=sw.license_type, purpose=sw.purpose,
                 ))
 
-            # Copy material tech
             for mt in base.material_tech:
                 db.add(RpdMaterialTech(
                     id_rpd=rpd.id_rpd, room_type=mt.room_type, equipment=mt.equipment,
                 ))
 
-            # Copy learning outcomes (вместе со snapshot — у архивной РПД он тоже
-            # уже мог быть заполнен, и индикатор-FK мог быть null)
             for lo in base.learning_outcomes:
                 db.add(RpdLearningOutcome(
                     id_rpd=rpd.id_rpd, id_indicator=lo.id_indicator,
@@ -571,19 +487,12 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
 
     await _attach_rpd_to_bup_disciplines(rpd, db, bup_discipline_ids=data.bup_discipline_ids or None)
 
-    # Авто-наполняем outcomes индикаторами компетенций выбранных BD. Это
-    # полностью соответствует АРМ: после выбора дисциплины БУП в разделе
-    # «Планируемые результаты» уже есть таблица индикаторов. Идемпотентно —
-    # дубликаты с based_on пропускаются.
     if data.bup_discipline_ids:
         await _autofill_outcomes_from_bup_disciplines(rpd, data.bup_discipline_ids, db)
 
     await db.commit()
     rpd_full = await _get_rpd_full(rpd.id_rpd, db)
     return _build_rpd_detail(rpd_full)
-
-
-# ── Update RPD text fields ──
 
 @router.patch("/{rpd_id}", response_model=RpdDetailOut)
 async def update_rpd(rpd_id: int, data: RpdUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -596,9 +505,6 @@ async def update_rpd(rpd_id: int, data: RpdUpdate, db: AsyncSession = Depends(ge
     await db.commit()
     rpd_full = await _get_rpd_full(rpd_id, db)
     return _build_rpd_detail(rpd_full)
-
-
-# ── Delete RPD ──
 
 @router.delete("/{rpd_id}", status_code=204)
 async def delete_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -613,9 +519,6 @@ async def delete_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User
     await db.delete(rpd)
     await db.commit()
 
-
-# ── Sections ──
-
 @router.post("/{rpd_id}/sections", response_model=RpdSectionOut, status_code=201)
 async def add_section(rpd_id: int, data: RpdSectionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     section = RpdSection(id_rpd=rpd_id, **data.model_dump())
@@ -623,7 +526,6 @@ async def add_section(rpd_id: int, data: RpdSectionCreate, db: AsyncSession = De
     await db.commit()
     await db.refresh(section)
     return section
-
 
 @router.put("/sections/{section_id}", response_model=RpdSectionOut)
 async def update_section(section_id: int, data: RpdSectionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -637,7 +539,6 @@ async def update_section(section_id: int, data: RpdSectionCreate, db: AsyncSessi
     await db.refresh(section)
     return section
 
-
 @router.delete("/sections/{section_id}", status_code=204)
 async def delete_section(section_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdSection).where(RpdSection.id_section == section_id))
@@ -646,9 +547,6 @@ async def delete_section(section_id: int, db: AsyncSession = Depends(get_db), us
         await db.delete(section)
         await db.commit()
 
-
-# ── Topics ──
-
 @router.post("/{rpd_id}/topics", response_model=RpdTopicOut, status_code=201)
 async def add_topic(rpd_id: int, data: RpdTopicCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     topic = RpdTopic(id_rpd=rpd_id, **data.model_dump())
@@ -656,7 +554,6 @@ async def add_topic(rpd_id: int, data: RpdTopicCreate, db: AsyncSession = Depend
     await db.commit()
     await db.refresh(topic)
     return topic
-
 
 @router.put("/topics/{topic_id}", response_model=RpdTopicOut)
 async def update_topic(topic_id: int, data: RpdTopicUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -670,7 +567,6 @@ async def update_topic(topic_id: int, data: RpdTopicUpdate, db: AsyncSession = D
     await db.refresh(topic)
     return topic
 
-
 @router.delete("/topics/{topic_id}", status_code=204)
 async def delete_topic(topic_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdTopic).where(RpdTopic.id_topic == topic_id))
@@ -679,9 +575,6 @@ async def delete_topic(topic_id: int, db: AsyncSession = Depends(get_db), user: 
         await db.delete(topic)
         await db.commit()
 
-
-# ── Literature ──
-
 @router.post("/{rpd_id}/literature", response_model=LiteratureOut, status_code=201)
 async def add_literature(rpd_id: int, data: LiteratureCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     lit = RpdLiterature(id_rpd=rpd_id, **data.model_dump())
@@ -689,7 +582,6 @@ async def add_literature(rpd_id: int, data: LiteratureCreate, db: AsyncSession =
     await db.commit()
     await db.refresh(lit)
     return lit
-
 
 @router.put("/literature/{lit_id}", response_model=LiteratureOut)
 async def update_literature(lit_id: int, data: LiteratureUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -703,7 +595,6 @@ async def update_literature(lit_id: int, data: LiteratureUpdate, db: AsyncSessio
     await db.refresh(lit)
     return lit
 
-
 @router.delete("/literature/{lit_id}", status_code=204)
 async def delete_literature(lit_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdLiterature).where(RpdLiterature.id_literature == lit_id))
@@ -712,9 +603,6 @@ async def delete_literature(lit_id: int, db: AsyncSession = Depends(get_db), use
         await db.delete(lit)
         await db.commit()
 
-
-# ── Software ──
-
 @router.post("/{rpd_id}/software", response_model=SoftwareOut, status_code=201)
 async def add_software(rpd_id: int, data: SoftwareCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     sw = RpdSoftware(id_rpd=rpd_id, **data.model_dump())
@@ -722,7 +610,6 @@ async def add_software(rpd_id: int, data: SoftwareCreate, db: AsyncSession = Dep
     await db.commit()
     await db.refresh(sw)
     return sw
-
 
 @router.put("/software/{sw_id}", response_model=SoftwareOut)
 async def update_software(sw_id: int, data: SoftwareCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -736,7 +623,6 @@ async def update_software(sw_id: int, data: SoftwareCreate, db: AsyncSession = D
     await db.refresh(sw)
     return sw
 
-
 @router.delete("/software/{sw_id}", status_code=204)
 async def delete_software(sw_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdSoftware).where(RpdSoftware.id_software == sw_id))
@@ -745,9 +631,6 @@ async def delete_software(sw_id: int, db: AsyncSession = Depends(get_db), user: 
         await db.delete(sw)
         await db.commit()
 
-
-# ── Material-Tech ──
-
 @router.post("/{rpd_id}/material-tech", response_model=MaterialTechOut, status_code=201)
 async def add_material_tech(rpd_id: int, data: MaterialTechCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     mt = RpdMaterialTech(id_rpd=rpd_id, **data.model_dump())
@@ -755,7 +638,6 @@ async def add_material_tech(rpd_id: int, data: MaterialTechCreate, db: AsyncSess
     await db.commit()
     await db.refresh(mt)
     return mt
-
 
 @router.put("/material-tech/{mt_id}", response_model=MaterialTechOut)
 async def update_material_tech(mt_id: int, data: MaterialTechCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -769,7 +651,6 @@ async def update_material_tech(mt_id: int, data: MaterialTechCreate, db: AsyncSe
     await db.refresh(mt)
     return mt
 
-
 @router.delete("/material-tech/{mt_id}", status_code=204)
 async def delete_material_tech(mt_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdMaterialTech).where(RpdMaterialTech.id_material_tech == mt_id))
@@ -778,9 +659,6 @@ async def delete_material_tech(mt_id: int, db: AsyncSession = Depends(get_db), u
         await db.delete(mt)
         await db.commit()
 
-
-# ── Databases (БД и ИСС) ──
-
 @router.post("/{rpd_id}/databases", response_model=DatabaseOut, status_code=201)
 async def add_database(rpd_id: int, data: DatabaseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     item = RpdDatabase(id_rpd=rpd_id, **data.model_dump())
@@ -788,7 +666,6 @@ async def add_database(rpd_id: int, data: DatabaseCreate, db: AsyncSession = Dep
     await db.commit()
     await db.refresh(item)
     return item
-
 
 @router.put("/databases/{db_id}", response_model=DatabaseOut)
 async def update_database(db_id: int, data: DatabaseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -802,7 +679,6 @@ async def update_database(db_id: int, data: DatabaseCreate, db: AsyncSession = D
     await db.refresh(item)
     return item
 
-
 @router.delete("/databases/{db_id}", status_code=204)
 async def delete_database(db_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdDatabase).where(RpdDatabase.id_database == db_id))
@@ -811,17 +687,11 @@ async def delete_database(db_id: int, db: AsyncSession = Depends(get_db), user: 
         await db.delete(item)
         await db.commit()
 
-
-# ── Learning Outcomes ──
-
 @router.post("/{rpd_id}/outcomes", response_model=LearningOutcomeOut, status_code=201)
 async def add_outcome(rpd_id: int, data: LearningOutcomeCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     lo = RpdLearningOutcome(id_rpd=rpd_id, **data.model_dump())
     db.add(lo)
     await db.flush()
-    # Подгрузим индикатор+компетенцию и заполним snapshot — на случай, если
-    # БУП этой компетенции потом удалят, индикатор уйдёт, но в РПД останется
-    # текстовый снимок.
     result = await db.execute(
         select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == lo.id_outcome)
         .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
@@ -838,7 +708,6 @@ async def add_outcome(rpd_id: int, data: LearningOutcomeCreate, db: AsyncSession
         outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
     )
 
-
 @router.put("/outcomes/{outcome_id}", response_model=LearningOutcomeOut)
 async def update_outcome(outcome_id: int, data: LearningOutcomeCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
@@ -852,7 +721,6 @@ async def update_outcome(outcome_id: int, data: LearningOutcomeCreate, db: Async
         setattr(lo, k, v)
     await db.commit()
     await db.refresh(lo)
-    # Re-load
     result = await db.execute(
         select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == lo.id_outcome)
         .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
@@ -866,7 +734,6 @@ async def update_outcome(outcome_id: int, data: LearningOutcomeCreate, db: Async
         outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
     )
 
-
 @router.delete("/outcomes/{outcome_id}", status_code=204)
 async def delete_outcome(outcome_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == outcome_id))
@@ -875,18 +742,12 @@ async def delete_outcome(outcome_id: int, db: AsyncSession = Depends(get_db), us
         await db.delete(lo)
         await db.commit()
 
-
-# ── Управление привязками РПД ↔ дисциплины БУПа ─────────────────────────
-
-
 @router.post("/{rpd_id}/bup-disciplines/{bd_id}", response_model=RpdDetailOut, status_code=201)
 async def attach_bup_discipline(
     rpd_id: int, bd_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Прикрепить БУП-дисциплину к существующей РПД и достроить таблицу
-    планируемых результатов индикаторами её компетенций."""
     rpd = await db.get(Rpd, rpd_id)
     if not rpd:
         raise HTTPException(status_code=404, detail="РПД не найдена")
@@ -900,7 +761,6 @@ async def attach_bup_discipline(
         .where(RpdBupDiscipline.id_bup_discipline == bd_id)
     )
     if not exists.scalar_one_or_none():
-        # Догружаем bd с цепочкой Bup→Direction→FGOS, чтобы заполнить snapshot.
         bd_full = await db.execute(
             select(BupDiscipline).where(BupDiscipline.id_bup_discipline == bd_id)
             .options(
@@ -914,8 +774,6 @@ async def attach_bup_discipline(
         db.add(link)
         await db.flush()
 
-    # Достраиваем outcomes: создаём пустые записи для индикаторов, которых
-    # в РПД ещё нет, чтобы фронт сразу видел всю таблицу.
     existing_inds = {lo.id_indicator for lo in (
         await db.execute(select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id))
     ).scalars().all()}
@@ -939,15 +797,12 @@ async def attach_bup_discipline(
     await db.commit()
     return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
 
-
 @router.delete("/{rpd_id}/bup-disciplines/{bd_id}", response_model=RpdDetailOut)
 async def detach_bup_discipline(
     rpd_id: int, bd_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Открепить БУП-дисциплину от РПД. Уже заполненные outcomes остаются
-    в РПД — они могут содержать введённый текст; чистка таблицы — вручную."""
     res = await db.execute(
         select(RpdBupDiscipline)
         .where(RpdBupDiscipline.id_rpd == rpd_id)
@@ -959,7 +814,6 @@ async def detach_bup_discipline(
         await db.commit()
     return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
 
-
 @router.get("/{rpd_id}/outcomes-table", response_model=list[OutcomeRowOut])
 async def get_outcomes_table(
     rpd_id: int,
@@ -967,18 +821,6 @@ async def get_outcomes_table(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Вернуть таблицу планируемых результатов раздела 2 РПД.
-
-    Источник истины — `RpdLearningOutcome` (создаются при создании РПД через
-    autofill из BUP'овских компетенций, плюс заполняется snapshot). После
-    удаления БУПа эти строки в РПД продолжают жить — снэпшот сохраняет
-    компетенцию и индикатор, и редактирование/сохранение работает по
-    `id_outcome`, не зависящему от живости BUP-данных.
-
-    Параметр `bd_id` сейчас игнорируется (оставлен в API для обратной
-    совместимости). В дальнейшем фильтр можно вернуть, но он должен опираться
-    на снэпшот, а не на живой JOIN — иначе после удаления БУПа таблица
-    «опустеет», как раньше."""
     rpd_res = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
         .options(
@@ -992,13 +834,10 @@ async def get_outcomes_table(
     if not rpd:
         raise HTTPException(status_code=404)
 
-    # Self-heal для существующих РПД: если outcomes пустые, а живые BD ещё
-    # есть — заполняем сейчас. Полезно для РПД, созданных до этой правки.
     live_bd_ids = [link.id_bup_discipline for link in rpd.bup_links if link.id_bup_discipline is not None]
     if not rpd.learning_outcomes and live_bd_ids:
         await _autofill_outcomes_from_bup_disciplines(rpd, live_bd_ids, db)
         await db.commit()
-        # Перезагрузим, чтобы получить заполненный snapshot и FK.
         rpd_res = await db.execute(
             select(Rpd).where(Rpd.id_rpd == rpd_id)
             .options(
@@ -1011,8 +850,6 @@ async def get_outcomes_table(
 
     rows: list[OutcomeRowOut] = []
     seen_keys: set[tuple] = set()
-    # Сортировка стабильная — по competency_code, потом по indicator_code (как
-    # делал старый JOIN). После удаления БУПа берём snapshot-значения.
     sorted_outcomes = sorted(
         rpd.learning_outcomes,
         key=lambda lo: (
@@ -1023,7 +860,6 @@ async def get_outcomes_table(
     for lo in sorted_outcomes:
         ind = lo.indicator
         comp = ind.competency if ind else None
-        # Дедуп: уникальный ключ — (id_indicator если жив) или (competency_code, indicator_code).
         if lo.id_indicator is not None:
             key = ("ind", lo.id_indicator)
         else:
@@ -1043,7 +879,6 @@ async def get_outcomes_table(
         ))
     return rows
 
-
 @router.post("/{rpd_id}/outcomes/upsert", response_model=LearningOutcomeOut)
 async def upsert_outcome(
     rpd_id: int,
@@ -1051,13 +886,6 @@ async def upsert_outcome(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Создать/обновить запись планируемого результата.
-
-    Идентификация по `id_outcome` (приоритетно, для строк со snapshot) либо
-    по `id_indicator`. Запись с пустыми полями НЕ удаляется — после autofill
-    при создании РПД пустые строки нужны как «слоты» для будущего ввода;
-    удаление превращало бы переключатель «есть/нет» в одностороннее действие.
-    """
     lo: RpdLearningOutcome | None = None
     if data.id_outcome:
         res = await db.execute(
@@ -1080,8 +908,6 @@ async def upsert_outcome(
     tool = (data.assessment_tool or "").strip()
 
     if lo is None:
-        # Запись не нашлась. Создаём, если задан живой `id_indicator`. Без него —
-        # клиент ошибся (snapshot-строки всегда имеют id_outcome, его и шлёт фронт).
         if not data.id_indicator:
             raise HTTPException(status_code=400, detail="Не удалось найти запись результата для обновления")
         lo = RpdLearningOutcome(
@@ -1094,7 +920,6 @@ async def upsert_outcome(
         lo.assessment_tool = tool or None
     await db.flush()
 
-    # Reload with indicator+competency и снимаем snapshot (если индикатор живой).
     res = await db.execute(
         select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == lo.id_outcome)
         .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
@@ -1111,9 +936,6 @@ async def upsert_outcome(
         outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
     )
 
-
-# ── Developers ──
-
 @router.post("/{rpd_id}/developers", response_model=DeveloperOut, status_code=201)
 async def add_developer(rpd_id: int, user_id: int = Query(...), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     dev = RpdDeveloper(id_rpd=rpd_id, id_user=user_id)
@@ -1127,7 +949,6 @@ async def add_developer(rpd_id: int, user_id: int = Query(...), db: AsyncSession
     dev = result.scalar_one()
     return DeveloperOut(id_rpd_developer=dev.id_rpd_developer, id_user=dev.id_user, full_name=dev.user.full_name)
 
-
 @router.delete("/developers/{dev_id}", status_code=204)
 async def remove_developer(dev_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(RpdDeveloper).where(RpdDeveloper.id_rpd_developer == dev_id))
@@ -1135,9 +956,6 @@ async def remove_developer(dev_id: int, db: AsyncSession = Depends(get_db), user
     if dev:
         await db.delete(dev)
         await db.commit()
-
-
-# ── Send for approval ──
 
 @router.post("/{rpd_id}/send-approval", status_code=200)
 async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -1154,7 +972,6 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
     )
     db.add(approval)
 
-    # Notify head of department
     notif = Notification(
         id_user=user.id_user, id_rpd=rpd_id,
         message=f"РПД отправлена на согласование",
@@ -1162,9 +979,6 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
     db.add(notif)
     await db.commit()
     return {"detail": "РПД отправлена на согласование"}
-
-
-# ── Approve / Reject ──
 
 @router.post("/{rpd_id}/review")
 async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -1197,9 +1011,6 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
     db.add(notif)
     await db.commit()
     return {"detail": f"РПД {rpd.status}"}
-
-
-# ── Approval history ──
 
 @router.get("/{rpd_id}/approvals", response_model=list[ApprovalOut])
 async def get_approvals(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):

@@ -1,4 +1,3 @@
-"""Service for generating RPD section content via LLM API."""
 import time
 import hashlib
 from openai import AsyncOpenAI
@@ -72,8 +71,6 @@ SECTION_PROMPTS = {
     ),
 }
 
-
-# Fallback texts when LLM is unavailable
 FALLBACK = {
     "goals": (
         "Целью изучения дисциплины «{discipline}» является формирование у обучающихся "
@@ -100,9 +97,7 @@ FALLBACK = {
     "methodical_recommendations": "Обучающимся рекомендуется регулярно посещать занятия, выполнять задания в установленные сроки, использовать рекомендованную литературу для подготовки.",
 }
 
-
 async def extract_text_from_file(file_path: str) -> str:
-    """Extract text content from uploaded document for LLM context."""
     import os
     if not os.path.exists(file_path):
         return ""
@@ -133,7 +128,6 @@ async def extract_text_from_file(file_path: str) -> str:
     except Exception:
         return ""
 
-
 async def generate_section(
     section: str,
     discipline: str,
@@ -161,7 +155,6 @@ async def generate_section(
 
     prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
 
-    # Try LLM, fallback if unavailable
     start = time.time()
     try:
         if settings.LLM_API_KEY == "demo":

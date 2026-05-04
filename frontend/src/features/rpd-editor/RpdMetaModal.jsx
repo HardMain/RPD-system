@@ -5,35 +5,16 @@ import { Btn } from "../../components/Btn.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { TrashIcon } from "../../components/icons.jsx";
 
-/**
- * Модальное окно «Свойства РПД» — собирает в одно место всё, что не относится
- * к содержимому печатной формы РПД: основная информация, привязанные дисциплины
- * БУПа (с ФГОС), комментарий разработчика и список разработчиков.
- *
- * Состояние всегда «редактируемое» (если статус РПД позволяет) — в отличие от
- * самой печатной формы, у этой модалки нет смысла иметь отдельный режим
- * «просмотра»: тут нет PDF, и переключатель Сайдбара edit/view сюда не должен
- * протекать. Сохранение комментария — собственная кнопка снизу модалки;
- * нижняя «Сохранить» в редакторе пишет только текст печатной формы.
- *
- * Дисциплины БУПа задаются ТОЛЬКО при создании РПД (как в АРМ) — здесь read-only.
- */
 export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
   const totalZet = (rpd.bup_disciplines || []).reduce((s, b) => s + (b.zet || 0), 0);
   const totalHours = (rpd.bup_disciplines || []).reduce((s, b) => s + (b.total_hours || 0), 0);
   const rpdName = `${rpd.academic_year} ${rpd.discipline_name}` + (totalHours ? ` (${totalHours} ч)` : "");
 
-  // Локальный буфер комментария — отделяем от editTexts родительского редактора,
-  // чтобы автосейв в этой модалке писал только comment, а нижняя «Сохранить»
-  // в редакторе — только текст самой печатной формы.
   const [comment, setComment] = useState(rpd.comment || "");
   const initialCommentRef = useRef(rpd.comment || "");
   const debounceRef = useRef(null);
   const lastSavedRef = useRef(rpd.comment || "");
 
-  // Если родитель перечитал РПД (например, после добавления разработчика),
-  // приходит новая версия rpd — синхронизируем буфер, если пользователь
-  // не успел внести правок (initial == current).
   useEffect(() => {
     const fresh = rpd.comment || "";
     if (comment === initialCommentRef.current) {
@@ -41,12 +22,9 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
       lastSavedRef.current = fresh;
     }
     initialCommentRef.current = fresh;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
   }, [rpd.comment]);
 
-  // Автосейв комментария: 600мс после последнего нажатия. Кнопки «Сохранить»
-  // намеренно нет — поведение такое же, как у списка разработчиков ниже,
-  // где добавление/удаление пишется в БД сразу.
   useEffect(() => {
     if (!canEdit) return;
     if (comment === lastSavedRef.current) return;
@@ -59,14 +37,12 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
         lastSavedRef.current = value;
         await reload();
       } catch {
-        // тихо — отметку о сохранении не показываем (пользователь сюда ничего не нажимал)
+
       }
     }, 600);
     return () => { if (debounceRef.current) { clearTimeout(debounceRef.current); debounceRef.current = null; } };
   }, [comment, canEdit, rpdId, reload]);
 
-  // На закрытие модалки — если ещё ждём дебаунс, дожимаем синхронно, чтобы
-  // правки не потерялись.
   async function handleClose() {
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
@@ -130,9 +106,6 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
   </Modal>;
 }
 
-
-// ─── Layout helpers ────────────────────────────────────────────────────────
-
 function Section({ title, children }) {
   return <div>
     <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 10 }}>{title}</div>
@@ -161,9 +134,6 @@ function Ro({ children, placeholder }) {
 function Hint({ children }) {
   return <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>{children}</div>;
 }
-
-
-// ─── BUP disciplines table (read-only) ─────────────────────────────────────
 
 function BupDisciplinesTable({ bupDisciplines, disciplineName }) {
   if (bupDisciplines.length === 0) {
@@ -219,9 +189,6 @@ function BupDisciplinesTable({ bupDisciplines, disciplineName }) {
 const head = { padding: "8px 10px", borderBottom: "1px solid " + T.border, background: T.bg, fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", textAlign: "left", wordBreak: "normal", overflowWrap: "break-word" };
 const cell = { padding: "8px 10px", borderBottom: "1px solid " + T.borderLight, fontSize: 12, verticalAlign: "top", wordBreak: "normal", overflowWrap: "break-word" };
 
-
-// ─── Developer editor ──────────────────────────────────────────────────────
-
 function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
   const [showPicker, setShowPicker] = useState(false);
   const max = 2;
@@ -274,7 +241,7 @@ function DeveloperPicker({ excludeIds, onPick, onCancel }) {
     }, 200);
   }
 
-  useEffect(() => { search(""); /* eslint-disable-line */ }, []);
+  useEffect(() => { search("");  }, []);
 
   return <div style={{ padding: 10, borderTop: "1px solid " + T.borderLight, background: T.bg }}>
     <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>

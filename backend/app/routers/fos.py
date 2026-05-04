@@ -1,9 +1,3 @@
-"""ФОС РПД: основной файл (main) и прочие (other).
-
-Файлы лежат в общем хранилище (`stored_files`), привязка к РПД — через
-`rpd_fos_files`. Можно загрузить новый PDF (`POST /api/rpd/{id}/fos`) или
-выбрать ранее загруженный (`POST /api/rpd/{id}/fos/select`).
-"""
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,8 +12,7 @@ from app.services import storage_service
 router = APIRouter(prefix="/api/rpd", tags=["fos"])
 
 ALLOWED_ROLES = {"main", "other"}
-MAX_BYTES = 10 * 1024 * 1024  # 10 МБ — потолок на ФОС-файл
-
+MAX_BYTES = 10 * 1024 * 1024
 
 def _to_out(link: RpdFosFile) -> FosFileOut:
     sf = link.file
@@ -30,9 +23,7 @@ def _to_out(link: RpdFosFile) -> FosFileOut:
         size_bytes=sf.size_bytes if sf else None,
     )
 
-
 async def _replace_main_if_needed(rpd_id: int, role: str, db: AsyncSession):
-    """`main` может быть только один — старый удаляем."""
     if role != "main":
         return
     res = await db.execute(
@@ -42,7 +33,6 @@ async def _replace_main_if_needed(rpd_id: int, role: str, db: AsyncSession):
     for old in res.scalars().all():
         await db.delete(old)
     await db.flush()
-
 
 @router.get("/{rpd_id}/fos", response_model=list[FosFileOut])
 async def list_fos(
@@ -56,7 +46,6 @@ async def list_fos(
         .order_by(RpdFosFile.role.desc(), RpdFosFile.created_at)
     )
     return [_to_out(l) for l in res.scalars().all()]
-
 
 @router.post("/{rpd_id}/fos", response_model=FosFileOut, status_code=201)
 async def upload_fos(
@@ -102,7 +91,6 @@ async def upload_fos(
     )
     return _to_out(res.scalar_one())
 
-
 @router.post("/{rpd_id}/fos/select", response_model=FosFileOut, status_code=201)
 async def select_fos(
     rpd_id: int,
@@ -110,7 +98,6 @@ async def select_fos(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Прикрепить уже существующий файл из хранилища."""
     if data.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail=f"role должен быть one of {ALLOWED_ROLES}")
     rpd = await db.get(Rpd, rpd_id)
@@ -134,29 +121,23 @@ async def select_fos(
     )
     return _to_out(res.scalar_one())
 
-
 @router.delete("/fos/{fos_id}", status_code=204)
 async def remove_fos(
     fos_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Открепить файл от РПД (сам файл из хранилища не удаляется — может
-    использоваться где-то ещё)."""
     link = await db.get(RpdFosFile, fos_id)
     if not link:
         raise HTTPException(status_code=404)
     await db.delete(link)
     await db.commit()
 
-
 @router.get("/fos/library", response_model=list[FosFileOut])
 async def fos_library(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Все ФОС-файлы во всех РПД (упрощённая «библиотека ФОС») —
-    для выбора уже загруженных файлов в новой РПД."""
     res = await db.execute(
         select(RpdFosFile).options(selectinload(RpdFosFile.file))
         .order_by(RpdFosFile.created_at.desc()).limit(200)

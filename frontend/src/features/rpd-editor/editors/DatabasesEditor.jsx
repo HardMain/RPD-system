@@ -9,14 +9,6 @@ import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { DATABASE_TYPES } from "../catalogs.js";
 
-/**
- * 6.3 «Современные профессиональные базы данных и информационные справочные
- * системы». Шапка 1:1 с rpd_template.docx (TABLE 13): «Вид БД | Наименование БД».
- *
- * Если в РПД ни одной БД нет — backend подставляет в печатную форму стандартный
- * перечень ПНИПУ (см. rpd_template_context.py), поэтому в редакторе пустое
- * состояние не блокирует «Отправить на согласование».
- */
 export function DatabasesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
@@ -87,7 +79,6 @@ export function DatabasesEditor() {
   </div>;
 }
 
-
 function DatabaseRow({ item, editable, onSave }) {
   const [name, setName] = useState(item.name || "");
   useEffect(() => { setName(item.name || ""); }, [item.name]);
@@ -131,9 +122,6 @@ function DatabaseRow({ item, editable, onSave }) {
     </td>
   </tr>;
 }
-
-
-// ─── Styles ─────────────────────────────────────────────────────────────────
 
 const inlineInput = {
   width: "100%",

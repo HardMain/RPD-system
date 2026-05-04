@@ -2,30 +2,12 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { T, F } from "../theme.js";
 
-/**
- * Универсальный кастомный выпадающий список.
- *
- * options — массив { value, label } (label опциональный, по умолчанию = value).
- * value   — текущее значение, либо null/"" если ничего не выбрано.
- * onChange(v) — вызывается при выборе пункта или при clearLabel.
- *
- * Стилизован одинаково с BupDropdown, чтобы все наши дропдауны выглядели
- * единообразно: закрытое состояние — кнопка с текущей подписью и стрелкой ▾,
- * текст обрезается ellipsis; открытое — попап шириной как кнопка с переносом
- * длинных подписей по словам.
- *
- * Попап рендерится через React-портал в document.body с position:fixed:
- * иначе при размещении внутри `overflow-x: auto`-обёрток (горизонтальный
- * скролл таблиц) браузер неявно делает overflow-y: auto и список обрезается.
- */
 export function Dropdown({ value, onChange, options, placeholder = "—", disabled = false, title, clearLabel }) {
   const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState(null); // { left, top, width }
+  const [coords, setCoords] = useState(null);
   const wrapRef = useRef(null);
   const popupRef = useRef(null);
 
-  // Закрытие по клику снаружи и Escape. Учитываем portal: «снаружи» — это
-  // не только wrapRef, но и сам попап.
   useEffect(() => {
     if (!open) return;
     const onDocClick = (e) => {
@@ -42,8 +24,6 @@ export function Dropdown({ value, onChange, options, placeholder = "—", disabl
     };
   }, [open]);
 
-  // Позиция попапа вычисляется по координатам кнопки. При скролле/ресайзе
-  // окна — пересчитываем, чтобы попап не «уезжал» от кнопки.
   useLayoutEffect(() => {
     if (!open) { setCoords(null); return; }
     const place = () => {
@@ -80,10 +60,7 @@ export function Dropdown({ value, onChange, options, placeholder = "—", disabl
         fontSize: 13,
         fontFamily: F,
         cursor: disabled ? "default" : "pointer",
-        // Текст подписи переносится по словам на несколько строк, если не помещается
-        // в одну. Так колонка таблицы не «прыгает» по ширине от выбора длинного
-        // средства оценки — её min-content определяется длиннейшим *словом*, а не
-        // длиннейшей фразой. Высота кнопки растёт по содержимому.
+
         whiteSpace: "normal",
         wordBreak: "normal",
         overflowWrap: "break-word",

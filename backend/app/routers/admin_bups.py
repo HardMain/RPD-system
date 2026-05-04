@@ -1,7 +1,3 @@
-"""Админ-эндпоинты управления БУПами и файлами хранилища.
-
-Доступ: только роль «Администратор».
-"""
 from __future__ import annotations
 
 import re
@@ -30,16 +26,13 @@ from app.services.bup_importer import import_parsed_bup, _normalize_competency_c
 
 router = APIRouter(prefix="/api/admin/bups", tags=["admin-bups"])
 
-
 def _require_admin(user: User):
     if not user.role or user.role.name != "Администратор":
         raise HTTPException(status_code=403, detail="Доступ только для администратора")
 
-
 def _year_from_filename(name: str) -> int | None:
     m = re.search(r"(20\d{2}|19\d{2})", name or "")
     return int(m.group(1)) if m else None
-
 
 async def _load_bup_detail(db: AsyncSession, bup_id: int) -> BupDetailOut:
     res = await db.execute(
@@ -56,10 +49,6 @@ async def _load_bup_detail(db: AsyncSession, bup_id: int) -> BupDetailOut:
     base = _bup_out(b)
     return BupDetailOut(**base.model_dump(), disciplines=[_bd_out(bd) for bd in b.disciplines])
 
-
-# ── Список / детали ────────────────────────────────────────────────────────
-
-
 @router.get("/", response_model=list[BupOut])
 async def admin_list_bups(
     direction_id: int | None = None,
@@ -74,7 +63,6 @@ async def admin_list_bups(
     res = await db.execute(q)
     return [_bup_out(b) for b in res.scalars().all()]
 
-
 @router.get("/{bup_id}", response_model=BupDetailOut)
 async def admin_get_bup(
     bup_id: int,
@@ -83,10 +71,6 @@ async def admin_get_bup(
 ):
     _require_admin(user)
     return await _load_bup_detail(db, bup_id)
-
-
-# ── Создание / редактирование БУПа вручную ─────────────────────────────────
-
 
 @router.post("/", response_model=BupDetailOut, status_code=201)
 async def admin_create_bup(
@@ -109,7 +93,6 @@ async def admin_create_bup(
     await db.commit()
     return await _load_bup_detail(db, bup.id_bup)
 
-
 @router.patch("/{bup_id}", response_model=BupDetailOut)
 async def admin_update_bup(
     bup_id: int,
@@ -126,29 +109,12 @@ async def admin_update_bup(
     await db.commit()
     return await _load_bup_detail(db, bup_id)
 
-
 @router.delete("/{bup_id}", status_code=204)
 async def admin_delete_bup(
     bup_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Hard-delete БУПа со «вшиванием» данных в привязанные РПД.
-
-    Алгоритм:
-      1) Для каждой `RpdBupDiscipline`, привязанной к BD этого БУПа: убеждаемся,
-         что snapshot заполнен (если не был — заполняем сейчас) и зануляем FK.
-         RPD продолжит видеть тот же ряд в своём списке `bup_disciplines`,
-         просто с пометкой «БУП удалён из БД».
-      2) Для outcomes у этих РПД, чей индикатор принадлежит компетенции,
-         используемой ТОЛЬКО этим БУПом, фиксируем snapshot индикатора и зануляем
-         FK. Outcomes у компетенций, разделяемых с другими БУПами, не трогаем.
-      3) Удаляем сам Bup. Каскад чистит BupDiscipline → BupDisciplineCompetency.
-      4) Чистим осиротевшие компетенции (без оставшихся BDC), их индикаторы,
-         и логические дисциплины, которые больше нигде не используются и не
-         привязаны ни к одной РПД. Direction / Department не трогаем — они
-         общие для других БУПов и долгоживут.
-    """
     _require_admin(user)
     bup = await db.get(
         Bup, bup_id,
@@ -167,7 +133,6 @@ async def admin_delete_bup(
         link.id_competency for bd in bup.disciplines for link in bd.competencies
     }
 
-    # 1) Snapshot + null FK у RpdBupDiscipline.
     if bd_ids:
         rbd_res = await db.execute(
             select(RpdBupDiscipline)
@@ -181,14 +146,13 @@ async def admin_delete_bup(
                     .selectinload(Direction.fgos_file),
             )
         )
-        from app.routers.rpd import _fill_rpd_bup_disc_snapshot  # локальный импорт — избежать циклов
+        from app.routers.rpd import _fill_rpd_bup_disc_snapshot
         for link in rbd_res.scalars().all():
             if link.bup_discipline is not None and not link.bup_name:
                 _fill_rpd_bup_disc_snapshot(link, link.bup_discipline)
             link.id_bup_discipline = None
         await db.flush()
 
-    # 2) Какие компетенции точно «уйдут» — те, что использовались только этим БУПом.
     if comp_ids_in_bup:
         other_use_res = await db.execute(
             select(BupDisciplineCompetency.id_competency)
@@ -201,7 +165,6 @@ async def admin_delete_bup(
     else:
         comp_ids_to_drop = set()
 
-    # У outcomes, чей индикатор принадлежит уходящей компетенции — снимаем snapshot и нуллим FK.
     if comp_ids_to_drop:
         from app.routers.rpd import _fill_outcome_snapshot
         outcomes_to_detach = await db.execute(
@@ -219,7 +182,6 @@ async def admin_delete_bup(
             lo.id_indicator = None
         await db.flush()
 
-    # 3) Удалить сам БУП. Каскад: BupDiscipline → BupDisciplineCompetency.
     src_id = bup.id_source_file
     if src_id:
         bup.id_source_file = None
@@ -227,18 +189,16 @@ async def admin_delete_bup(
     await db.delete(bup)
     await db.flush()
 
-    # 3.5) Удалить исходный xls.
     if src_id:
         sf = await db.get(StoredFile, src_id)
         if sf:
             try:
                 storage_service.delete(sf.storage_uri)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             await db.delete(sf)
             await db.flush()
 
-    # 4а) Удаляем индикаторы и компетенции, которые более не нужны.
     if comp_ids_to_drop:
         await db.execute(
             CompetencyIndicator.__table__.delete().where(
@@ -251,9 +211,6 @@ async def admin_delete_bup(
             )
         )
 
-    # 4б) Удаляем логические дисциплины, которые осиротели окончательно: ни в одной
-    # BupDiscipline и ни в одной Rpd. Если хотя бы одна РПД на дисциплину ещё
-    # ссылается, оставляем — РПД не должна сломать FK.
     if discipline_ids:
         for disc_id in discipline_ids:
             still_in_bd = await db.execute(
@@ -273,10 +230,6 @@ async def admin_delete_bup(
 
     await db.commit()
 
-
-# ── Импорт XLS ─────────────────────────────────────────────────────────────
-
-
 @router.post("/import-xls", response_model=BupImportResult, status_code=201)
 async def admin_import_bup_xls(
     file: UploadFile = File(...),
@@ -285,7 +238,6 @@ async def admin_import_bup_xls(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Загрузить XLS БУПа, распарсить и импортировать в БД."""
     _require_admin(user)
     fname = file.filename or "bup.xls"
     if not fname.lower().endswith((".xls", ".xlsx")):
@@ -294,10 +246,9 @@ async def admin_import_bup_xls(
     content = await file.read()
     try:
         parsed = parse_bup_xls(content)
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Не удалось разобрать БУП: {exc}")
 
-    # Сохраняем исходный файл в хранилище и записываем метаданные
     storage_uri, size = storage_service.save_bytes("bup_xls", fname, content)
     sf = StoredFile(
         kind="bup_xls",
@@ -313,7 +264,6 @@ async def admin_import_bup_xls(
     if year is None:
         year = _year_from_filename(fname)
 
-    # Снимок существующих компетенций ДО импорта — чтобы понять, какие созданы.
     existing_codes_res = await db.execute(select(Competency.code))
     existing_codes = set(existing_codes_res.scalars().all())
 
@@ -339,21 +289,15 @@ async def admin_import_bup_xls(
         warnings=warnings,
     )
 
-
-# ── BupDiscipline CRUD ─────────────────────────────────────────────────────
-
-
 async def _set_bd_competencies(
     db: AsyncSession, bd: BupDiscipline, ids: list[int]
 ) -> None:
-    # Удаляем все старые
     res = await db.execute(
         select(BupDisciplineCompetency)
         .where(BupDisciplineCompetency.id_bup_discipline == bd.id_bup_discipline)
     )
     for link in res.scalars().all():
         await db.delete(link)
-    # Создаём новые
     seen: set[int] = set()
     for cid in ids:
         if cid in seen:
@@ -362,7 +306,6 @@ async def _set_bd_competencies(
         db.add(BupDisciplineCompetency(
             id_bup_discipline=bd.id_bup_discipline, id_competency=cid,
         ))
-
 
 @router.post("/{bup_id}/disciplines", response_model=BupDisciplineOut, status_code=201)
 async def admin_add_bup_discipline(
@@ -390,7 +333,6 @@ async def admin_add_bup_discipline(
     )
     return _bd_out(res.scalar_one())
 
-
 @router.patch("/disciplines/{bd_id}", response_model=BupDisciplineOut)
 async def admin_update_bup_discipline(
     bd_id: int,
@@ -416,7 +358,6 @@ async def admin_update_bup_discipline(
     )
     return _bd_out(res.scalar_one())
 
-
 @router.delete("/disciplines/{bd_id}", status_code=204)
 async def admin_delete_bup_discipline(
     bd_id: int,
@@ -429,10 +370,6 @@ async def admin_delete_bup_discipline(
         raise HTTPException(status_code=404)
     await db.delete(bd)
     await db.commit()
-
-
-# ── Скачать исходный xls ──────────────────────────────────────────────────
-
 
 @router.get("/{bup_id}/source-file")
 async def admin_download_bup_source(

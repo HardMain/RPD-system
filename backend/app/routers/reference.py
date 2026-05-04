@@ -1,4 +1,3 @@
-"""Справочные эндпоинты — средства оценки и т.п."""
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +7,6 @@ from app.core.database import get_db
 from app.models import AssessmentTool, User
 from pydantic import BaseModel
 
-
 class AssessmentToolOut(BaseModel):
     id_assessment_tool: int
     name: str
@@ -16,19 +14,15 @@ class AssessmentToolOut(BaseModel):
     class Config:
         from_attributes = True
 
-
 class AssessmentToolCreate(BaseModel):
     name: str
 
-
 router = APIRouter(prefix="/api/assessment-tools", tags=["reference"])
-
 
 @router.get("/", response_model=list[AssessmentToolOut])
 async def list_assessment_tools(db: AsyncSession = Depends(get_db)):
     res = await db.execute(select(AssessmentTool).order_by(AssessmentTool.name))
     return res.scalars().all()
-
 
 @router.post("/", response_model=AssessmentToolOut, status_code=201)
 async def create_assessment_tool(

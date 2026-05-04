@@ -1,12 +1,9 @@
-"""Auth-related schemas: login request, token, current-user payload."""
 from __future__ import annotations
 from pydantic import BaseModel
-
 
 class LoginRequest(BaseModel):
     username: str
     password: str
-
 
 class UserOut(BaseModel):
     id_user: int
@@ -17,7 +14,6 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
-
 
 class TokenResponse(BaseModel):
     access_token: str

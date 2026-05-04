@@ -31,8 +31,6 @@ export function BottomBar({
   </div>;
 }
 
-/** «Заполнено: N/M ▮▮▮▮▮▯▯▯▯▯» — прогресс заполненности обязательных разделов.
- *  По клику на полоску прыгает на первый незаполненный раздел. */
 function CompletionIndicator({ completion, onJumpToMissing }) {
   const { filled, total, missing } = completion;
   const pct = total ? Math.round((filled / total) * 100) : 0;
@@ -64,8 +62,6 @@ function CompletionIndicator({ completion, onJumpToMissing }) {
   </button>;
 }
 
-/** «Изменено N мин назад» / «вчера в 14:32» / «12.04.2026». Текст пересчитывается
- *  раз в минуту, чтобы «5 мин назад» не оставалось «5 мин назад» через час. */
 function UpdatedAgo({ updatedAt }) {
   const [, tick] = useState(0);
   useEffect(() => {

@@ -15,7 +15,7 @@ export function FosEditor() {
   const other = rpd.fos_other || [];
 
   return <div>
-    {/* ── Основной файл ФОС ─────────────────────────────────────── */}
+
     <div style={{ marginBottom: 18 }}>
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Файл ФОС</div>
       <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>
@@ -27,7 +27,6 @@ export function FosEditor() {
       {isEdit && canEdit && <FileActions rpdId={rpdId} role="main" replace={!!main} onChanged={reload} />}
     </div>
 
-    {/* ── Прочие файлы ФОС ──────────────────────────────────────── */}
     <div>
       <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Прочие файлы ФОС</div>
       <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 8 }}>
@@ -54,7 +53,6 @@ export function FosEditor() {
     </div>
   </div>;
 }
-
 
 function EmptyRow({ text }) {
   return <div style={{ padding: 10, background: T.bg, borderRadius: 4, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>{text}</div>;
@@ -87,7 +85,6 @@ function FileRow({ link, canEdit, onChanged, asTable }) {
   </div>;
 }
 
-
 function FileActions({ rpdId, role, replace, onChanged }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -114,7 +111,6 @@ function FileActions({ rpdId, role, replace, onChanged }) {
   </div>;
 }
 
-
 function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -123,7 +119,7 @@ function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
 
   useEffect(() => {
     api.getFosLibrary().then(r => {
-      // Дедуп по id_file (один файл может быть прикреплён к нескольким РПД).
+
       const seen = new Set();
       const list = [];
       for (const it of r.data) {

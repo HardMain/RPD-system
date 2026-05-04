@@ -14,7 +14,6 @@ from app.services.llm_service import generate_section, extract_text_from_file
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
-
 @router.post("/{rpd_id}/generate", response_model=LlmGenerateResponse)
 async def generate(
     rpd_id: int,
@@ -38,16 +37,13 @@ async def generate(
         raise HTTPException(status_code=404, detail="РПД не найдена")
 
     disc = rpd.discipline
-    # Часы и контекст направления берутся из «представительной» БУП-дисциплины РПД
-    # (первой привязанной). Дисциплина больше не привязана к направлению напрямую.
     bd = next((l.bup_discipline for l in rpd.bup_links if l.bup_discipline), None)
     direc = bd.bup.direction if bd and bd.bup else None
 
-    # Build context from uploaded documents
     extra_context = data.context or ""
     if rpd.uploaded_documents:
         doc_texts = []
-        for doc in rpd.uploaded_documents[:5]:  # Limit to 5 docs
+        for doc in rpd.uploaded_documents[:5]:
             text = await extract_text_from_file(doc.file_path)
             if text:
                 doc_texts.append(f"--- {doc.filename} ---\n{text}")
@@ -67,7 +63,6 @@ async def generate(
         extra_context=extra_context,
     )
 
-    # Log the generation
     log = LlmGenerationLog(
         id_rpd=rpd_id,
         section_name=data.section,
@@ -86,14 +81,12 @@ async def generate(
         tokens_used=gen["tokens_used"],
     )
 
-
 @router.get("/{rpd_id}/logs")
 async def get_generation_logs(
     rpd_id: int,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """Get LLM generation history for an RPD."""
     result = await db.execute(
         select(LlmGenerationLog)
         .where(LlmGenerationLog.id_rpd == rpd_id)
