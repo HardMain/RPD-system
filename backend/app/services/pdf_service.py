@@ -332,8 +332,9 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
         ]))
         story.append(Spacer(1, 4 * mm))
 
-        # Lab topics
-        lab_topics = [t for sec in sections for t in sec.get("topics", [])
+        # Lab topics — теперь живут на самом РПД, без привязки к разделу
+        all_topics = rpd_data.get("topics", [])
+        lab_topics = [t for t in all_topics
                       if (t.get("topic_type") or "").lower() in ("lab", "лр", "лаб", "laboratory")]
         if lab_topics:
             story.append(Paragraph("Тематика примерных лабораторных работ", st["H2"]))
@@ -345,8 +346,8 @@ def _generate_content_pages(rpd_data: dict) -> bytes:
                                   [("ALIGN", (0, 0), (0, -1), "CENTER")]))
             story.append(Spacer(1, 4 * mm))
 
-        # Practice topics
-        prac_topics = [t for sec in sections for t in sec.get("topics", [])
+        # Practice topics — теперь живут на самом РПД, без привязки к разделу
+        prac_topics = [t for t in all_topics
                        if (t.get("topic_type") or "").lower() in ("practice", "пз", "практика", "seminar")]
         if prac_topics:
             story.append(Paragraph("Тематика практических занятий", st["H2"]))

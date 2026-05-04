@@ -410,6 +410,7 @@ async def seed_data():
         await db.flush()
 
         # ── Тематика лабораторных работ для rpd4 ──
+        # Темы хранятся плоским списком на самом РПД (без разделов).
         lab_topic_titles = [
             "Разработка программной документации",
             "Линейные алгоритмы",
@@ -420,23 +421,8 @@ async def seed_data():
             "Решение задач с использованием методов структурного и объектно-ориентированного программирования",
             "Обработка информации в пакетах прикладных программ",
         ]
-        # Привяжем темы к соответствующим разделам
-        inf_secs_q = await db.execute(select(RpdSection).where(RpdSection.id_rpd == rpd4.id_rpd).order_by(RpdSection.section_number))
-        inf_secs_list = list(inf_secs_q.scalars())
-        lab_topic_mapping = [
-            (4, lab_topic_titles[0]),   # Разработка программной документации
-            (5, lab_topic_titles[1]),   # Линейные алгоритмы
-            (5, lab_topic_titles[2]),   # Разветвлённые алгоритмы
-            (5, lab_topic_titles[3]),   # Циклы
-            (7, lab_topic_titles[4]),   # Пакеты прикладных программ
-            (8, lab_topic_titles[5]),   # Работа с базами данных
-            (12, lab_topic_titles[6]),  # Структурное и ООП
-            (13, lab_topic_titles[7]),  # Обработка информации в пакетах
-        ]
-        for sec_num, title in lab_topic_mapping:
-            if sec_num <= len(inf_secs_list):
-                db.add(RpdTopic(id_section=inf_secs_list[sec_num - 1].id_section,
-                                topic_type="lab", title=title))
+        for title in lab_topic_titles:
+            db.add(RpdTopic(id_rpd=rpd4.id_rpd, topic_type="lab", title=title))
 
         # ── Literature ──
         # source_type — один из видов литературы из новой формы 6.1/6.2.

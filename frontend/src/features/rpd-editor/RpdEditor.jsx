@@ -10,7 +10,7 @@ import { DownloadIcon } from "../../components/icons.jsx";
 import { SEC_KEYS, SIDEBAR_KEYS, PARENT_SECTION } from "./constants.js";
 import { PDF_PAGE_MAP_FALLBACK, scanPdfForSections } from "./pdfMap.js";
 import { RpdEditorProvider } from "./RpdEditorContext.jsx";
-import { Sidebar } from "./Sidebar.jsx";
+import { Sidebar, SIDEBAR_COLLAPSED_W } from "./Sidebar.jsx";
 import { BottomBar } from "./BottomBar.jsx";
 import { SentModal, ErrorModal, ApprovedModal, RejectModal, ValidationModal } from "./EditorModals.jsx";
 import { BupDropdown } from "./BupDropdown.jsx";
@@ -48,10 +48,10 @@ function pdfRelevantSnapshot(r) {
       pr: s.practice_hours || 0,
       srs: s.self_study_hours || 0,
       sem: s.semester ?? null,
-      tp: (s.topics || [])
-        .filter(t => norm(t.title))
-        .map(t => ({ k: t.topic_type, t: norm(t.title) })),
     }));
+  const topics = (r.topics || [])
+    .filter(t => norm(t.title))
+    .map(t => ({ k: t.topic_type, t: norm(t.title) }));
   const literature = (r.literature || [])
     .filter(l => norm(l.title) || norm(l.url))
     .map(l => ({
@@ -106,14 +106,14 @@ function pdfRelevantSnapshot(r) {
     rq: norm(r.requirements_text),
     et: norm(r.educational_tech),
     mr: norm(r.methodical_recommendations),
-    sections, literature, software, databases, mtech, outcomes, developers, bds,
+    sections, topics, literature, software, databases, mtech, outcomes, developers, bds,
     fosMain: r.fos_main ? r.fos_main.id_file : null,
     fosOther: (r.fos_other || []).map(f => f.id_file).sort(),
   });
 }
 
 
-export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onBack, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
+export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
@@ -705,14 +705,36 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     performScroll();
   }
 
+  // Сохраняем последнюю нормальную ширину, чтобы по «раскрыть» возвращаться
+  // именно к ней, а не к константе.
+  const lastExpandedSidebarW = useRef(220);
+  // Минимально читаемая ширина сайдбара (надписи разделов помещаются). Меньше
+  // — снап в полоску шириной SIDEBAR_COLLAPSED_W (≈1см). Чтобы пользователь
+  // не «застревал» в промежуточном узком состоянии, где надписи обрезаны.
+  const SIDEBAR_MIN_EXPANDED_W = 120;
+  const SIDEBAR_MAX_W = 420;
   function startResize(e) {
     e.preventDefault();
     resizingRef.current = true;
     const startX = e.clientX;
     const startW = sidebarW;
+    // Запоминаем DOM-узел самой ручки, чтобы после drag принудительно сбросить
+    // её фон. Иначе если пользователь увёл курсор за пределы ручки во время
+    // drag (например, при сворачивании сайдбара ручка уехала вместе с ним),
+    // mouseLeave больше не сработает — и accent-цвет «прилипнет».
+    const handleEl = e.currentTarget;
     function onMove(ev) {
       if (!resizingRef.current) return;
-      const newW = Math.max(120, Math.min(420, startW + ev.clientX - startX));
+      const raw = startW + ev.clientX - startX;
+      let newW;
+      if (raw < (SIDEBAR_COLLAPSED_W + SIDEBAR_MIN_EXPANDED_W) / 2) {
+        newW = SIDEBAR_COLLAPSED_W;
+      } else if (raw < SIDEBAR_MIN_EXPANDED_W) {
+        newW = SIDEBAR_MIN_EXPANDED_W;
+      } else {
+        newW = Math.min(SIDEBAR_MAX_W, raw);
+      }
+      if (newW > SIDEBAR_COLLAPSED_W) lastExpandedSidebarW.current = newW;
       setSidebarW(newW);
     }
     function onUp() {
@@ -721,6 +743,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       document.removeEventListener("mouseup", onUp);
       document.body.style.userSelect = "";
       document.body.style.cursor = "";
+      if (handleEl) handleEl.style.background = T.borderLight;
     }
     document.addEventListener("mousemove", onMove);
     document.addEventListener("mouseup", onUp);
@@ -877,8 +900,36 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   if (!rpd) return <div style={{ flex: 1, padding: 40, textAlign: "center", background: T.bg }}>РПД не найдена</div>;
 
   const canEdit = rpd.status === "Черновик" || rpd.status === "На доработке";
-  const hasLabTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "lab"));
-  const hasPracticeTopics = (rpd.sections || []).some(s => (s.topics || []).some(t => t.topic_type === "practice"));
+  // Раздел 4.1 / 4.2 в режиме просмотра показываем только когда есть и часы
+  // соответствующего вида в содержании, и хоть одна заполненная тема. В режиме
+  // редактирования наличие раздела определяется только часами (см. TopicsEditor).
+  const labHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.lab_hours || 0), 0);
+  const practiceHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.practice_hours || 0), 0);
+  const hasLabTopics = labHoursTotal > 0 && (rpd.topics || []).some(t => t.topic_type === "lab" && (t.title || "").trim());
+  const hasPracticeTopics = practiceHoursTotal > 0 && (rpd.topics || []).some(t => t.topic_type === "practice" && (t.title || "").trim());
+
+  // Прогресс заполненности по обязательным разделам РПД. Тематики (4.1/4.2)
+  // и дополнительная литература (6.2) НЕ обязательны — преподаватель сам решает,
+  // нужны ли они конкретной дисциплине. Раздел 3 заполняется автоматически из
+  // БУПа, его в счётчик не включаем — нечего «делать пользователю».
+  const requiredCompletion = (() => {
+    const checks = [
+      ["1.1", !!(editTexts.goals?.trim() || rpd.goals_text?.trim())],
+      ["1.2", !!(editTexts.objects?.trim() || rpd.objects_text?.trim())],
+      ["1.3", !!(editTexts.requirements?.trim() || rpd.requirements_text?.trim())],
+      ["2", (rpd.learning_outcomes || []).some(o => (o.outcome_text || "").trim())],
+      ["4", (rpd.sections || []).some(s => (s.title || "").trim())],
+      ["5.1", !!(editTexts.educational_tech?.trim() || rpd.educational_tech?.trim())],
+      ["5.2", !!(editTexts.methodical_recommendations?.trim() || rpd.methodical_recommendations?.trim())],
+      ["6.1", (rpd.literature || []).some(l => (l.title || "").trim())],
+      ["7", (rpd.material_tech || []).some(m => (m.room_type || "").trim() || (m.equipment || "").trim())],
+      ["8", !!rpd.fos_main || (rpd.fos_other || []).length > 0],
+    ];
+    const total = checks.length;
+    const filled = checks.filter(([, v]) => v).length;
+    const missing = checks.filter(([, v]) => !v).map(([k]) => k);
+    return { total, filled, missing };
+  })();
 
   // reload для дочерних редакторов — тихий: setLoading(true) схлопнул бы весь
   // редактор в спиннер на каждом blur'е/добавлении/удалении (раздел 2 моргал
@@ -921,9 +972,15 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           onOpenPair={onOpenPair}
           onGoTo={goTo}
           onOpenMeta={() => setShowMeta(true)}
+          onExpand={() => setSidebarW(lastExpandedSidebarW.current || 220)}
         />
-        {/* RESIZER */}
-        <div onMouseDown={startResize} title="Потяните, чтобы изменить ширину панели"
+        {/* RESIZER. Единственная drag-зона для изменения ширины сайдбара.
+            Двойной клик — toggle между «полоской» (≈1см) и последней нормальной
+            шириной. Сама свёрнутая полоска сайдбара — отдельная кнопка-раскрытие
+            (см. Sidebar.jsx), drag оттуда не запускается. */}
+        <div onMouseDown={startResize}
+          onDoubleClick={() => setSidebarW(prev => prev > SIDEBAR_COLLAPSED_W ? SIDEBAR_COLLAPSED_W : (lastExpandedSidebarW.current || 220))}
+          title={sidebarW <= SIDEBAR_COLLAPSED_W ? "Потяните, чтобы изменить ширину · двойной клик — раскрыть" : "Потяните, чтобы изменить ширину · двойной клик — свернуть"}
           onMouseEnter={e => e.currentTarget.style.background = T.accent}
           onMouseLeave={e => { if (!resizingRef.current) e.currentTarget.style.background = T.borderLight; }}
           style={{ width: 5, cursor: "col-resize", background: T.borderLight, flexShrink: 0, transition: "background .15s" }} />
@@ -1174,7 +1231,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         canEdit={canEdit}
         savedTick={savedTick}
         status={rpd.status}
-        onBack={onBack}
+        completion={requiredCompletion}
+        onJumpToMissing={(secKey) => goTo(secKey)}
+        updatedAt={rpd.updated_at}
         onSendApproval={handleSendApproval}
         onApprove={() => handleReview("approve")}
         onReject={() => setModal("reject")}
@@ -1182,7 +1241,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
       {modal === "sent" && <SentModal onClose={() => setModal(null)} />}
       {modal === "error" && <ErrorModal onClose={() => setModal(null)} />}
-      {modal === "approved" && <ApprovedModal onClose={() => { setModal(null); (onCloseTab || onBack)(); }} />}
+      {modal === "approved" && <ApprovedModal onClose={() => { setModal(null); onCloseTab && onCloseTab(); }} />}
       {modal === "reject" && <RejectModal comment={rejectComment} onChange={setRejectComment} onClose={() => setModal(null)} onSubmit={() => { handleReview("reject"); setModal(null); }} />}
       {modal === "validation" && <ValidationModal errors={validationErrors} onGoTo={(secKey) => { goTo(secKey); setModal(null); }} onClose={() => setModal(null)} />}
       {showMeta && <RpdMetaModal
@@ -1201,46 +1260,53 @@ function HR() { return <div style={{ borderTop: "1px solid " + T.borderLight, ma
 /** Заголовок целого раздела со стрелкой сворачивания (как в Word).
  *  Стрелка скрыта по умолчанию — появляется при наведении на заголовок ИЛИ когда
  *  раздел свёрнут (тогда видна постоянно, чтобы было понятно что и как раскрыть).
- *  Стрелка позиционируется absolute слева от текста (отрицательный left), чтобы
- *  заголовок текстуально стоял на той же позиции что и без неё. */
+ *  Внешняя обёртка-блок занимает всю строку (нужно для marginBottom раздела),
+ *  а сама кликабельная кнопка — inline-block ровно по тексту + 22px слева под
+ *  стрелку. То есть hover/click работают только когда курсор реально над текстом
+ *  (или над стрелкой), а не над пустым местом справа от заголовка. */
 function SectionHeading({ title, collapsed, onToggle, marginBottom = 16 }) {
   const [hover, setHover] = useState(false);
   const visible = collapsed || hover;
-  return <button
-    type="button"
-    onClick={onToggle}
-    onMouseEnter={() => setHover(true)}
-    onMouseLeave={() => setHover(false)}
-    style={{
-      position: "relative",
-      display: "block",
-      width: "100%",
-      border: "none",
-      background: "transparent",
-      padding: 0,
-      margin: 0,
-      cursor: "pointer",
-      fontFamily: F,
-      fontSize: 15,
-      fontWeight: 700,
-      color: T.text,
-      textAlign: "left",
-      marginBottom: collapsed ? 0 : marginBottom,
-    }}
-  >
-    <span aria-hidden style={{
-      position: "absolute",
-      left: -22, top: "50%",
-      width: 18, height: 18,
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-      fontSize: 14, color: T.textMuted, lineHeight: 1,
-      opacity: visible ? 1 : 0,
-      transform: `translateY(-50%) ${collapsed ? "rotate(-90deg)" : "rotate(0)"}`,
-      transition: "opacity .15s, transform .15s",
-      pointerEvents: "none",
-    }}>▾</span>
-    {title}
-  </button>;
+  // padding-left:22 расширяет hover/click-зону кнопки влево на 22px (туда, где
+  // появляется стрелка) — пользователь может попробовать кликнуть на саму
+  // стрелку, и это сработает. marginLeft:-22 компенсирует это смещение,
+  // чтобы текст визуально остался ровно там же, где был у обычного заголовка
+  // без кнопки. Получается «невидимая» 22-пиксельная hot-зона слева.
+  return <div style={{ marginBottom: collapsed ? 0 : marginBottom }}>
+    <button
+      type="button"
+      onClick={onToggle}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{
+        position: "relative",
+        display: "inline-block",
+        border: "none",
+        background: "transparent",
+        padding: "0 0 0 22px",
+        margin: "0 0 0 -22px",
+        cursor: "pointer",
+        fontFamily: F,
+        fontSize: 15,
+        fontWeight: 700,
+        color: T.text,
+        textAlign: "left",
+      }}
+    >
+      <span aria-hidden style={{
+        position: "absolute",
+        left: 0, top: "50%",
+        width: 18, height: 18,
+        display: "inline-flex", alignItems: "center", justifyContent: "center",
+        fontSize: 14, color: T.textMuted, lineHeight: 1,
+        opacity: visible ? 1 : 0,
+        transform: `translateY(-50%) ${collapsed ? "rotate(-90deg)" : "rotate(0)"}`,
+        transition: "opacity .15s, transform .15s",
+        pointerEvents: "none",
+      }}>▾</span>
+      {title}
+    </button>
+  </div>;
 }
 
 /** Блок привязанных БУП-дисциплин на титульнике редактора.

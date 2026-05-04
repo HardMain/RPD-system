@@ -90,9 +90,12 @@ export function OpenRpdsBar({
   // Чтобы стык в строке вкладок СОВПАДАЛ с разделителем редактора снизу, обе группы
   // должны делиться от ПОЛНОЙ ширины контейнера, а не от «оставшейся после метки/кнопки».
   // Поэтому метка живёт ВНУТРИ левой группы, кнопка — внутри правой; внешний padding 0.
-  return <div style={{ display: "flex", alignItems: "stretch", padding: "4px 0 0", background: T.bg, borderBottom: "1px solid " + T.border, minHeight: 32 }}>
+  // Padding-top держим на дочерних группах (где сидят чипы), а не на самом
+  // OpenRpdsBar — иначе центральная вертикальная линия с alignSelf:stretch
+  // отступает на эти 4px от верха и не упирается в нав-полосу выше.
+  return <div style={{ display: "flex", alignItems: "stretch", background: T.bg, borderBottom: "1px solid " + T.border, minHeight: 32 }}>
     {!panes.right ? (
-      <div style={{ flex: 1, display: "flex", alignItems: "stretch", padding: "0 12px", minWidth: 0, boxSizing: "border-box" }}>
+      <div style={{ flex: 1, display: "flex", alignItems: "stretch", padding: "4px 12px 0", minWidth: 0, boxSizing: "border-box" }}>
         <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6, alignSelf: "center", flexShrink: 0 }}>Открытые РПД:</span>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto", flex: 1, minWidth: 0 }}>
           {leftTabRpds.map(renderTab)}
@@ -100,14 +103,21 @@ export function OpenRpdsBar({
       </div>
     ) : (
       <>
-        <div style={{ width: `calc(${ratioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "0 6px 0 12px", minWidth: 0, boxSizing: "border-box" }}>
+        <div style={{ width: `calc(${ratioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "4px 6px 0 12px", minWidth: 0, boxSizing: "border-box" }}>
           <span style={{ fontSize: 11, color: T.textMuted, marginRight: 6, alignSelf: "center", flexShrink: 0 }}>Открытые РПД:</span>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto", flex: 1, minWidth: 0 }}>
             {leftTabRpds.map(renderTab)}
           </div>
         </div>
+        {/* Центральная линия в строке вкладок РПД. Цвет — приглушённый T.border,
+            чтобы на главной странице разделитель не лез в глаза. Сидит строго
+            внутри OpenRpdsBar (без negative margin'ов): на главной экране это
+            важно, чтобы линия не «вылезала» за границы своей панели. С нижним
+            split-разделителем редактора (App.jsx, splitContainerRef) сходится
+            через 1px borderBottom OpenRpdsBar — этот пиксель того же цвета
+            (T.border), визуально стык чистый. */}
         <div title="Стык панелей" style={{ width: 2, alignSelf: "stretch", background: T.border, flexShrink: 0 }} />
-        <div style={{ width: `calc(${invRatioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "0 12px 0 6px", minWidth: 0, boxSizing: "border-box" }}>
+        <div style={{ width: `calc(${invRatioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "4px 12px 0 6px", minWidth: 0, boxSizing: "border-box" }}>
           <div style={{ display: "flex", alignItems: "flex-end", gap: 2, overflowX: "auto", flex: 1, minWidth: 0 }}>
             {rightTabRpds.map(renderTab)}
           </div>

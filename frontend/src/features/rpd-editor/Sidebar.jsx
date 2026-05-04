@@ -2,24 +2,57 @@ import { T, F } from "../../theme.js";
 import { EyeIcon, PencilIcon, SplitIcon } from "../../components/icons.jsx";
 import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from "./constants.js";
 
+// Ширина свёрнутого сайдбара — узкая «полоска-handle» ≈1см. Внутри неё
+// сиреневая иконка «››», по которой видно куда тянуть, чтобы раскрыть.
+export const SIDEBAR_COLLAPSED_W = 38;
+
 export function Sidebar({
   width, isEdit, hasPair, canEdit, isHead, status,
   validationErrors, activeSec,
   hasLabTopics, hasPracticeTopics,
   isCollapsed,
   onToggleMode, onOpenPair, onGoTo, onOpenMeta,
+  onExpand,
 }) {
+  // Свёрнутый режим: вместо содержимого — узкая белая кнопка со значком «››».
+  // Click → раскрыть. Drag оттуда НЕ запускается — для изменения ширины есть
+  // отдельный 5px ресайзер справа (он уже визуально намекает курсором col-resize).
+  // Так у пользователя нет когнитивной путаницы «то ли тянуть, то ли кликать».
+  if (width <= SIDEBAR_COLLAPSED_W) {
+    return <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); if (onExpand) onExpand(); }}
+      title="Раскрыть панель разделов"
+      style={{
+        width: SIDEBAR_COLLAPSED_W,
+        background: T.surface,
+        border: "none",
+        borderRight: "1px solid " + T.border,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0,
+        cursor: "pointer",
+        userSelect: "none",
+        padding: 0,
+        fontFamily: F,
+      }}
+    >
+      <span style={{ color: T.accent, fontSize: 18, fontWeight: 700, lineHeight: 1, letterSpacing: -2 }}>››</span>
+    </button>;
+  }
   // Тулбар сверху сайдбара: 3 иконки в одной строке — глаз (просмотр),
   // карандаш (редактирование), две страницы (открыть рядом). Активный режим
   // подсвечен. Когда РПД уже открыта в паре (hasPair=true) — переключатели и
   // кнопка пары пропадают: режимы разведены по двум панелям, переключаться
   // некуда. «Свойства РПД» — отдельной строкой ПОД тулбаром.
-  const showModes = !hasPair;
+  // Если РПД нельзя редактировать (архивная, согласованная и т.п.) — переключение
+  // режимов скрываем целиком: возможен только просмотр, выбирать не из чего.
+  // Останется одна кнопка «Свойства РПД» — как и в режиме пары.
+  const showModes = !hasPair && canEdit;
   const showPair = !hasPair && onOpenPair && (isEdit || canEdit);
   const editClickable = !isEdit && canEdit;
   const viewClickable = isEdit;
 
-  return <div style={{ width, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0 }}>
+  return <div style={{ width, background: T.surface, borderRight: "1px solid " + T.border, display: "flex", flexDirection: "column", flexShrink: 0, overflow: "hidden" }}>
     {(showModes || showPair) && (
       <div style={{ display: "flex", borderBottom: "1px solid " + T.border, flexShrink: 0 }}>
         {showModes && <ToolbarBtn
@@ -105,21 +138,27 @@ export function Sidebar({
   </div>;
 }
 
-// Иконочная кнопка тулбара. Активная — с тёмной заливкой (T.text), неактивная —
-// прозрачная с приглушённым цветом. Disabled — полупрозрачная, не реагирует на клик.
+// Иконочная кнопка тулбара. Активная (текущий режим) — тёмная заливка фона
+// (T.bg) и чёрный значок (T.text), кликом ничего не делает. Неактивная и
+// доступная — приглушённый цвет, кликом переключает. Disabled (нельзя
+// переключиться, например edit при «Согласовано») — полупрозрачная.
+// Активная кнопка НЕ считается disabled, даже если onClick для неё бесполезен —
+// иначе глаз в режиме просмотра становился бы серым полупрозрачным, тогда как
+// карандаш в режиме редактирования рисовался бы чёрным. Несимметрично.
 function ToolbarBtn({ icon, active, onClick, disabled, title }) {
+  const isReallyDisabled = disabled && !active;
   return <button
-    onClick={disabled ? undefined : onClick}
-    disabled={disabled}
+    onClick={isReallyDisabled || active ? undefined : onClick}
+    disabled={isReallyDisabled}
     title={title}
     style={{
       flex: 1, padding: "8px 4px", border: "none",
       borderRight: "1px solid " + T.border,
       background: active ? T.bg : "transparent",
       color: active ? T.text : T.textMuted,
-      cursor: disabled ? "default" : "pointer",
+      cursor: isReallyDisabled || active ? "default" : "pointer",
       display: "flex", alignItems: "center", justifyContent: "center",
-      opacity: disabled ? 0.35 : 1,
+      opacity: isReallyDisabled ? 0.35 : 1,
     }}
   >{icon}</button>;
 }

@@ -49,6 +49,8 @@ class Rpd(Base):
                              order_by="RpdDatabase.id_database")
     learning_outcomes = relationship("RpdLearningOutcome", back_populates="rpd", cascade="all, delete-orphan",
                                      order_by="RpdLearningOutcome.id_outcome")
+    topics = relationship("RpdTopic", back_populates="rpd", cascade="all, delete-orphan",
+                          order_by="RpdTopic.id_topic")
     fos_files = relationship("RpdFosFile", back_populates="rpd", cascade="all, delete-orphan")
     uploaded_documents = relationship("UploadedDocument", back_populates="rpd", cascade="all, delete-orphan")
     llm_logs = relationship("LlmGenerationLog", back_populates="rpd", cascade="all, delete-orphan")
@@ -84,19 +86,23 @@ class RpdSection(Base):
     semester = Column(SmallInteger, nullable=True)
 
     rpd = relationship("Rpd", back_populates="sections")
-    topics = relationship("RpdTopic", back_populates="section", cascade="all, delete-orphan",
-                          order_by="RpdTopic.id_topic")
 
 
 class RpdTopic(Base):
+    """Тема практического занятия или лабораторной работы.
+
+    Раньше темы привязывались к конкретному разделу дисциплины (`id_section`),
+    но в АРМ РПД у разделов 4.1 / 4.2 нет такой группировки — это просто две
+    плоских таблицы тем, заполняемых преподавателем. Теперь привязка прямая
+    к РПД, без разделов; тип определяет, в какую таблицу попадёт тема."""
     __tablename__ = "rpd_topics"
     id_topic = Column(Integer, primary_key=True, autoincrement=True)
-    id_section = Column(Integer, ForeignKey("rpd_sections.id_section"), nullable=False)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
     topic_type = Column(String(30), nullable=False)
     title = Column(String(500), nullable=False)
     hours = Column(Integer)
     description = Column(Text)
-    section = relationship("RpdSection", back_populates="topics")
+    rpd = relationship("Rpd", back_populates="topics")
 
 
 class RpdLearningOutcome(Base):

@@ -158,6 +158,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         fos_main=fos_main,
         fos_other=fos_other,
         sections=[RpdSectionOut.model_validate(s) for s in r.sections],
+        topics=[RpdTopicOut.model_validate(t) for t in r.topics],
         literature=[LiteratureOut.model_validate(l) for l in r.literature],
         software=[SoftwareOut.model_validate(s) for s in r.software],
         material_tech=[MaterialTechOut.model_validate(m) for m in r.material_tech],
@@ -179,7 +180,8 @@ def _rpd_select_options():
             .selectinload(Bup.direction)
             .selectinload(Direction.fgos_file),
         selectinload(Rpd.author),
-        selectinload(Rpd.sections).selectinload(RpdSection.topics),
+        selectinload(Rpd.sections),
+        selectinload(Rpd.topics),
         selectinload(Rpd.literature),
         selectinload(Rpd.software),
         selectinload(Rpd.material_tech),
@@ -495,7 +497,8 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
         base_result = await db.execute(
             select(Rpd).where(Rpd.id_rpd == data.based_on_rpd_id)
             .options(
-                selectinload(Rpd.sections).selectinload(RpdSection.topics),
+                selectinload(Rpd.sections),
+                selectinload(Rpd.topics),
                 selectinload(Rpd.literature),
                 selectinload(Rpd.software),
                 selectinload(Rpd.material_tech),
@@ -510,7 +513,7 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
             db.add(rpd)
             await db.flush()
 
-            # Copy sections and topics
+            # Copy sections
             for s in base.sections:
                 new_sec = RpdSection(
                     id_rpd=rpd.id_rpd, section_number=s.section_number,
@@ -519,12 +522,13 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
                     lab_hours=s.lab_hours, self_study_hours=s.self_study_hours,
                 )
                 db.add(new_sec)
-                await db.flush()
-                for t in s.topics:
-                    db.add(RpdTopic(
-                        id_section=new_sec.id_section, topic_type=t.topic_type,
-                        title=t.title, hours=t.hours, description=t.description,
-                    ))
+
+            # Copy topics (live on RPD now, not on section)
+            for t in base.topics:
+                db.add(RpdTopic(
+                    id_rpd=rpd.id_rpd, topic_type=t.topic_type,
+                    title=t.title, hours=t.hours, description=t.description,
+                ))
 
             # Copy literature
             for lit in base.literature:
@@ -617,23 +621,20 @@ async def add_section(rpd_id: int, data: RpdSectionCreate, db: AsyncSession = De
     section = RpdSection(id_rpd=rpd_id, **data.model_dump())
     db.add(section)
     await db.commit()
-    await db.refresh(section, attribute_names=["topics"])
+    await db.refresh(section)
     return section
 
 
 @router.put("/sections/{section_id}", response_model=RpdSectionOut)
 async def update_section(section_id: int, data: RpdSectionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    result = await db.execute(
-        select(RpdSection).where(RpdSection.id_section == section_id)
-        .options(selectinload(RpdSection.topics))
-    )
+    result = await db.execute(select(RpdSection).where(RpdSection.id_section == section_id))
     section = result.scalar_one_or_none()
     if not section:
         raise HTTPException(status_code=404)
     for k, v in data.model_dump().items():
         setattr(section, k, v)
     await db.commit()
-    await db.refresh(section, attribute_names=["topics"])
+    await db.refresh(section)
     return section
 
 
@@ -648,9 +649,9 @@ async def delete_section(section_id: int, db: AsyncSession = Depends(get_db), us
 
 # ── Topics ──
 
-@router.post("/sections/{section_id}/topics", response_model=RpdTopicOut, status_code=201)
-async def add_topic(section_id: int, data: RpdTopicCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    topic = RpdTopic(id_section=section_id, **data.model_dump())
+@router.post("/{rpd_id}/topics", response_model=RpdTopicOut, status_code=201)
+async def add_topic(rpd_id: int, data: RpdTopicCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    topic = RpdTopic(id_rpd=rpd_id, **data.model_dump())
     db.add(topic)
     await db.commit()
     await db.refresh(topic)

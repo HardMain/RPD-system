@@ -9,67 +9,56 @@ import { useRpdEditor } from "../RpdEditorContext.jsx";
 
 /**
  * Разделы 4.1 / 4.2 — тематика лабораторных работ или практических занятий.
- * Шаблон rpd_template.docx (TABLE 7/8) — это плоская 2-колоночная таблица
- * «№ п.п. | Наименование темы …», нумерация сквозная по всем разделам.
+ * В АРМ РПД это две плоских таблицы тем без привязки к разделам дисциплины:
+ * преподаватель просто перечисляет темы. Поэтому темы хранятся на уровне РПД
+ * (`rpd.topics`, `topic_type: "lab" | "practice"`), без `id_section`.
  *
- * В редакторе оставляем группировку по разделам дисциплины — добавлять тему
- * нужно к конкретному разделу, иначе непонятно куда. Внутри каждого раздела —
- * мини-таблица в стиле шаблона. Сквозная нумерация считается по всем разделам.
- *
- * Разделы без названия не показываем (они ещё «не готовы»), это же правило
- * применяется в backend/services/rpd_template_context.py.
+ * Если в содержании дисциплины суммарно 0 часов соответствующего вида
+ * (например, ни в одном разделе нет практических занятий) — раздел вообще
+ * не показывается: писать темы, для которых нет ни одного часа, бессмысленно.
  */
 export function TopicsEditor({ kind }) {
-  const { rpd, isEdit, canEdit, reload } = useRpdEditor();
+  const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
-  const titleLabel = kind === "lab" ? "Наименование темы лабораторной работы" : "Наименование темы практического (семинарского) занятия";
+  const titleLabel = kind === "lab"
+    ? "Наименование темы лабораторной работы"
+    : "Наименование темы практического (семинарского) занятия";
 
-  const sections = (rpd.sections || []).filter(s => (s.title || "").trim());
+  // Часов выбранного вида в содержании. Берём суммой по разделам.
+  const sections = rpd.sections || [];
+  const totalHoursForKind = sections.reduce((acc, s) => {
+    const h = kind === "lab" ? (s.lab_hours || 0) : (s.practice_hours || 0);
+    return acc + h;
+  }, 0);
 
-  if (!sections.length) {
+  if (totalHoursForKind <= 0) {
     return <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>
-      Сначала добавьте разделы дисциплины (раздел 4) и заполните их названия
+      В содержании дисциплины нет часов {kind === "lab" ? "лабораторных работ" : "практических занятий"} — раздел не используется.
     </div>;
   }
 
-  // Сквозная нумерация по всем разделам (как в шаблоне). Накопительная сумма
-  // длин предыдущих разделов даёт стартовый индекс текущего.
-  let running = 0;
-  const blocks = sections.map(s => {
-    const topics = (s.topics || []).filter(t => t.topic_type === kind);
-    const startIndex = running + 1;
-    running += topics.length;
-    return { section: s, topics, startIndex };
-  });
+  const topics = (rpd.topics || []).filter(t => t.topic_type === kind);
 
-  return <div>
-    {blocks.map(({ section, topics, startIndex }) => (
-      <SectionBlock
-        key={section.id_section}
-        section={section}
-        topics={topics}
-        kind={kind}
-        titleLabel={titleLabel}
-        editable={editable}
-        startIndex={startIndex}
-        reload={reload}
-      />
-    ))}
-  </div>;
+  return <TopicsTable
+    topics={topics}
+    kind={kind}
+    rpdId={rpdId}
+    titleLabel={titleLabel}
+    editable={editable}
+    reload={reload}
+  />;
 }
 
 
-function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex, reload }) {
+function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
   const tbodyRef = useRef(null);
   async function addTopic() {
     try {
-      await api.addTopic(section.id_section, { topic_type: kind, title: "" });
+      await api.addTopic(rpdId, { topic_type: kind, title: "" });
       await reload();
     } catch {}
   }
   async function delTopic(t) {
-    // Пустую тему удаляем без подтверждения — пользователь её только что
-    // увидел из автодобавления или передумал. Терять там нечего.
     if ((t.title || "").trim() && !confirm("Удалить тему?")) return;
     try { await api.deleteTopic(t.id_topic); await reload(); } catch {}
   }
@@ -77,9 +66,8 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
     const t = topics.find(it => String(it.id_topic) === String(id));
     if (t) await delTopic(t);
   }
-  // Один раз на маунт блока — если у раздела для текущего kind ещё нет ни
-  // одной темы, добавляем пустую. Так пользователь сразу видит готовую к
-  // вводу строку. Пустые темы фильтруются в печатной форме.
+  // Один раз после маунта — если тем для этого вида ещё нет, добавляем пустую,
+  // чтобы пользователь сразу видел готовую к вводу строку.
   const autoAddedRef = useRef(false);
   useEffect(() => {
     if (!editable || autoAddedRef.current) return;
@@ -95,12 +83,7 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
     } catch {}
   }
 
-  return <div style={{ marginBottom: 18 }}>
-    <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>
-      Раздел {section.section_number}. {section.title}
-    </div>
-    {/* Шапка и колонки 1:1 с шаблоном (TABLE 7/8): «№ п.п. | Наименование темы …». */}
-    <div style={{ position: "relative" }}>
+  return <div style={{ position: "relative" }}>
     <div className="table-scroll">
     <table style={{ width: "100%", borderCollapse: "collapse" }}>
       <colgroup>
@@ -125,7 +108,7 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
           <TopicRow
             key={t.id_topic}
             topic={t}
-            index={startIndex + i}
+            index={i + 1}
             editable={editable}
             onSave={(title) => saveTitle(t, title)}
           />
@@ -134,7 +117,6 @@ function SectionBlock({ section, topics, kind, titleLabel, editable, startIndex,
     </table>
     </div>
     {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить тему" />}
-    </div>
     {editable && (
       <div style={{ marginTop: 8 }}>
         <Btn small onClick={addTopic}><PlusIcon /> Добавить тему</Btn>

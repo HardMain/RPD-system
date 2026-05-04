@@ -47,8 +47,8 @@ export const addSection = (rpdId, data) => api.post(`/rpd/${rpdId}/sections`, da
 export const updateSection = (sectionId, data) => api.put(`/rpd/sections/${sectionId}`, data);
 export const deleteSection = (sectionId) => api.delete(`/rpd/sections/${sectionId}`);
 
-// Topics
-export const addTopic = (sectionId, data) => api.post(`/rpd/sections/${sectionId}/topics`, data);
+// Topics — теперь привязаны к РПД, а не к разделу
+export const addTopic = (rpdId, data) => api.post(`/rpd/${rpdId}/topics`, data);
 export const updateTopic = (topicId, data) => api.put(`/rpd/topics/${topicId}`, data);
 export const deleteTopic = (topicId) => api.delete(`/rpd/topics/${topicId}`);
 

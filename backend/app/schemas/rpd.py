@@ -91,7 +91,7 @@ class RpdUpdate(BaseModel):
 # ── Sections / Topics ─────────────────────────────────────────────────────────
 class RpdTopicOut(BaseModel):
     id_topic: int
-    id_section: int
+    id_rpd: int
     topic_type: str
     title: str
     hours: int | None = None
@@ -125,7 +125,6 @@ class RpdSectionOut(BaseModel):
     lab_hours: int
     self_study_hours: int
     semester: int | None = None
-    topics: list[RpdTopicOut] = []
 
     class Config:
         from_attributes = True
@@ -391,6 +390,7 @@ class RpdDetailOut(BaseModel):
     fos_main: FosFileOut | None = None
     fos_other: list[FosFileOut] = []
     sections: list[RpdSectionOut] = []
+    topics: list[RpdTopicOut] = []
     literature: list[LiteratureOut] = []
     software: list[SoftwareOut] = []
     material_tech: list[MaterialTechOut] = []

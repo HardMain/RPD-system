@@ -312,15 +312,18 @@ def build_context(rpd, bd=None, link=None) -> dict:
     }
 
     # ── Темы лабораторных и практических ──────────────────────────────────
-    # Источник тем — те же отфильтрованные «осмысленные» разделы.
+    # Темы хранятся плоскими списками на самом РПД (не привязаны к разделу) —
+    # просто две таблицы тем по виду занятия, как в АРМ РПД.
     lab_topics, prac_topics = [], []
-    for s in rpd_sections:
-        for t in (s.topics or []):
-            tt = (t.topic_type or "").lower()
-            if tt in ("lab", "лр", "лаб", "laboratory"):
-                lab_topics.append(t.title)
-            elif tt in ("practice", "пз", "практика", "seminar"):
-                prac_topics.append(t.title)
+    for t in (getattr(rpd, "topics", None) or []):
+        title = (t.title or "").strip()
+        if not title:
+            continue
+        tt = (t.topic_type or "").lower()
+        if tt in ("lab", "лр", "лаб", "laboratory"):
+            lab_topics.append(title)
+        elif tt in ("practice", "пз", "практика", "seminar"):
+            prac_topics.append(title)
 
     practical_topics = [
         {"index": i, "title": t} for i, t in enumerate(prac_topics, 1)

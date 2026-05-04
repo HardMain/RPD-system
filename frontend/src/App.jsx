@@ -13,7 +13,6 @@ import { BellIcon } from "./components/icons.jsx";
 import { LoginPage } from "./pages/LoginPage.jsx";
 import { RpdListPage } from "./pages/RpdListPage.jsx";
 import { ApprovalPage } from "./pages/ApprovalPage.jsx";
-import { OnApprovalPage } from "./pages/OnApprovalPage.jsx";
 import { ArchivePage } from "./pages/ArchivePage.jsx";
 import { SystemInfoPage } from "./pages/SystemInfoPage.jsx";
 import { AdminBupsPage } from "./pages/AdminBupsPage.jsx";
@@ -53,11 +52,6 @@ export default function App() {
   const [tabReloadKeys, setTabReloadKeys] = useState({});
   const [showNotif, setShowNotif] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  // История навигации для кнопки «← Назад» в редакторе РПД. Каждый элемент —
-  // либо страница верхней навигации, либо открытая РПД-вкладка. Стек растёт по мере
-  // переходов; «Назад» снимает текущий элемент и возвращает предыдущий, не закрывая
-  // саму РПД (закрытие — отдельное действие, например подтверждение «Согласовано»).
-  const navHistoryRef = useRef([]);
 
   useEffect(() => {
     const t = localStorage.getItem("token");
@@ -164,9 +158,6 @@ export default function App() {
     const next = openRpds.filter(t => t.tabId !== tabId);
     setOpenRpds(next); loadRpds();
     setTabReloadKeys(prev => { if (!(tabId in prev)) return prev; const { [tabId]: _, ...rest } = prev; return rest; });
-    // Чистим историю навигации от ссылок на закрытую вкладку — иначе «Назад»
-    // в другой РПД мог бы попытаться вернуться на уже закрытую.
-    navHistoryRef.current = navHistoryRef.current.filter(v => !(v.kind === "rpd" && v.id === tabId));
     setPanes(prev => {
       let newLeft = prev.left;
       let newRight = prev.right;
@@ -229,42 +220,6 @@ export default function App() {
     // «вес» панелей поехал вместе с их содержимым, а не наоборот.
     setSplitRatio(r => 1 - r);
   }
-  // Текущий «вид» для истории навигации. В режиме редактора привязываемся к
-  // активной вкладке левой панели (если она пуста — к правой); в split-режиме
-  // фокус на редакторе считаем по той панели, в которой стоит курсор пользователя
-  // — но для простоты берём левую как primary.
-  const focusedRpdTabId = activeTab === "edit"
-    ? (panes.left.activeId ?? (panes.right ? panes.right.activeId : null))
-    : null;
-  useEffect(() => {
-    const view = activeTab === "edit"
-      ? (focusedRpdTabId ? { kind: "rpd", id: focusedRpdTabId } : null)
-      : { kind: "page", id: activeTab };
-    if (!view) return;
-    const stack = navHistoryRef.current;
-    const top = stack[stack.length - 1];
-    if (!top || top.kind !== view.kind || top.id !== view.id) {
-      stack.push(view);
-      if (stack.length > 50) stack.shift();
-    }
-  }, [activeTab, focusedRpdTabId]);
-
-  // «Назад» из BottomBar редактора. Снимаем со стека все записи текущей РПД,
-  // чтобы не возвращаться в самих себя, и переключаемся на предыдущий вид.
-  // Если стека нет — просто уходим на «Мои РПД», вкладка остаётся открытой.
-  function handleBack(tabId) {
-    const stack = navHistoryRef.current;
-    while (stack.length > 0) {
-      const t = stack[stack.length - 1];
-      if (t.kind === "rpd" && t.id === tabId) { stack.pop(); continue; }
-      break;
-    }
-    if (stack.length === 0) { setActiveTab("my"); return; }
-    const target = stack.pop();
-    if (target.kind === "page") setActiveTab(target.id);
-    else focusTab(target.id);
-  }
-
   // Дёргаем «соседей по id_rpd», но не саму initiator-вкладку: она только что сама всё перечитала.
   function notifyRpdChanged(initiatorTabId) {
     const init = openRpds.find(t => t.tabId === initiatorTabId); if (!init) return;
@@ -328,7 +283,6 @@ export default function App() {
     const r = user.role;
     const allowed = new Set(["my", "archive", "system", "edit"]);
     if (r === "Зав. кафедрой") allowed.add("approval");
-    else allowed.add("onApproval");
     if (r === "Администратор") { allowed.add("adminBups"); allowed.add("adminDirections"); }
     if (!allowed.has(activeTab)) setActiveTab("my");
   }, [user, activeTab]);
@@ -341,7 +295,7 @@ export default function App() {
   const isAdmin = role === "Администратор";
   const navTabs = [
     { id: "my", label: `Мои РПД (${rpds.length})` },
-    isHead ? { id: "approval", label: "Согласование" } : { id: "onApproval", label: `На согласов. (${rpds.filter(r => r.status === "На согласовании").length})` },
+    isHead ? { id: "approval", label: "Согласование" } : null,
     { id: "archive", label: `Архив (${rpds.filter(r => r.status === "Согласовано").length})` },
     isAdmin ? { id: "adminBups", label: "БУПы" } : null,
     isAdmin ? { id: "adminDirections", label: "ФГОС" } : null,
@@ -390,8 +344,7 @@ export default function App() {
     {/* Pages */}
     {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={r => openRpdFn(r, false)} onEdit={r => openRpdFn(r, true)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} userRole={role} />}
     {activeTab === "approval" && <ApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, true)} />}
-    {activeTab === "onApproval" && <OnApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, false)} />}
-    {activeTab === "archive" && <ArchivePage rpds={rpds} onOpen={r => openRpdFn(r, false)} />}
+    {activeTab === "archive" && <ArchivePage rpds={rpds} onOpen={r => openRpdFn(r, false)} onExportPdf={handleExportPdf} />}
     {activeTab === "adminBups" && <AdminBupsPage />}
     {activeTab === "adminDirections" && <AdminDirectionsPage />}
     {activeTab === "system" && <SystemInfoPage />}
@@ -429,7 +382,6 @@ export default function App() {
             onAfterSave={() => notifyRpdChanged(t.tabId)}
             onOpenPair={() => openPairFor(t.tabId)}
             userRole={role}
-            onBack={() => handleBack(t.tabId)}
             onCloseTab={() => closeRpdTab(t.tabId)}
             onExportPdf={handleExportPdf}
             onToggleMode={() => toggleTabMode(t.tabId)}
@@ -453,7 +405,7 @@ export default function App() {
             cursor: "col-resize", zIndex: 30, background: "transparent",
           }}
         >
-          <div style={{ position: "absolute", left: 2, top: 0, width: 2, height: "100%", background: T.border }} />
+          <div style={{ position: "absolute", left: 2, top: 0, width: 2, height: "100%", background: T.headerBg }} />
         </div>
         <button
           onClick={swapPanes}
