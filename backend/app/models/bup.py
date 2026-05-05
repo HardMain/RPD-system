@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint
+from sqlalchemy import Column, Integer, String, ForeignKey, UniqueConstraint, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 
@@ -12,6 +12,7 @@ class Bup(Base):
     year = Column(Integer)
     faculty = Column(String(150))
     profile = Column(String(200))
+    form_of_study = Column(String(40))
     id_source_file = Column(Integer, ForeignKey("stored_files.id_file"), nullable=True)
 
     direction = relationship("Direction", back_populates="bups")
@@ -29,7 +30,7 @@ class BupDiscipline(Base):
     id_department = Column(Integer, ForeignKey("departments.id_department"), nullable=True)
 
     code = Column(String(30))
-    semester = Column(String(30))
+    semester = Column(String(100))
     control_form = Column(String(255))
 
     total_hours = Column(Integer)
@@ -87,7 +88,7 @@ class RpdBupDiscipline(Base):
     fgos_file_id = Column(Integer)
     fgos_file_name = Column(String(300))
     code = Column(String(30))
-    semester = Column(String(30))
+    semester = Column(String(100))
     control_form = Column(String(255))
     total_hours = Column(Integer)
     exam_hours = Column(Integer)
@@ -99,6 +100,8 @@ class RpdBupDiscipline(Base):
     zet = Column(Integer)
     semesters_data = Column(JSONB, nullable=True)
     discipline_name = Column(String(200))
+    form_of_study = Column(String(40))
+    is_manual = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (
         UniqueConstraint("id_rpd", "id_bup_discipline", name="uq_rpd_bup_disc"),

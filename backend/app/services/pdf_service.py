@@ -55,7 +55,7 @@ _BORDER  = colors.Color(0.40, 0.40, 0.40)
 
 _TITLE_FIELDS = [
     (367, 386, "discipline_name", True),
-    (408, 426, "__очная__",       False),
+    (408, 426, "study_form",      False),
     (447, 465, "degree_level",    False),
     (487, 505, "__hours__",       False),
     (532, 551, "__direction__",   False),
@@ -66,8 +66,8 @@ _VALUE_X0, _VALUE_X1 = 228.0, 543.0
 _FS = 13.5
 
 def _field_value(key: str, rpd: dict) -> str:
-    if key == "__очная__":
-        return "очная"
+    if key == "study_form":
+        return (rpd.get("study_form") or "очная").strip()
     if key == "__hours__":
         h = rpd.get("total_hours") or 0
         zet = round(h / 36) if h else None

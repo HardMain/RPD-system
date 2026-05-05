@@ -77,12 +77,17 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
         </FieldGrid>
       </Section>
 
-      <Section title="Привязанные дисциплины БУПа">
-        <BupDisciplinesTable bupDisciplines={rpd.bup_disciplines || []} disciplineName={rpd.discipline_name} />
-        <Hint>
-          Дисциплины БУПа задаются при создании РПД и после создания не редактируются. Если состав некорректный — создайте РПД заново.
-        </Hint>
-      </Section>
+      {(rpd.bup_disciplines || []).some(b => b.is_manual) ? (
+        <Section title="Учебные параметры">
+          <ManualDisciplineTable bupDisciplines={rpd.bup_disciplines || []} disciplineName={rpd.discipline_name} />
+          <Hint>РПД с ручным вводом — поля направления, семестра, контроля и часов редактируются прямо в документе.</Hint>
+        </Section>
+      ) : (
+        <Section title="Привязанные дисциплины БУПа">
+          <BupDisciplinesTable bupDisciplines={rpd.bup_disciplines || []} disciplineName={rpd.discipline_name} />
+          <Hint>Дисциплины БУПа задаются при создании РПД и после создания не редактируются. Если состав некорректный — создайте РПД заново.</Hint>
+        </Section>
+      )}
 
       <Section title="Комментарий к РПД">
         {canEdit ? (
@@ -189,6 +194,39 @@ function BupDisciplinesTable({ bupDisciplines, disciplineName }) {
 const head = { padding: "8px 10px", borderBottom: "1px solid " + T.border, background: T.bg, fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", textAlign: "left", wordBreak: "normal", overflowWrap: "break-word" };
 const cell = { padding: "8px 10px", borderBottom: "1px solid " + T.borderLight, fontSize: 12, verticalAlign: "top", wordBreak: "normal", overflowWrap: "break-word" };
 
+function ManualDisciplineTable({ bupDisciplines, disciplineName }) {
+  const link = (bupDisciplines || []).find(b => b.is_manual);
+  if (!link) {
+    return <div style={{ padding: "10px 14px", background: T.bg, borderRadius: 4, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>
+      Параметры не заданы.
+    </div>;
+  }
+  const volumeParts = [];
+  if (link.semester) volumeParts.push(`сем. ${link.semester}`);
+  if (link.total_hours) volumeParts.push(`${link.total_hours} ч`);
+  if (link.zet) volumeParts.push(`${link.zet} ЗЕ`);
+  return <div className="table-scroll" style={{ border: "1px solid " + T.borderLight, borderRadius: 6 }}>
+    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      <thead>
+        <tr>
+          <th style={head}>Направление</th>
+          <th style={head}>Профиль</th>
+          <th style={head}>Форма обучения</th>
+          <th style={head}>Сем. / часы / ЗЕ</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style={cell}>{link.direction_code ? `${link.direction_code} ${link.direction_name || ""}` : (link.direction_name || "—")}</td>
+          <td style={cell}>{link.direction_profile || "—"}</td>
+          <td style={cell}>{link.form_of_study || "—"}</td>
+          <td style={cell}>{volumeParts.join(" · ") || "—"}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>;
+}
+
 function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
   const [showPicker, setShowPicker] = useState(false);
   const max = 2;
@@ -267,3 +305,4 @@ function DeveloperPicker({ excludeIds, onPick, onCancel }) {
     </div>
   </div>;
 }
+

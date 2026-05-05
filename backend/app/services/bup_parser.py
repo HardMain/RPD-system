@@ -45,6 +45,7 @@ class ParsedBup:
     profile: str | None = None
     faculty: str | None = None
     department_name: str | None = None
+    form_of_study: str | None = None
     disciplines: list[ParsedDiscipline] = field(default_factory=list)
 
 def _to_int(value) -> int | None:
@@ -71,9 +72,10 @@ _RE_DIRECTION = re.compile(r"Направление подготовки:\s*([\d
 _RE_FACULTY = re.compile(r"Факультет:\s*(.+)", re.IGNORECASE)
 _RE_DEPT = re.compile(r"Кафедра:\s*(.+)", re.IGNORECASE)
 _RE_PROFILE = re.compile(r"Профиль[^:]*:\s*(.+)", re.IGNORECASE)
+_RE_FORM = re.compile(r"Форма обучения:\s*(.+)", re.IGNORECASE)
 
-def _parse_meta(sheet) -> tuple[str | None, str | None, str | None, str | None, str | None]:
-    faculty = direction_code = direction_name = department_name = profile = None
+def _parse_meta(sheet) -> tuple[str | None, str | None, str | None, str | None, str | None, str | None]:
+    faculty = direction_code = direction_name = department_name = profile = form_of_study = None
     for r in range(min(6, sheet.nrows)):
         for c in range(min(20, sheet.ncols)):
             v = _to_str(sheet.cell_value(r, c))
@@ -88,7 +90,9 @@ def _parse_meta(sheet) -> tuple[str | None, str | None, str | None, str | None, 
                 department_name = m.group(1).strip()
             elif (m := _RE_PROFILE.search(v)):
                 profile = m.group(1).strip()
-    return faculty, direction_code, direction_name, department_name, profile
+            elif (m := _RE_FORM.search(v)):
+                form_of_study = m.group(1).strip().lower()
+    return faculty, direction_code, direction_name, department_name, profile, form_of_study
 
 def _build_control_form(row_vals: list) -> tuple[str | None, str | None]:
     parts: list[str] = []
@@ -153,13 +157,14 @@ def parse_bup_xls(content: bytes) -> ParsedBup:
         raise ValueError("В файле не найден лист «Дисциплины» / «План»")
 
     sh = target_sheet
-    faculty, dcode, dname, dept_name, profile = _parse_meta(sh)
+    faculty, dcode, dname, dept_name, profile, form_of_study = _parse_meta(sh)
     parsed = ParsedBup(
         direction_code=dcode,
         direction_name=dname,
         profile=profile,
         faculty=faculty,
         department_name=dept_name,
+        form_of_study=form_of_study,
     )
 
     for r in range(11, sh.nrows):

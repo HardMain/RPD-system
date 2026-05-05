@@ -3,7 +3,7 @@ import { T } from "../../../theme.js";
 export function PlanSummary({ bupDisciplines, sections }) {
   if (!bupDisciplines || bupDisciplines.length === 0) {
     return <div style={{ padding: 10, marginBottom: 12, background: T.orangeLight, border: "1px solid " + T.orange, borderRadius: 6, fontSize: 12, color: T.orange }}>
-      РПД не привязана к дисциплине БУПа — плановые часы недоступны. Создайте РПД заново через выбор БУПа, чтобы видеть план.
+      РПД без привязки к дисциплине и без ручного ввода — плановые часы недоступны. Создайте РПД заново и укажите часы в модалке создания.
     </div>;
   }
 
@@ -52,7 +52,7 @@ function BdCard({ bd, sections }) {
 
     <div style={{ padding: "8px 12px", background: T.bg, borderBottom: "1px solid " + T.borderLight }}>
       <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px" }}>{bd.code || "—"}</span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px" }}>{bd.code || (bd.is_manual ? "Ручной ввод" : "—")}</span>
         <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{bd.bup_name || ""}</span>
       </div>
       {semesterLines.length > 0 && (

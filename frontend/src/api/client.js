@@ -66,6 +66,9 @@ export const deleteOutcome = (outcomeId) => api.delete(`/rpd/outcomes/${outcomeI
 export const getOutcomesTable = (rpdId, bdId) =>
   api.get(`/rpd/${rpdId}/outcomes-table`, { params: bdId ? { bd_id: bdId } : {} });
 export const upsertOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes/upsert`, data);
+export const addManualOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes/manual`, data);
+export const patchOutcomeSnapshot = (outcomeId, data) => api.patch(`/rpd/outcomes/${outcomeId}/snapshot`, data);
+export const updateManualLink = (rpdId, data) => api.patch(`/rpd/${rpdId}/manual-link`, data);
 
 export const getAssessmentTools = () => api.get('/assessment-tools/');
 export const createAssessmentTool = (name) => api.post('/assessment-tools/', { name });
@@ -128,7 +131,7 @@ export const fetchPdfInline = (rpdId, config = {}, bdId) => {
 
 export const getDirections = () => api.get('/rpd/directions');
 
-export const getDisciplines = () => api.get('/rpd/disciplines');
+export const getDisciplines = (params) => api.get('/rpd/disciplines', { params });
 
 export const getNotifications = () => api.get('/notifications/');
 export const getUnreadCount = () => api.get('/notifications/unread-count');

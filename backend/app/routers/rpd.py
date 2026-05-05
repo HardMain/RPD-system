@@ -24,6 +24,7 @@ from app.schemas import (
     DeveloperOut, ApprovalAction, ApprovalOut,
     DirectionOut, DisciplineOut, UploadedDocumentOut,
     OutcomeUpsert, OutcomeRowOut, BupDisciplineRefOut, FosFileOut,
+    ManualLinkUpdate, ManualOutcomeCreate,
 )
 from app.models import Bup
 
@@ -100,7 +101,9 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
             fgos_file_id=_pick(link.fgos_file_id, fgos.id_file if fgos else None),
             fgos_file_name=_pick(link.fgos_file_name, fgos.original_name if fgos else None),
             semesters_data=_pick(link.semesters_data, bd.semesters_data if bd else None),
-            bup_deleted=bd is None,
+            form_of_study=_pick(link.form_of_study, bup.form_of_study if bup else None),
+            bup_deleted=bd is None and not link.is_manual,
+            is_manual=link.is_manual,
         )
     bup_disciplines = [_bd_ref(link) for link in (r.bup_links or [])]
 
@@ -191,7 +194,10 @@ async def list_directions(db: AsyncSession = Depends(get_db)):
     return result.scalars().all()
 
 @router.get("/disciplines", response_model=list[DisciplineOut])
-async def list_disciplines(db: AsyncSession = Depends(get_db)):
+async def list_disciplines(
+    include_unbound: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(
         select(Discipline)
         .order_by(Discipline.name)
@@ -201,6 +207,16 @@ async def list_disciplines(db: AsyncSession = Depends(get_db)):
     out: list[DisciplineOut] = []
     for d in rows:
         if not d.bup_disciplines:
+            if not include_unbound:
+                continue
+            out.append(DisciplineOut(
+                id_discipline=d.id_discipline,
+                name=d.name,
+                code=None, semester=None,
+                total_hours=None, lecture_hours=None,
+                practice_hours=None, lab_hours=None,
+                self_study_hours=None, control_form=None,
+            ))
             continue
         bd = d.bup_disciplines[0]
         out.append(DisciplineOut(
@@ -233,6 +249,7 @@ async def list_rpds(
                 .selectinload(BupDiscipline.bup)
                 .selectinload(Bup.direction),
             selectinload(Rpd.author),
+            selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
         )
     )
     if status:
@@ -259,6 +276,8 @@ async def list_rpds(
             semester=pick(link.semester if link else None, bd.semester if bd else None),
             total_hours=pick(link.total_hours if link else None, bd.total_hours if bd else None),
             updated_at=r.updated_at,
+            comment=r.comment,
+            developer_names=[dev.user.full_name for dev in (r.developers or []) if dev.user],
         ))
     return out
 
@@ -292,6 +311,7 @@ def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> No
     link.zet = bd.zet
     link.semesters_data = bd.semesters_data
     link.discipline_name = bd.discipline.name if bd.discipline else None
+    link.form_of_study = bup.form_of_study if bup else None
 
 def _fill_outcome_snapshot(lo: RpdLearningOutcome, ind: CompetencyIndicator) -> None:
     comp = ind.competency if ind else None
@@ -362,8 +382,78 @@ async def _autofill_outcomes_from_bup_disciplines(
         _fill_outcome_snapshot(lo, ind)
         db.add(lo)
 
+async def _resolve_or_create_discipline(
+    db: AsyncSession, *, id_discipline: int | None, name: str | None,
+) -> int:
+    if id_discipline:
+        existing = await db.get(Discipline, id_discipline)
+        if not existing:
+            raise HTTPException(status_code=404, detail="Дисциплина не найдена")
+        return existing.id_discipline
+    if name and name.strip():
+        norm = name.strip()
+        res = await db.execute(select(Discipline).where(Discipline.name == norm))
+        existing = res.scalar_one_or_none()
+        if existing:
+            return existing.id_discipline
+        d = Discipline(name=norm)
+        db.add(d)
+        await db.flush()
+        return d.id_discipline
+    raise HTTPException(status_code=400, detail="Не указана дисциплина")
+
+def _fill_manual_link(link: RpdBupDiscipline, payload, *, discipline_name: str) -> None:
+    link.is_manual = True
+    link.bup_name = None
+    link.bup_year = None
+    link.bup_profile = None
+    link.direction_code = (payload.direction_code or "").strip() or None
+    link.direction_name = (payload.direction_name or "").strip() or None
+    link.direction_profile = (payload.direction_profile or "").strip() or None
+    link.fgos_file_id = None
+    link.fgos_file_name = None
+    link.code = None
+    link.semester = (payload.semester or "").strip() or None
+    link.control_form = (payload.control_form or "").strip() or None
+    link.total_hours = payload.total_hours
+    link.exam_hours = payload.exam_hours
+    link.lecture_hours = payload.lecture_hours
+    link.lab_hours = payload.lab_hours
+    link.practice_hours = payload.practice_hours
+    link.ksr_hours = payload.ksr_hours
+    link.self_study_hours = payload.self_study_hours
+    link.zet = payload.zet
+    link.semesters_data = payload.semesters_data
+    link.discipline_name = discipline_name
+    link.form_of_study = (payload.form_of_study or "").strip() or None
+    if payload.zet is not None:
+        link.total_hours = int(payload.zet) * 36
+
 @router.post("/", response_model=RpdDetailOut, status_code=201)
 async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if data.manual is not None:
+        id_discipline = await _resolve_or_create_discipline(
+            db,
+            id_discipline=data.manual.id_discipline or data.id_discipline,
+            name=data.manual.discipline_name,
+        )
+        disc = await db.get(Discipline, id_discipline)
+        rpd = Rpd(
+            id_discipline=id_discipline,
+            id_author=user.id_user,
+            academic_year=data.academic_year,
+            status="Черновик",
+            based_on_rpd_id=data.based_on_rpd_id,
+        )
+        db.add(rpd)
+        await db.flush()
+        link = RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=None)
+        _fill_manual_link(link, data.manual, discipline_name=disc.name if disc else "")
+        db.add(link)
+        await db.commit()
+        rpd_full = await _get_rpd_full(rpd.id_rpd, db)
+        return _build_rpd_detail(rpd_full)
+
     id_discipline = data.id_discipline
     if data.bup_discipline_ids:
         rows = await db.execute(
@@ -742,6 +832,112 @@ async def delete_outcome(outcome_id: int, db: AsyncSession = Depends(get_db), us
         await db.delete(lo)
         await db.commit()
 
+@router.patch("/{rpd_id}/manual-link", response_model=RpdDetailOut)
+async def update_manual_link(
+    rpd_id: int, data: ManualLinkUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    res = await db.execute(
+        select(RpdBupDiscipline)
+        .where(RpdBupDiscipline.id_rpd == rpd_id)
+        .where(RpdBupDiscipline.is_manual == True)
+    )
+    link = res.scalar_one_or_none()
+    if not link:
+        raise HTTPException(status_code=404, detail="У этой РПД нет ручной привязки")
+
+    payload = data.model_dump(exclude_unset=True, exclude={"semesters_data"})
+    for field, value in payload.items():
+        if isinstance(value, str):
+            value = value.strip() or None
+        setattr(link, field, value)
+
+    if data.semesters_data is not None:
+        sd = sorted(
+            [s for s in data.semesters_data if s.get("number") is not None],
+            key=lambda s: s["number"],
+        )
+        link.semesters_data = sd
+        nums = [s["number"] for s in sd]
+        link.semester = ", ".join(str(n) for n in nums) or None
+        link.lecture_hours = sum(int(s.get("lecture") or 0) for s in sd)
+        link.lab_hours = sum(int(s.get("lab") or 0) for s in sd)
+        link.practice_hours = sum(int(s.get("practice") or 0) for s in sd)
+        link.ksr_hours = sum(int(s.get("ksr") or 0) for s in sd)
+        link.self_study_hours = sum(int(s.get("srs") or 0) for s in sd)
+
+    if link.zet is not None:
+        link.total_hours = int(link.zet) * 36
+
+    await db.commit()
+    return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
+
+@router.post("/{rpd_id}/outcomes/manual", response_model=LearningOutcomeOut, status_code=201)
+async def add_manual_outcome(
+    rpd_id: int, data: ManualOutcomeCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    rpd = await db.get(Rpd, rpd_id)
+    if not rpd:
+        raise HTTPException(status_code=404, detail="РПД не найдена")
+    lo = RpdLearningOutcome(
+        id_rpd=rpd_id,
+        id_indicator=data.id_indicator,
+        outcome_text=(data.outcome_text or "").strip() or None,
+        assessment_tool=(data.assessment_tool or "").strip() or None,
+        indicator_code=(data.indicator_code or "").strip() or None,
+        indicator_description=(data.indicator_description or "").strip() or None,
+        competency_code=(data.competency_code or "").strip() or None,
+        competency_name=(data.competency_name or "").strip() or None,
+    )
+    db.add(lo)
+    await db.flush()
+    if lo.id_indicator is not None:
+        ind_res = await db.execute(
+            select(CompetencyIndicator)
+            .where(CompetencyIndicator.id_indicator == lo.id_indicator)
+            .options(selectinload(CompetencyIndicator.competency))
+        )
+        ind = ind_res.scalar_one_or_none()
+        if ind is not None:
+            _fill_outcome_snapshot(lo, ind)
+    await db.commit()
+    return LearningOutcomeOut(
+        id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        indicator_code=lo.indicator_code,
+        competency_code=lo.competency_code,
+        outcome_text=lo.outcome_text,
+        assessment_tool=lo.assessment_tool,
+    )
+
+@router.patch("/outcomes/{outcome_id}/snapshot", response_model=LearningOutcomeOut)
+async def patch_outcome_snapshot(
+    outcome_id: int, data: ManualOutcomeCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    res = await db.execute(select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == outcome_id))
+    lo = res.scalar_one_or_none()
+    if not lo:
+        raise HTTPException(status_code=404)
+    payload = data.model_dump(exclude_unset=True)
+    for field in ("competency_code", "competency_name", "indicator_code", "indicator_description", "outcome_text", "assessment_tool"):
+        if field in payload:
+            v = payload[field]
+            if isinstance(v, str):
+                v = v.strip() or None
+            setattr(lo, field, v)
+    await db.commit()
+    return LearningOutcomeOut(
+        id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        indicator_code=lo.indicator_code,
+        competency_code=lo.competency_code,
+        outcome_text=lo.outcome_text,
+        assessment_tool=lo.assessment_tool,
+    )
+
 @router.post("/{rpd_id}/bup-disciplines/{bd_id}", response_model=RpdDetailOut, status_code=201)
 async def attach_bup_discipline(
     rpd_id: int, bd_id: int,
@@ -862,8 +1058,10 @@ async def get_outcomes_table(
         comp = ind.competency if ind else None
         if lo.id_indicator is not None:
             key = ("ind", lo.id_indicator)
-        else:
+        elif lo.competency_code or lo.indicator_code:
             key = ("snap", lo.competency_code or "", lo.indicator_code or "")
+        else:
+            key = ("out", lo.id_outcome)
         if key in seen_keys:
             continue
         seen_keys.add(key)

@@ -186,6 +186,7 @@ async def import_parsed_bup(
             id_direction=direction.id_direction,
             name=name, year=year,
             faculty=parsed.faculty, profile=parsed.profile,
+            form_of_study=parsed.form_of_study,
             id_source_file=id_source_file,
         )
         db.add(bup)

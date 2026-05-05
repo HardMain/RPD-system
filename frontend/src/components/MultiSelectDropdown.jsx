@@ -2,13 +2,34 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { T, F } from "../theme.js";
 
+let _measureCtx = null;
+function _measure(s) {
+  if (typeof document === "undefined") return (s || "").length * 7;
+  if (!_measureCtx) {
+    _measureCtx = document.createElement("canvas").getContext("2d");
+    if (_measureCtx) _measureCtx.font = `13px ${F}`;
+  }
+  return _measureCtx ? _measureCtx.measureText(s || "").width : (s || "").length * 7;
+}
+
 export function MultiSelectDropdown({ value, onChange, options, placeholder = "ÐÐµ Ð²Ñ‹Ð±Ñ€Ð°Ð½Ð¾", disabled = false, title }) {
   const [open, setOpen] = useState(false);
   const [coords, setCoords] = useState(null);
   const wrapRef = useRef(null);
   const popupRef = useRef(null);
 
-  const selected = Array.isArray(value) ? value : [];
+  const propValue = Array.isArray(value) ? value : [];
+  const propKey = propValue.join("|");
+  const [localSelected, setLocalSelected] = useState(propValue);
+  const localKeyRef = useRef(propKey);
+  const localSelectedRef = useRef(propValue);
+  useEffect(() => {
+    if (propKey !== localKeyRef.current) {
+      localKeyRef.current = propKey;
+      localSelectedRef.current = propValue;
+      setLocalSelected(propValue);
+    }
+  }, [propKey]);
 
   useEffect(() => {
     if (!open) return;
@@ -31,7 +52,7 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "Ð
     const place = () => {
       const el = wrapRef.current; if (!el) return;
       const r = el.getBoundingClientRect();
-      setCoords({ left: r.left, top: r.bottom + 2, width: r.width });
+      setCoords({ left: r.left, top: r.bottom + 2, btnWidth: r.width });
     };
     place();
     window.addEventListener("scroll", place, true);
@@ -43,12 +64,21 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "Ð
   }, [open]);
 
   function toggle(opt) {
-    if (selected.includes(opt)) onChange(selected.filter(s => s !== opt));
-    else onChange([...selected, opt]);
+    const prev = localSelectedRef.current;
+    const next = prev.includes(opt) ? prev.filter(s => s !== opt) : [...prev, opt];
+    localSelectedRef.current = next;
+    localKeyRef.current = next.join("|");
+    setLocalSelected(next);
+    onChange(next);
   }
 
-  const display = selected.length === 0 ? "" : selected.join(", ");
+  const display = localSelected.length === 0 ? "" : localSelected.join(", ");
   const empty = !display;
+
+  const popupContentWidth = (options || []).reduce(
+    (a, opt) => Math.max(a, Math.ceil(_measure(opt))),
+    0,
+  ) + 16 + 8 + 20 + 14;
 
   return <div ref={wrapRef} style={{ position: "relative", width: "100%" }} title={title}>
     <button
@@ -65,9 +95,9 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "Ð
         fontSize: 13,
         fontFamily: F,
         cursor: disabled ? "default" : "pointer",
-        whiteSpace: "normal",
-        wordBreak: "normal",
-        overflowWrap: "break-word",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
         lineHeight: 1.35,
         position: "relative",
         color: empty ? T.textMuted : T.text,
@@ -86,7 +116,8 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "Ð
     {open && coords && createPortal(
       <div ref={popupRef} style={{
         position: "fixed",
-        left: coords.left, top: coords.top, width: coords.width,
+        left: coords.left, top: coords.top,
+        width: Math.max(coords.btnWidth, popupContentWidth),
         background: T.surface,
         border: "1px solid " + T.border,
         borderRadius: 4,
@@ -97,7 +128,7 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "Ð
         padding: "4px 0",
       }}>
         {(options || []).map(opt => {
-          const checked = selected.includes(opt);
+          const checked = localSelected.includes(opt);
           return <label
             key={opt}
             style={{
@@ -107,6 +138,7 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "Ð
               fontFamily: F, fontSize: 13,
               color: T.text, lineHeight: 1.35,
               background: checked ? T.accentLight : "transparent",
+              whiteSpace: "nowrap",
             }}
             onMouseEnter={e => { if (!checked) e.currentTarget.style.background = T.bg; }}
             onMouseLeave={e => { if (!checked) e.currentTarget.style.background = "transparent"; }}
@@ -117,7 +149,7 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "Ð
               onChange={() => toggle(opt)}
               style={{ margin: 0, accentColor: T.accent, flexShrink: 0 }}
             />
-            <span style={{ wordBreak: "normal", overflowWrap: "break-word" }}>{opt}</span>
+            <span>{opt}</span>
           </label>;
         })}
       </div>,

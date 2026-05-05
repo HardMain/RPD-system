@@ -2,11 +2,52 @@ from __future__ import annotations
 from pydantic import BaseModel
 from datetime import datetime
 
+class RpdManualPayload(BaseModel):
+    id_discipline: int | None = None
+    discipline_name: str | None = None
+    direction_code: str | None = None
+    direction_name: str | None = None
+    direction_profile: str | None = None
+    semester: str | None = None
+    control_form: str | None = None
+    total_hours: int | None = None
+    exam_hours: int | None = None
+    lecture_hours: int | None = None
+    lab_hours: int | None = None
+    practice_hours: int | None = None
+    ksr_hours: int | None = None
+    self_study_hours: int | None = None
+    zet: int | None = None
+    semesters_data: list[dict] | None = None
+    form_of_study: str | None = None
+
+class ManualLinkUpdate(BaseModel):
+    direction_code: str | None = None
+    direction_name: str | None = None
+    direction_profile: str | None = None
+    semester: str | None = None
+    control_form: str | None = None
+    total_hours: int | None = None
+    exam_hours: int | None = None
+    zet: int | None = None
+    semesters_data: list[dict] | None = None
+    form_of_study: str | None = None
+
+class ManualOutcomeCreate(BaseModel):
+    competency_code: str | None = None
+    competency_name: str | None = None
+    indicator_code: str | None = None
+    indicator_description: str | None = None
+    outcome_text: str | None = None
+    assessment_tool: str | None = None
+    id_indicator: int | None = None
+
 class RpdCreate(BaseModel):
     id_discipline: int | None = None
     bup_discipline_ids: list[int] = []
     academic_year: str
     based_on_rpd_id: int | None = None
+    manual: RpdManualPayload | None = None
 
 class OutcomeUpsert(BaseModel):
     id_outcome: int | None = None
@@ -237,6 +278,8 @@ class RpdListOut(BaseModel):
     semester: str | None = None
     total_hours: int | None = None
     updated_at: datetime | None = None
+    comment: str | None = None
+    developer_names: list[str] = []
 
     class Config:
         from_attributes = True
@@ -262,7 +305,9 @@ class BupDisciplineRefOut(BaseModel):
     fgos_file_id: int | None = None
     fgos_file_name: str | None = None
     semesters_data: list[dict] | None = None
+    form_of_study: str | None = None
     bup_deleted: bool = False
+    is_manual: bool = False
 
 class RpdDetailOut(BaseModel):
     id_rpd: int

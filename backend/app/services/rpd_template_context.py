@@ -74,6 +74,7 @@ def build_context(rpd, bd=None, link=None) -> dict:
     direction_name = _pick(link.direction_name if link else None, direction.name if direction else None)
     direction_profile = _pick(link.direction_profile if link else None, direction.profile if direction else None)
     bup_profile = _pick(link.bup_profile if link else None, bd.bup.profile if bd and bd.bup else None)
+    study_form = _pick(link.form_of_study if link else None, bd.bup.form_of_study if bd and bd.bup else None) or "очная"
 
     if bd is not None:
         bds_for_indicators = [bd]
@@ -349,7 +350,7 @@ def build_context(rpd, bd=None, link=None) -> dict:
         "rector_position": "Проректор по образовательной деятельности",
         "rector_name": "И.Ю.Черникова",
         "discipline_name": d.name or "—",
-        "study_form": "очная",
+        "study_form": study_form,
         "level_higher_education": (direction.degree_level if direction else None) or "бакалавриат",
         "total_hours": total_hours,
         "total_ze": _ze(total_hours),

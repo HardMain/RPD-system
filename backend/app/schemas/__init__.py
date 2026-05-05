@@ -9,7 +9,7 @@ from app.schemas.bup import (
 )
 from app.schemas.storage import StoredFileOut
 from app.schemas.rpd import (
-    RpdCreate, RpdUpdate,
+    RpdCreate, RpdUpdate, RpdManualPayload, ManualLinkUpdate, ManualOutcomeCreate,
     RpdTopicOut, RpdTopicCreate, RpdTopicUpdate,
     RpdSectionOut, RpdSectionCreate,
     LiteratureCreate, LiteratureUpdate, LiteratureOut,
@@ -38,7 +38,7 @@ __all__ = [
     "BupCreate", "BupUpdate", "BupDisciplineCreate", "BupDisciplineUpdate",
     "BupImportResult",
     "StoredFileOut",
-    "RpdCreate", "RpdUpdate",
+    "RpdCreate", "RpdUpdate", "RpdManualPayload", "ManualLinkUpdate", "ManualOutcomeCreate",
     "RpdTopicOut", "RpdTopicCreate", "RpdTopicUpdate",
     "RpdSectionOut", "RpdSectionCreate",
     "LiteratureCreate", "LiteratureUpdate", "LiteratureOut",

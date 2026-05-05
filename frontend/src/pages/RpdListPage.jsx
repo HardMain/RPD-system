@@ -10,6 +10,8 @@ const COLS = [
   { key: "academic_year", label: "Год", align: "center", sortable: true, accessor: r => r.academic_year || "" },
   { key: "total_hours", label: "Часы", align: "center", sortable: true, accessor: r => r.total_hours ?? 0 },
   { key: "semester", label: "Семестр", align: "center", sortable: true, accessor: r => r.semester || "" },
+  { key: "developer", label: "Разработчик", align: "left", sortable: true, accessor: r => (r.developer_names && r.developer_names[0]) || "" },
+  { key: "comment", label: "Комментарий", align: "left", sortable: true, accessor: r => r.comment || "" },
   { key: "status", label: "Статус", align: "left", sortable: true, accessor: r => r.status || "" },
   { key: "actions", label: "", align: "center", sortable: false },
 ];
@@ -147,6 +149,12 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
               <td style={{ ...tcell, textAlign: "center" }}>{r.academic_year}</td>
               <td style={{ ...tcell, textAlign: "center" }}>{r.total_hours || "-"}</td>
               <td style={{ ...tcell, textAlign: "center" }}>{r.semester || "-"}</td>
+              <td style={{ ...tcell, color: (r.developer_names && r.developer_names.length) ? T.text : T.textMuted }}>
+                {(r.developer_names && r.developer_names.length) ? r.developer_names.join(", ") : "—"}
+              </td>
+              <td style={{ ...tcell, color: r.comment ? T.text : T.textMuted, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment || ""}>
+                {r.comment || "—"}
+              </td>
               <td style={tcell}><StatusBadge status={r.status} /></td>
               <td style={{ ...tcell, textAlign: "center", width: 1, whiteSpace: "nowrap", padding: "10px 8px" }}>
                 <div style={{ display: "inline-flex", gap: 4 }}>
