@@ -29,6 +29,7 @@ class BupDisciplineOut(BaseModel):
     bup_name: str | None = None
     bup_year: int | None = None
     bup_profile: str | None = None
+    bup_form_of_study: str | None = None
     direction_code: str | None = None
     direction_name: str | None = None
 

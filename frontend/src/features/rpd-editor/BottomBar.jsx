@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { T, F } from "../../theme.js";
 import { Btn } from "../../components/Btn.jsx";
+import { StatusBadge } from "../../components/StatusBadge.jsx";
 
 export function BottomBar({
   showPdf, isEdit, isHead, canEdit, savedTick, status,
@@ -8,6 +9,7 @@ export function BottomBar({
   onSendApproval, onApprove, onReject,
 }) {
   return <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 16px", flexShrink: 0, background: T.surface, borderTop: "1px solid " + T.border }}>
+    {status && <StatusBadge status={status} />}
     {completion && <CompletionIndicator completion={completion} onJumpToMissing={onJumpToMissing} />}
     {updatedAt && <UpdatedAgo updatedAt={updatedAt} />}
     {isEdit && canEdit && !isHead && <>

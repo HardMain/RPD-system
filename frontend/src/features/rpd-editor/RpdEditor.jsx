@@ -5,9 +5,7 @@ import { T, F } from "../../theme.js";
 import { pdfToolBtn } from "../../styles.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Spinner } from "../../components/Spinner.jsx";
-import { DownloadIcon, PlusIcon, TrashIcon } from "../../components/icons.jsx";
-import { Dropdown } from "../../components/Dropdown.jsx";
-import { MultiSelectDropdown } from "../../components/MultiSelectDropdown.jsx";
+import { DownloadIcon } from "../../components/icons.jsx";
 
 import { SEC_KEYS, SIDEBAR_KEYS, PARENT_SECTION } from "./constants.js";
 import { PDF_PAGE_MAP_FALLBACK, scanPdfForSections } from "./pdfMap.js";
@@ -26,7 +24,6 @@ import { TopicsEditor } from "./editors/TopicsEditor.jsx";
 import { DatabasesEditor } from "./editors/DatabasesEditor.jsx";
 import { MtechEditor } from "./editors/MtechEditor.jsx";
 import { WorkloadTable } from "./editors/WorkloadTable.jsx";
-import { ManualWorkloadEditor } from "./editors/ManualWorkloadEditor.jsx";
 import { DocsUpload } from "./editors/DocsUpload.jsx";
 import { FosEditor } from "./editors/FosEditor.jsx";
 import { RpdMetaModal } from "./RpdMetaModal.jsx";
@@ -872,7 +869,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ fontSize: 16, fontWeight: 700, color: T.accent }}>{rpd.discipline_name}</div>
                   <div style={{ fontSize: 13, color: T.textMuted, marginTop: 8 }}>Учебный год: {rpd.academic_year}</div>
                 </div>
-                <BupAttachmentsBlock bds={rpd.bup_disciplines || []} rpdId={rpdId} canEdit={canEdit && isEdit} reload={reloadAndNotify} />
+                <BupAttachmentsBlock bds={rpd.bup_disciplines || []} />
               </div>
               <HR />
 
@@ -905,13 +902,10 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 {!isCollapsed("3") && <>
                 <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>
                   {(rpd.bup_disciplines || []).some(b => b.is_manual)
-                    ? "Семестры берутся из шапки РПД. Здесь правятся часы по каждому виду нагрузки."
+                    ? "Параметры заданы при создании РПД и не редактируются."
                     : "Заполняется автоматически из БУПа"}
                 </div>
-                {(rpd.bup_disciplines || []).some(b => b.is_manual)
-                  ? <ManualWorkloadEditor link={(rpd.bup_disciplines || []).find(b => b.is_manual)} rpdId={rpdId} canEdit={canEdit && isEdit} reload={reloadAndNotify} />
-                  : <WorkloadTable rpd={rpd} />
-                }
+                <WorkloadTable rpd={rpd} />
                 </>}
               </div>
               <HR />
@@ -1089,7 +1083,7 @@ function SectionHeading({ title, collapsed, onToggle, marginBottom = 16 }) {
   </div>;
 }
 
-function BupAttachmentsBlock({ bds, rpdId, canEdit, reload }) {
+function BupAttachmentsBlock({ bds }) {
   if (bds.length === 0) {
     return <div style={{ marginTop: 12, fontSize: 12, color: T.red, fontStyle: "italic" }}>
       Не привязана ни к одной дисциплине БУПа
@@ -1097,10 +1091,9 @@ function BupAttachmentsBlock({ bds, rpdId, canEdit, reload }) {
   }
   if (bds.length === 1) {
     const b = bds[0];
-    if (b.is_manual) {
-      return <ManualHeaderEditor link={b} rpdId={rpdId} canEdit={canEdit} reload={reload} />;
-    }
-    const sourceLine = `${b.bup_name || "БУП"}${b.code ? ` · ${b.code}` : ""}${b.semester ? ` · сем. ${b.semester}` : ""}${b.control_form ? ` · контроль: ${b.control_form}` : ""}`;
+    const sourceLine = b.is_manual
+      ? `Без БУПа${b.semester ? ` · сем. ${b.semester}` : ""}${b.control_form ? ` · контроль: ${b.control_form}` : ""}`
+      : `${b.bup_name || "БУП"}${b.code ? ` · ${b.code}` : ""}${b.semester ? ` · сем. ${b.semester}` : ""}${b.control_form ? ` · контроль: ${b.control_form}` : ""}`;
     const volumeParts = [];
     if (b.total_hours) volumeParts.push(`${b.total_hours} часов`);
     if (b.zet) volumeParts.push(`${b.zet} ЗЕ`);
@@ -1109,12 +1102,8 @@ function BupAttachmentsBlock({ bds, rpdId, canEdit, reload }) {
       <div style={{ fontSize: 13, color: T.textMuted }}>
         Направление: {b.direction_code || "—"} {b.direction_name || ""}
       </div>
-      {b.direction_profile && (
-        <div style={{ fontSize: 13, color: T.textMuted }}>Профиль: {b.direction_profile}</div>
-      )}
-      {b.form_of_study && (
-        <div style={{ fontSize: 13, color: T.textMuted }}>Форма обучения: {b.form_of_study}</div>
-      )}
+      <div style={{ fontSize: 13, color: T.textMuted }}>Профиль: {b.direction_profile || "—"}</div>
+      <div style={{ fontSize: 13, color: T.textMuted }}>Форма обучения: {b.form_of_study || "—"}</div>
       {volumeParts.length > 0 && (
         <div style={{ fontSize: 13, color: T.textMuted }}>Объём: {volumeParts.join(" · ")}</div>
       )}
@@ -1132,333 +1121,11 @@ function BupAttachmentsBlock({ bds, rpdId, canEdit, reload }) {
             {b.direction_code || "—"} {b.direction_name || ""}
           </span>
           {b.direction_profile ? ` · ${b.direction_profile}` : ""}
+          {` · форма обучения: ${b.form_of_study || "—"}`}
           {" · "}
           {b.bup_name || "БУП"}{b.code ? ` · ${b.code}` : ""}
         </div>
       ))}
     </div>
   </div>;
-}
-
-const CONTROL_OPTIONS = ["экзамен", "зачёт", "диф. зачет", "курсовой проект", "курсовая работа"];
-const FORM_OPTIONS = [
-  { value: "очная", label: "очная" },
-  { value: "заочная", label: "заочная" },
-  { value: "очно-заочная", label: "очно-заочная" },
-];
-const SEM_OPTIONS_ALL = Array.from({ length: 12 }, (_, i) => String(i + 1));
-
-function parseControlForm(raw) {
-  const out = [];
-  if (!raw) return out;
-  const re = /([А-Яа-яёЁ.\s]+?)\s*\(\s*([\d,\s]+)\s*\)/g;
-  let m;
-  while ((m = re.exec(raw)) !== null) {
-    const label = m[1].trim().toLowerCase().replace(/\s+/g, " ");
-    const sems = m[2].split(/[,\s]+/).filter(Boolean).map(t => parseInt(t, 10)).filter(n => !isNaN(n));
-    const norm = CONTROL_OPTIONS.find(c => c.toLowerCase() === label) || label;
-    out.push({ type: norm, semesters: sems });
-  }
-  return out;
-}
-function composeControlForm(items) {
-  return items
-    .filter(it => it.type && it.semesters && it.semesters.length)
-    .map(it => `${it.type} (${[...new Set(it.semesters)].sort((a, b) => a - b).join(", ")})`)
-    .join(", ");
-}
-
-function ManualHeaderEditor({ link, rpdId, canEdit, reload }) {
-  const availableSemesters = (Array.isArray(link.semesters_data) && link.semesters_data.length)
-    ? link.semesters_data.map(s => s.number).filter(n => n != null).sort((a, b) => a - b)
-    : (link.semester || "").split(/[,\s]+/).map(s => parseInt(s, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
-
-  const [controls, setControls] = useState(() => parseControlForm(link.control_form));
-  const lastSavedCtlRef = useRef(composeControlForm(parseControlForm(link.control_form)));
-
-  useEffect(() => {
-    const incoming = parseControlForm(link.control_form);
-    const incomingKey = composeControlForm(incoming);
-    if (incomingKey !== lastSavedCtlRef.current) {
-      lastSavedCtlRef.current = incomingKey;
-      setControls(incoming);
-    }
-  }, [link.control_form]);
-
-  async function save(field, value) {
-    try {
-      await api.updateManualLink(rpdId, { [field]: value });
-      await reload?.();
-    } catch (e) {
-      alert("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
-    }
-  }
-  async function persistControls(next) {
-    const composed = composeControlForm(next);
-    if (composed === lastSavedCtlRef.current) return;
-    lastSavedCtlRef.current = composed;
-    await save("control_form", composed);
-  }
-  function setCtl(idx, patch) {
-    const next = controls.map((c, i) => i === idx ? { ...c, ...patch } : c);
-    setControls(next);
-    persistControls(next);
-  }
-  function addCtl() {
-    const next = [...controls, { type: CONTROL_OPTIONS[0], semesters: [] }];
-    setControls(next);
-  }
-  function removeCtl(idx) {
-    const next = controls.filter((_, i) => i !== idx);
-    setControls(next);
-    persistControls(next);
-  }
-
-  async function applySemesters(numbers) {
-    const sorted = [...new Set(numbers)].sort((a, b) => a - b);
-    const existing = new Map((link.semesters_data || []).map(s => [s.number, s]));
-    const sd = sorted.map(n => existing.get(n) || { number: n, lecture: 0, lab: 0, practice: 0, ksr: 0, srs: 0 });
-
-    const allowed = new Set(sorted);
-    const cleanedControls = controls.map(c => ({
-      ...c,
-      semesters: (c.semesters || []).filter(n => allowed.has(n)),
-    }));
-    const newComposed = composeControlForm(cleanedControls);
-    const oldComposed = composeControlForm(controls);
-
-    const payload = { semesters_data: sd };
-    if (newComposed !== oldComposed) {
-      payload.control_form = newComposed;
-      lastSavedCtlRef.current = newComposed;
-      setControls(cleanedControls);
-    }
-    try {
-      await api.updateManualLink(rpdId, payload);
-      await reload?.();
-    } catch (e) {
-      alert("Не удалось обновить семестры: " + (e?.response?.data?.detail || e.message));
-    }
-  }
-
-  const wrap = { display: "flex", justifyContent: "center", alignItems: "center", gap: 6, fontSize: 13, color: T.textMuted, flexWrap: "wrap" };
-  return <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
-    <div style={wrap}>
-      <span>Направление:</span>
-      <AutoField value={link.direction_code || ""} canEdit={canEdit} onSave={v => save("direction_code", v)} placeholder="код" minWidth={70} maxWidth={140} />
-      <AutoField value={link.direction_name || ""} canEdit={canEdit} onSave={v => save("direction_name", v)} placeholder="название" minWidth={120} maxWidth={460} />
-    </div>
-    <div style={wrap}>
-      <span>Профиль:</span>
-      <AutoField value={link.direction_profile || ""} canEdit={canEdit} onSave={v => save("direction_profile", v)} placeholder="—" minWidth={120} maxWidth={520} />
-    </div>
-    <div style={wrap}>
-      <span>Форма обучения:</span>
-      <div style={{ width: dropdownWidth(link.form_of_study || "не указана") }}>
-        {canEdit
-          ? <Dropdown value={link.form_of_study || ""} options={FORM_OPTIONS} onChange={v => save("form_of_study", v)} placeholder="—" clearLabel="—" />
-          : <span style={{ color: T.text, fontWeight: 600 }}>{link.form_of_study || "—"}</span>}
-      </div>
-      <span style={{ marginLeft: 8 }}>Семестры:</span>
-      <div style={{ width: dropdownWidth(availableSemesters.length > 0 ? availableSemesters.join(", ") : "не выбраны") }}>
-        {canEdit
-          ? <MultiSelectDropdown value={availableSemesters.map(String)} options={SEM_OPTIONS_ALL} onChange={vs => applySemesters(vs.map(v => parseInt(v, 10)).filter(n => !isNaN(n)))} placeholder="не выбраны" />
-          : <span style={{ color: T.text, fontWeight: 600 }}>{availableSemesters.join(", ") || "—"}</span>}
-      </div>
-    </div>
-    <div style={wrap}>
-      <span>Объём:</span>
-      <HeaderInput value={link.zet || 0} canEdit={canEdit} onSave={v => save("zet", v)} type="number" min={0} autoWidth />
-      <span>ЗЕ</span>
-      <span style={{ color: T.text, fontWeight: 600 }}>= {(link.zet || 0) * 36} часов</span>
-    </div>
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, marginTop: 4 }}>
-      <div style={{ fontSize: 13, color: T.textMuted }}>Форма контроля:</div>
-      <ControlFormEditor
-        controls={controls}
-        availableSemesters={availableSemesters}
-        canEdit={canEdit}
-        onChangeRow={setCtl}
-        onAddRow={addCtl}
-        onRemoveRow={removeCtl}
-        examHours={link.exam_hours || 0}
-        onSaveExamHours={v => save("exam_hours", v)}
-      />
-    </div>
-  </div>;
-}
-
-function longestText(arr) {
-  return arr.reduce((a, b) => (b && b.length > a.length ? b : a), "");
-}
-let _measureCtx = null;
-function _measure(text, weight = 400) {
-  if (typeof document === "undefined") return (text || "").length * 7;
-  if (!_measureCtx) {
-    const canvas = document.createElement("canvas");
-    _measureCtx = canvas.getContext("2d");
-  }
-  if (!_measureCtx) return (text || "").length * 7;
-  _measureCtx.font = `${weight} 13px ${F}`;
-  return _measureCtx.measureText(text || "").width;
-}
-function dropdownWidth(text) {
-  return `${Math.ceil(_measure(text)) + 38}px`;
-}
-
-function ControlFormEditor({ controls, availableSemesters, canEdit, onChangeRow, onAddRow, onRemoveRow, examHours, onSaveExamHours }) {
-  if (!canEdit && controls.length === 0) {
-    return <span style={{ fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>—</span>;
-  }
-  if (!canEdit) {
-    const examLine = controls.some(c => c.type === "экзамен") && examHours
-      ? ` · экзамен: ${examHours} ч`
-      : "";
-    return <div style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{(composeControlForm(controls) || "—") + examLine}</div>;
-  }
-  if (availableSemesters.length === 0) {
-    return <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Сначала добавьте хотя бы один семестр в разделе 3.</div>;
-  }
-  const semOptions = availableSemesters.map(n => String(n));
-  const typeOptions = CONTROL_OPTIONS.map(c => ({ value: c, label: c }));
-  return <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-    {controls.length === 0 && (
-      <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Контроль не задан</div>
-    )}
-    {controls.map((c, idx) => (
-      <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <div style={{ width: dropdownWidth(c.type || "выбрать"), flexShrink: 0 }}>
-          <Dropdown
-            value={c.type}
-            options={typeOptions}
-            onChange={v => onChangeRow(idx, { type: v })}
-          />
-        </div>
-        <span style={{ fontSize: 12, color: T.textMuted }}>в семестре(ах):</span>
-        <div style={{ width: dropdownWidth((c.semesters || []).join(", ") || "—"), flexShrink: 0 }}>
-          <MultiSelectDropdown
-            value={(c.semesters || []).map(String)}
-            options={semOptions}
-            onChange={vs => onChangeRow(idx, { semesters: vs.map(v => parseInt(v, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b) })}
-            placeholder="—"
-          />
-        </div>
-        {c.type === "экзамен" && (
-          <>
-            <span style={{ fontSize: 12, color: T.textMuted }}>часы:</span>
-            <HeaderInput value={examHours || 0} canEdit={true} onSave={onSaveExamHours} type="number" min={0} step={36} autoWidth />
-          </>
-        )}
-        <button
-          type="button"
-          onClick={() => onRemoveRow(idx)}
-          title="Удалить"
-          style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4 }}
-        >
-          <TrashIcon />
-        </button>
-      </div>
-    ))}
-    <Btn small onClick={onAddRow}><PlusIcon /> Добавить контроль</Btn>
-  </div>;
-}
-
-function AutoField({ value, canEdit, onSave, placeholder, minWidth = 60, maxWidth = 480 }) {
-  const [local, setLocal] = useState(value);
-  const ref = useRef(null);
-  useEffect(() => { setLocal(value); }, [value]);
-
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = el.scrollHeight + "px";
-  }, [local, canEdit]);
-
-  if (!canEdit) {
-    return <span style={{ color: T.text, fontWeight: 600, whiteSpace: "pre-wrap", wordBreak: "normal", overflowWrap: "break-word", maxWidth, display: "inline-block" }}>
-      {value || (placeholder ? "—" : "")}
-    </span>;
-  }
-  function commit() {
-    const v = (local || "").toString();
-    if (v === (value || "").toString()) return;
-    onSave(v);
-  }
-
-  const lines = (local || placeholder || "").split("\n");
-  const longest = lines.reduce((a, b) => (b.length > a.length ? b : a), "");
-  const desired = Math.ceil(_measure(longest, 600)) + 24;
-  const w = Math.max(minWidth, Math.min(maxWidth, desired));
-
-  return <textarea
-    ref={ref}
-    value={local ?? ""}
-    onChange={e => setLocal(e.target.value)}
-    onBlur={commit}
-    placeholder={placeholder}
-    rows={1}
-    style={{
-      width: w,
-      padding: "4px 8px",
-      border: "1px solid " + T.borderLight,
-      borderRadius: 4,
-      fontSize: 13, fontFamily: F,
-      color: T.text, fontWeight: 600,
-      background: T.surface,
-      outline: "none",
-      boxSizing: "border-box",
-      resize: "none",
-      overflow: "hidden",
-      minHeight: 26,
-      lineHeight: "18px",
-      verticalAlign: "middle",
-    }}
-  />;
-}
-
-function HeaderInput({ value, canEdit, onSave, placeholder, width, type = "text", min, step, autoWidth = false }) {
-  const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
-  if (!canEdit) {
-    return <span style={{ color: T.text, fontWeight: 600 }}>{value || (placeholder ? "—" : "")}</span>;
-  }
-  function commit() {
-    if (type === "number") {
-      const n = +local || 0;
-      if (n === (+value || 0)) return;
-      onSave(n);
-    } else {
-      const v = (local || "").toString();
-      if (v === (value || "").toString()) return;
-      onSave(v);
-    }
-  }
-  let computedWidth = width || 200;
-  if (autoWidth) {
-    const text = String(local ?? "") || (placeholder ?? "");
-    const stepArrowsW = type === "number" ? 18 : 0;
-    computedWidth = Math.max(36, Math.ceil(_measure(text, 600)) + 24 + stepArrowsW);
-  }
-  return <input
-    type={type}
-    min={type === "number" ? (min ?? 0) : undefined}
-    step={type === "number" ? (step ?? 1) : undefined}
-    value={local ?? ""}
-    onChange={e => setLocal(type === "number" ? (e.target.value === "" ? 0 : +e.target.value) : e.target.value)}
-    onBlur={commit}
-    placeholder={placeholder}
-    style={{
-      width: computedWidth,
-      padding: "4px 8px",
-      border: "1px solid " + T.borderLight,
-      borderRadius: 4,
-      fontSize: 13, fontFamily: F,
-      color: T.text, fontWeight: 600,
-      background: T.surface,
-      outline: "none",
-      boxSizing: "border-box",
-      textAlign: type === "number" ? "right" : "left",
-    }}
-  />;
 }

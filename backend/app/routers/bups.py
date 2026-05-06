@@ -77,6 +77,7 @@ async def list_bup_disciplines_global(
             item.bup_name = bd.bup.name
             item.bup_year = bd.bup.year
             item.bup_profile = bd.bup.profile
+            item.bup_form_of_study = bd.bup.form_of_study
             if bd.bup.direction:
                 item.direction_code = bd.bup.direction.code
                 item.direction_name = bd.bup.direction.name

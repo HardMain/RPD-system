@@ -74,7 +74,7 @@ def build_context(rpd, bd=None, link=None) -> dict:
     direction_name = _pick(link.direction_name if link else None, direction.name if direction else None)
     direction_profile = _pick(link.direction_profile if link else None, direction.profile if direction else None)
     bup_profile = _pick(link.bup_profile if link else None, bd.bup.profile if bd and bd.bup else None)
-    study_form = _pick(link.form_of_study if link else None, bd.bup.form_of_study if bd and bd.bup else None) or "очная"
+    study_form = _pick(link.form_of_study if link else None, bd.bup.form_of_study if bd and bd.bup else None) or ""
 
     if bd is not None:
         bds_for_indicators = [bd]
@@ -349,14 +349,14 @@ def build_context(rpd, bd=None, link=None) -> dict:
     context: dict[str, Any] = {
         "rector_position": "Проректор по образовательной деятельности",
         "rector_name": "И.Ю.Черникова",
-        "discipline_name": d.name or "—",
+        "discipline_name": d.name or "",
         "study_form": study_form,
         "level_higher_education": (direction.degree_level if direction else None) or "бакалавриат",
         "total_hours": total_hours,
         "total_ze": _ze(total_hours),
-        "direction_code": (direction_code or (direction.code if direction else None)) or "—",
-        "direction_name": (direction_name or (direction.name if direction else None)) or "—",
-        "program_name": bup_profile or direction_profile or (direction.profile if direction else None) or direction_name or "—",
+        "direction_code": (direction_code or (direction.code if direction else None)) or "",
+        "direction_name": (direction_name or (direction.name if direction else None)) or "",
+        "program_name": bup_profile or direction_profile or (direction.profile if direction else None) or direction_name or "",
         "publish_year": (rpd.academic_year or str(datetime.now().year))[:4],
 
         "goals_text": _safe(rpd.goals_text, ""),

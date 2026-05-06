@@ -5,7 +5,8 @@ import { Modal } from "../../components/Modal.jsx";
 import { Btn } from "../../components/Btn.jsx";
 import { Input } from "../../components/Input.jsx";
 import { MultiSelectDropdown } from "../../components/MultiSelectDropdown.jsx";
-import { PlusIcon, TrashIcon } from "../../components/icons.jsx";
+import { RowTrashOverlay } from "../../components/RowTrashOverlay.jsx";
+import { PlusIcon } from "../../components/icons.jsx";
 
 const CONTROL_OPTIONS = ["экзамен", "зачёт", "диф. зачет", "курсовой проект", "курсовая работа"];
 const EXAM_DEFAULT = 36;
@@ -60,6 +61,8 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const [year, setYear] = useState(draft?.year ?? "2025/2026");
   const [baseId, setBaseId] = useState(draft?.baseId ?? "");
   const [submitting, setSubmitting] = useState(false);
+
+  const semTbodyRef = useRef(null);
 
   useEffect(() => {
     try {
@@ -177,10 +180,6 @@ export function CreateRpdModal({ onClose, onCreated }) {
   }, [selectedBds]);
 
   const manualHasDiscipline = !!discPickedId || !!discQuery.trim();
-  const manualHasSemester = manualSemesters.length > 0;
-  const canSubmit = mode === "bup"
-    ? (!!discId && bdIds.size > 0 && !mismatch)
-    : (manualHasDiscipline && manualHasSemester);
 
   function setSemester(idx, patch) {
     setManualSemesters(prev => prev.map((s, i) => {
@@ -225,6 +224,41 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const examTarget = +manual.exam_hours || 0;
   const totalMismatch = totalTarget > 0 && totalTarget !== sums.aud;
   const examMismatch = examTarget !== sums.exam;
+
+  const manualErrors = useMemo(() => {
+    if (mode !== "manual") return [];
+    const errs = [];
+    if (!manualHasDiscipline) errs.push("дисциплина");
+    if (!manual.direction_code.trim()) errs.push("код направления");
+    if (!manual.direction_name.trim()) errs.push("название направления");
+    if (!manual.direction_profile.trim()) errs.push("профиль");
+    if (!manual.form_of_study) errs.push("форма обучения");
+    if (!(+manual.zet > 0)) errs.push("ЗЕ (> 0)");
+    if (manualSemesters.length === 0) {
+      errs.push("хотя бы один семестр");
+    } else {
+      const semsNoControls = manualSemesters
+        .filter(s => !(s.controls || []).length)
+        .map(s => s.number);
+      if (semsNoControls.length > 0) {
+        errs.push(`контроль в семестре${semsNoControls.length > 1 ? "ах" : ""} ${semsNoControls.join(", ")}`);
+      }
+      const examSems = manualSemesters
+        .filter(s => (s.controls || []).includes("экзамен") && !(+s.exam > 0))
+        .map(s => s.number);
+      if (examSems.length > 0) {
+        errs.push(`часы экзамена в семестре${examSems.length > 1 ? "ах" : ""} ${examSems.join(", ")}`);
+      }
+    }
+    if (totalMismatch || examMismatch) {
+      errs.push("часы не сходятся (см. красные итоги в таблице)");
+    }
+    return errs;
+  }, [mode, manualHasDiscipline, manual, manualSemesters, totalMismatch, examMismatch]);
+
+  const canSubmit = mode === "bup"
+    ? (!!discId && bdIds.size > 0 && !mismatch)
+    : manualErrors.length === 0;
 
   function buildControlForm(sems) {
     const groups = new Map();
@@ -308,7 +342,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const labelStyle = { fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 };
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box" };
 
-  return <Modal onClose={onClose} width={760}>
+  return <Modal onClose={onClose} width={880}>
     <div style={{ padding: "20px 24px", borderBottom: "1px solid " + T.borderLight }}>
       <div style={{ fontSize: 16, fontWeight: 700 }}>Создание РПД</div>
       <div style={{ display: "flex", gap: 6, marginTop: 12 }}>
@@ -322,7 +356,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
       <div style={{ fontSize: 12, color: T.textMuted, marginTop: 10, lineHeight: 1.45 }}>
         {mode === "bup"
           ? "Сначала выбирается дисциплина, затем — БУПы, в которых она читается. Один макет покрывает все выбранные БУП-инстансы."
-          : "Без привязки к БУПу. Все поля задаются вручную и остаются редактируемыми после создания."}
+          : "Без привязки к БУПу. Все мета-параметры (направление, профиль, форма обучения, часы, семестры, контроль) задаются здесь и после создания не редактируются. Преподаватель далее заполняет содержательные разделы и компетенции."}
       </div>
     </div>
 
@@ -394,6 +428,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
                     <div style={{ color: T.textMuted, fontSize: 11, marginTop: 2 }}>
                       {bd.direction_code ? `${bd.direction_code} ${bd.direction_name || ""}` : ""}
                       {bd.bup_profile ? ` · ${bd.bup_profile}` : ""}
+                      {bd.bup_form_of_study ? ` · ${bd.bup_form_of_study}` : ""}
                       {bd.semester ? ` · сем. ${bd.semester}` : ""}
                       {bd.control_form ? ` · ${bd.control_form}` : ""}
                       {bd.total_hours != null ? ` · ${bd.total_hours} ч` : ""}
@@ -463,12 +498,12 @@ export function CreateRpdModal({ onClose, onCreated }) {
         </div>
 
         <ManualBlock title="Направление подготовки">
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <ManualField label="Код" value={manual.direction_code} onChange={v => manualField("direction_code", v)} placeholder="09.03.04" width={120} />
             <ManualField label="Название" value={manual.direction_name} onChange={v => manualField("direction_name", v)} placeholder="Программная инженерия" />
           </div>
           <ManualField label="Профиль" value={manual.direction_profile} onChange={v => manualField("direction_profile", v)} placeholder="—" />
-          <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "0 0 220px", minWidth: 200 }}>
               <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Форма обучения</div>
               <select
@@ -486,7 +521,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
         </ManualBlock>
 
         <ManualBlock title="Общая трудоёмкость дисциплины">
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
             <ManualField label="ЗЕ" type="number" min={0} value={manual.zet} onChange={v => manualField("zet", v)} width={120} />
             <div style={{ flex: "0 0 200px", minWidth: 180 }}>
               <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Общая трудоёмкость (часы)</div>
@@ -499,8 +534,21 @@ export function CreateRpdModal({ onClose, onCreated }) {
         </ManualBlock>
 
         <ManualBlock title="Семестры дисциплины">
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <div style={{ position: "relative" }}>
+          <div className="table-scroll">
+            <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 580 }}>
+              <colgroup>
+                <col style={{ width: 56 }} />
+                <col style={{ width: 56 }} />
+                <col style={{ width: 56 }} />
+                <col style={{ width: 56 }} />
+                <col style={{ width: 56 }} />
+                <col style={{ width: 56 }} />
+                <col style={{ width: 64 }} />
+                <col style={{ width: 80 }} />
+                <col />
+                <col style={{ width: 32 }} />
+              </colgroup>
               <thead>
                 <tr>
                   <th style={semHeadCell}>Сем.</th>
@@ -511,15 +559,17 @@ export function CreateRpdModal({ onClose, onCreated }) {
                   <th style={semHeadCell}>СРС</th>
                   <th style={semHeadCell}>Итого</th>
                   <th style={semHeadCell}>Экзамен (ч)</th>
-                  <th style={{ ...semHeadCell, textAlign: "left", minWidth: 180 }}>Контроль</th>
-                  <th style={{ ...semHeadCell, width: 30 }}></th>
+                  <th style={{ ...semHeadCell, textAlign: "left" }}>Контроль</th>
+                  <th style={semHeadCell}></th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody ref={semTbodyRef}>
                 {manualSemesters.map((s, idx) => {
                   const itog = (+s.lecture || 0) + (+s.lab || 0) + (+s.practice || 0) + (+s.ksr || 0) + (+s.srs || 0);
                   const hasExam = (s.controls || []).includes("экзамен");
-                  return <tr key={idx}>
+                  const trashable = manualSemesters.length > 1;
+                  const trProps = trashable ? { "data-trash-row": "", "data-trash-id": String(idx) } : {};
+                  return <tr key={idx} {...trProps}>
                     <td style={semCell}><HourInput value={s.number} min={1} max={12} onChange={v => setSemester(idx, { number: Math.max(1, Math.min(12, +v || 1)) })} /></td>
                     <td style={semCell}><HourInput value={s.lecture} onChange={v => setSemester(idx, { lecture: v })} /></td>
                     <td style={semCell}><HourInput value={s.lab} onChange={v => setSemester(idx, { lab: v })} /></td>
@@ -532,7 +582,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
                         ? <HourInput value={s.exam} step={EXAM_DEFAULT} onChange={v => setSemester(idx, { exam: v })} />
                         : <div style={{ textAlign: "center", color: T.textMuted, fontSize: 12 }}>—</div>}
                     </td>
-                    <td style={{ ...semCell, minWidth: 180 }}>
+                    <td style={semCell}>
                       <MultiSelectDropdown
                         value={s.controls}
                         options={CONTROL_OPTIONS}
@@ -540,18 +590,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
                         placeholder="—"
                       />
                     </td>
-                    <td style={{ ...semCell, textAlign: "center", padding: "4px 2px" }}>
-                      {manualSemesters.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeSemester(idx)}
-                          title="Удалить семестр"
-                          style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4 }}
-                        >
-                          <TrashIcon />
-                        </button>
-                      )}
-                    </td>
+                    <td style={semCell}></td>
                   </tr>;
                 })}
                 <tr>
@@ -563,21 +602,25 @@ export function CreateRpdModal({ onClose, onCreated }) {
                   <td style={totalCell(false)}>{sums.srs}</td>
                   <td style={totalCell(totalMismatch)} title={totalMismatch ? `Не совпадает с «Общая трудоёмкость» (${totalTarget} ч)` : ""}>{sums.aud}</td>
                   <td style={totalCell(examMismatch)} title={examMismatch ? `Не совпадает с «Часы экзамена (всего)» (${examTarget} ч)` : ""}>{sums.exam}</td>
-                  <td colSpan={2} style={{ ...semCell, background: T.surface }}></td>
+                  <td style={{ ...semCell, background: T.surface }}></td>
+                  <td style={{ ...semCell, background: T.surface }}></td>
                 </tr>
               </tbody>
             </table>
+          </div>
+          {manualSemesters.length > 1 && (
+            <RowTrashOverlay
+              tbodyRef={semTbodyRef}
+              onDelete={(id) => removeSemester(parseInt(id, 10))}
+              title="Удалить семестр"
+              right={4}
+            />
+          )}
           </div>
           <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
             <Btn small onClick={addSemester} disabled={manualSemesters.length >= 12}>
               <PlusIcon /> Добавить семестр
             </Btn>
-            {(totalMismatch || examMismatch) && (
-              <div style={{ fontSize: 11, color: T.red, lineHeight: 1.45 }}>
-                {totalMismatch && <div>Сумма часов по семестрам ({sums.aud} ч) ≠ Общая трудоёмкость ({totalTarget} ч)</div>}
-                {examMismatch && <div>Сумма часов экзамена ({sums.exam} ч) ≠ Часы экзамена всего ({examTarget} ч)</div>}
-              </div>
-            )}
           </div>
         </ManualBlock>
       </>}
@@ -591,7 +634,13 @@ export function CreateRpdModal({ onClose, onCreated }) {
       </div>
     </div>
 
-    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 20px", borderTop: "1px solid " + T.borderLight }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderTop: "1px solid " + T.borderLight }}>
+      {mode === "manual" && manualErrors.length > 0 && (
+        <div style={{ flex: 1, fontSize: 11, color: T.red, lineHeight: 1.45 }}>
+          Нужно заполнить: {manualErrors.join("; ")}
+        </div>
+      )}
+      {!(mode === "manual" && manualErrors.length > 0) && <div style={{ flex: 1 }} />}
       <Btn primary onClick={go} disabled={submitting || !canSubmit}>{submitting ? "Создание…" : "Создать"}</Btn>
       <Btn onClick={discardAndClose}>Закрыть</Btn>
     </div>
@@ -724,5 +773,5 @@ const semCell = {
   borderBottom: "1px solid " + T.borderLight,
   fontSize: 13,
   verticalAlign: "middle",
-  width: 60,
+  overflow: "hidden",
 };

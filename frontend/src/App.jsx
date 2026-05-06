@@ -78,6 +78,13 @@ export default function App() {
     if (user) { loadRpds(); loadUnread(); }
   }, [user, loadRpds, loadUnread]);
 
+  useEffect(() => {
+    if (!user) return;
+    if (activeTab === "my" || activeTab === "archive" || activeTab === "approval") {
+      loadRpds();
+    }
+  }, [user, activeTab, loadRpds]);
+
   function findPaneOf(tabId) {
     if (panes.left.tabs.includes(tabId)) return "left";
     if (panes.right && panes.right.tabs.includes(tabId)) return "right";

@@ -80,7 +80,7 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
       {(rpd.bup_disciplines || []).some(b => b.is_manual) ? (
         <Section title="Учебные параметры">
           <ManualDisciplineTable bupDisciplines={rpd.bup_disciplines || []} disciplineName={rpd.discipline_name} />
-          <Hint>РПД с ручным вводом — поля направления, семестра, контроля и часов редактируются прямо в документе.</Hint>
+          <Hint>Параметры заданы при создании РПД и после создания не редактируются. Если данные некорректные — создайте РПД заново.</Hint>
         </Section>
       ) : (
         <Section title="Привязанные дисциплины БУПа">

@@ -74,6 +74,41 @@ _RE_DEPT = re.compile(r"Кафедра:\s*(.+)", re.IGNORECASE)
 _RE_PROFILE = re.compile(r"Профиль[^:]*:\s*(.+)", re.IGNORECASE)
 _RE_FORM = re.compile(r"Форма обучения:\s*(.+)", re.IGNORECASE)
 
+_FORM_OF_STUDY_FROM_SHEET_NAME = {
+    "очн": "очная",
+    "заоч": "заочная",
+    "очз": "очно-заочная",
+    "оз": "очно-заочная",
+}
+
+def _form_from_sheet_name(name: str) -> str | None:
+    low = name.strip().lower()
+    if not low.startswith("титул"):
+        return None
+    suffix = low.replace("титул", "").lstrip("_- ").strip()
+    if not suffix:
+        return None
+    return _FORM_OF_STUDY_FROM_SHEET_NAME.get(suffix)
+
+def _extract_titul_meta(sheet) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for r in range(min(30, sheet.nrows)):
+        for c in range(min(8, sheet.ncols)):
+            label_raw = _to_str(sheet.cell_value(r, c))
+            if "\n" not in label_raw or "форма обучения" not in label_raw.lower():
+                continue
+            for cv in range(c + 1, min(60, sheet.ncols)):
+                value_raw = _to_str(sheet.cell_value(r, cv))
+                if not value_raw or "\n" not in value_raw:
+                    continue
+                labels = [l.strip().rstrip(":").lower() for l in label_raw.split("\n")]
+                values = [v.strip() for v in value_raw.split("\n")]
+                for label, value in zip(labels, values):
+                    if label and value:
+                        out.setdefault(label, value)
+                return out
+    return out
+
 def _parse_meta(sheet) -> tuple[str | None, str | None, str | None, str | None, str | None, str | None]:
     faculty = direction_code = direction_name = department_name = profile = form_of_study = None
     for r in range(min(6, sheet.nrows)):
@@ -158,6 +193,23 @@ def parse_bup_xls(content: bytes) -> ParsedBup:
 
     sh = target_sheet
     faculty, dcode, dname, dept_name, profile, form_of_study = _parse_meta(sh)
+
+    titul_meta: dict[str, str] = {}
+    titul_sheet_name: str | None = None
+    for name in wb.sheet_names():
+        if name.strip().lower().startswith("титул"):
+            titul_sheet_name = titul_sheet_name or name
+            extra = _extract_titul_meta(wb.sheet_by_name(name))
+            if extra:
+                titul_meta = extra
+                titul_sheet_name = name
+                break
+
+    if not form_of_study and titul_meta.get("форма обучения"):
+        form_of_study = titul_meta["форма обучения"].lower()
+    if not form_of_study and titul_sheet_name:
+        form_of_study = _form_from_sheet_name(titul_sheet_name)
+
     parsed = ParsedBup(
         direction_code=dcode,
         direction_name=dname,

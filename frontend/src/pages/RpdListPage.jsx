@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { T, F } from "../theme.js";
 import { hdr, tcell } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon } from "../components/icons.jsx";
+import { STATUSES, StatusBadge } from "../components/StatusBadge.jsx";
 
 const COLS = [
   { key: "direction_code", label: "Направление", align: "left", sortable: true, accessor: r => r.direction_code || "" },
@@ -16,21 +17,30 @@ const COLS = [
   { key: "actions", label: "", align: "center", sortable: false },
 ];
 
-const STATUSES = [
-  { value: "Черновик",        color: T.textMuted, bg: T.borderLight },
-  { value: "На доработке",    color: T.red,       bg: "#fbe5e5" },
-  { value: "На согласовании", color: T.orange,    bg: T.orangeLight },
-  { value: "Согласовано",     color: T.green,     bg: T.greenLight },
-];
-const STATUS_BY_VALUE = Object.fromEntries(STATUSES.map(s => [s.value, s]));
+const FILTER_STATE_KEY = "rpdListPage.filter.v1";
+
+function loadFilterState() {
+  try {
+    const raw = sessionStorage.getItem(FILTER_STATE_KEY);
+    if (!raw) return null;
+    const v = JSON.parse(raw);
+    return v && typeof v === "object" ? v : null;
+  } catch { return null; }
+}
 
 export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userRole }) {
   const canCreate = ["Зав. кафедрой", "Сотрудник УМУ", "Администратор"].includes(userRole);
 
-  const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const initial = loadFilterState();
+  const [query, setQuery] = useState(initial?.query ?? "");
+  const [statusFilter, setStatusFilter] = useState(initial?.statusFilter ?? "all");
+  const [sort, setSort] = useState(initial?.sort ?? { key: "discipline_name", dir: "asc" });
 
-  const [sort, setSort] = useState({ key: "discipline_name", dir: "asc" });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(FILTER_STATE_KEY, JSON.stringify({ query, statusFilter, sort }));
+    } catch {}
+  }, [query, statusFilter, sort]);
 
   const queryFiltered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -144,11 +154,11 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
             const canEdit = r.status === "Черновик" || r.status === "На доработке";
             const iconBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "5px 7px", borderRadius: 4, border: "1px solid " + T.border, background: T.surface, color: T.text, fontFamily: F };
             return <tr key={r.id_rpd} onDoubleClick={() => onOpen(r)} style={{ background: T.surface, cursor: "pointer" }}>
-              <td style={tcell}>{r.direction_code}</td>
+              <td style={{ ...tcell, color: r.direction_code ? T.text : T.textMuted }}>{r.direction_code || "—"}</td>
               <td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td>
-              <td style={{ ...tcell, textAlign: "center" }}>{r.academic_year}</td>
-              <td style={{ ...tcell, textAlign: "center" }}>{r.total_hours || "-"}</td>
-              <td style={{ ...tcell, textAlign: "center" }}>{r.semester || "-"}</td>
+              <td style={{ ...tcell, textAlign: "center", color: r.academic_year ? T.text : T.textMuted }}>{r.academic_year || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", color: r.total_hours ? T.text : T.textMuted }}>{r.total_hours || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", color: r.semester ? T.text : T.textMuted }}>{r.semester || "—"}</td>
               <td style={{ ...tcell, color: (r.developer_names && r.developer_names.length) ? T.text : T.textMuted }}>
                 {(r.developer_names && r.developer_names.length) ? r.developer_names.join(", ") : "—"}
               </td>
@@ -170,22 +180,6 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
       </div>
     </div>
   </div>;
-}
-
-export function StatusBadge({ status }) {
-  const s = STATUS_BY_VALUE[status];
-  const color = s ? s.color : T.text;
-  const bg = s ? s.bg : T.borderLight;
-  return <span style={{
-    display: "inline-block",
-    padding: "2px 8px",
-    borderRadius: 10,
-    fontSize: 11,
-    fontWeight: 600,
-    color,
-    background: bg,
-    whiteSpace: "nowrap",
-  }}>{status || "—"}</span>;
 }
 
 function FilterChip({ label, count, active, color, bg, onClick }) {

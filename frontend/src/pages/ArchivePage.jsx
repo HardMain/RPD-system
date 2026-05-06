@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { T, F } from "../theme.js";
 import { hdr, tcell } from "../styles.js";
 import { DownloadIcon, EyeIcon } from "../components/icons.jsx";
-import { StatusBadge } from "./RpdListPage.jsx";
+import { StatusBadge } from "../components/StatusBadge.jsx";
 
 const COLS = [
   { key: "direction_code", label: "Направление", align: "left", sortable: true, accessor: r => r.direction_code || "" },
@@ -100,12 +100,12 @@ export function ArchivePage({ rpds, onOpen, onExportPdf }) {
           {filteredSorted.map(r => {
             const iconBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "5px 7px", borderRadius: 4, border: "1px solid " + T.border, background: T.surface, color: T.text, fontFamily: F };
             return <tr key={r.id_rpd} onDoubleClick={() => onOpen(r)} style={{ background: T.surface, cursor: "pointer" }}>
-              <td style={tcell}>{r.direction_code}</td>
+              <td style={{ ...tcell, color: r.direction_code ? T.text : T.textMuted }}>{r.direction_code || "—"}</td>
               <td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td>
-              <td style={{ ...tcell, textAlign: "center" }}>{r.academic_year}</td>
-              <td style={{ ...tcell, textAlign: "center" }}>{r.total_hours || "-"}</td>
-              <td style={{ ...tcell, textAlign: "center" }}>{r.semester || "-"}</td>
-              <td style={tcell}>{r.author_name}</td>
+              <td style={{ ...tcell, textAlign: "center", color: r.academic_year ? T.text : T.textMuted }}>{r.academic_year || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", color: r.total_hours ? T.text : T.textMuted }}>{r.total_hours || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", color: r.semester ? T.text : T.textMuted }}>{r.semester || "—"}</td>
+              <td style={{ ...tcell, color: r.author_name ? T.text : T.textMuted }}>{r.author_name || "—"}</td>
               <td style={tcell}><StatusBadge status={r.status} /></td>
               <td style={{ ...tcell, textAlign: "center", width: 1, whiteSpace: "nowrap", padding: "10px 8px" }}>
                 <div style={{ display: "inline-flex", gap: 4 }}>

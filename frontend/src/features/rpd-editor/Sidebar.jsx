@@ -113,8 +113,6 @@ export function Sidebar({
         {hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
       </button>;
     })}</div>
-
-    <div style={{ borderTop: "1px solid " + T.borderLight, padding: "8px 12px", fontSize: 11, color: T.text, flexShrink: 0 }}>{status}</div>
   </div>;
 }
 

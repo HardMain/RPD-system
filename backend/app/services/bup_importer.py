@@ -195,6 +195,12 @@ async def import_parsed_bup(
     else:
         if id_source_file is not None:
             bup.id_source_file = id_source_file
+        if parsed.faculty:
+            bup.faculty = parsed.faculty
+        if parsed.profile:
+            bup.profile = parsed.profile
+        if parsed.form_of_study:
+            bup.form_of_study = parsed.form_of_study
         existing_by_code = {(bd.code or ""): bd for bd in bup.disciplines}
 
     fallback_dept = await _get_or_create_department(
