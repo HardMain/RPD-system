@@ -110,6 +110,7 @@ function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
       g={g}
       rows={rows}
       editable={editable}
+      required={g.source_type === "Учебные и научные издания"}
       onAdd={onAdd}
       onDelete={onDelete}
       onSave={onSave}
@@ -129,15 +130,16 @@ function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
   </div>;
 }
 
-function PrintedGroup({ g, rows, editable, onAdd, onDelete, onSave }) {
+function PrintedGroup({ g, rows, editable, required = false, onAdd, onDelete, onSave }) {
   const tbodyRef = useRef(null);
   function delById(id) {
     const item = rows.find(it => String(it.id_literature) === String(id));
     if (item) onDelete(item);
   }
+  const showTable = rows.length > 0 || required;
   return <div style={{ marginBottom: 16 }}>
     {g.subtitle && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{g.subtitle}</div>}
-    {rows.length > 0 ? (
+    {showTable ? (
       <div style={{ position: "relative" }}>
       <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -160,6 +162,7 @@ function PrintedGroup({ g, rows, editable, onAdd, onDelete, onSave }) {
               item={item}
               index={i + 1}
               editable={editable}
+              deletable={!required || rows.length > 1}
               onSave={(patch) => onSave(item, patch)}
             />
           ))}
@@ -181,7 +184,7 @@ function PrintedGroup({ g, rows, editable, onAdd, onDelete, onSave }) {
   </div>;
 }
 
-function PrintedRow({ item, index, editable, onSave }) {
+function PrintedRow({ item, index, editable, deletable = true, onSave }) {
   const [title, setTitle] = useState(item.title || "");
 
   const [copies, setCopies] = useState(item.copies_count ?? 0);
@@ -218,7 +221,8 @@ function PrintedRow({ item, index, editable, onSave }) {
     </tr>;
   }
 
-  return <tr data-trash-row data-trash-id={item.id_literature}>
+  const trashProps = deletable ? { "data-trash-row": "", "data-trash-id": item.id_literature } : {};
+  return <tr {...trashProps}>
     <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
     <td style={{ ...td, padding: 4 }}>
       <ExpandableTextarea

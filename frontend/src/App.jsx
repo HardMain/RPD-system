@@ -97,7 +97,10 @@ export default function App() {
     const mode = editMode ? "edit" : "view";
 
     const sameTab = openRpds.find(t => t.id_rpd === rpd.id_rpd && t.mode === mode);
-    if (sameTab) { focusTab(sameTab.tabId); return; }
+    if (sameTab) {
+      if (!options.skipFocus) focusTab(sameTab.tabId);
+      return;
+    }
 
     const other = openRpds.find(t => t.id_rpd === rpd.id_rpd);
     let targetSide = options.targetSide;
@@ -113,7 +116,7 @@ export default function App() {
       }
       return { ...prev, left: { tabs: [...prev.left.tabs, tabId], activeId: tabId } };
     });
-    setActiveTab("edit");
+    if (!options.skipFocus) setActiveTab("edit");
   }
   function focusTab(tabId) {
     setPanes(prev => {
@@ -284,7 +287,7 @@ export default function App() {
   ].filter(Boolean);
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
-    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}@keyframes savedFade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-2px)}}.saved-fade{animation:savedFade 1.5s ease-in-out;display:inline-block}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}.expandable-field::-webkit-scrollbar{width:8px}.expandable-field::-webkit-scrollbar-track{background:" + T.bg + ";margin:28px 0 4px 0;border-radius:4px}.expandable-field::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:4px;border:none}.expandable-field::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.expandable-field-sm::-webkit-scrollbar{width:6px}.expandable-field-sm::-webkit-scrollbar-track{background:" + T.bg + ";margin:24px 0 2px 0;border-radius:3px}.expandable-field-sm::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:3px;border:none}.expandable-field-sm::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
+    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}@keyframes savedFade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-2px)}}.saved-fade{animation:savedFade 1.5s ease-in-out;display:inline-block}@keyframes errFlash{0%{box-shadow:0 0 0 2px " + T.red + "00}50%{box-shadow:0 0 0 2px " + T.red + "AA}100%{box-shadow:0 0 0 2px " + T.red + "00}}.err-flash{animation:errFlash 2.1s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}.expandable-field::-webkit-scrollbar{width:8px}.expandable-field::-webkit-scrollbar-track{background:" + T.bg + ";margin:28px 0 4px 0;border-radius:4px}.expandable-field::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:4px;border:none}.expandable-field::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.expandable-field-sm::-webkit-scrollbar{width:6px}.expandable-field-sm::-webkit-scrollbar-track{background:" + T.bg + ";margin:24px 0 2px 0;border-radius:3px}.expandable-field-sm::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:3px;border:none}.expandable-field-sm::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
 
     <div style={{ flexShrink: 0, zIndex: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", height: 44, background: T.headerBg, color: T.headerText }}>
@@ -321,7 +324,7 @@ export default function App() {
       />
     </div>
 
-    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={r => openRpdFn(r, false)} onEdit={r => openRpdFn(r, true)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} userRole={role} />}
+    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} userRole={role} />}
     {activeTab === "approval" && <ApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, true)} />}
     {activeTab === "archive" && <ArchivePage rpds={rpds} onOpen={r => openRpdFn(r, false)} onExportPdf={handleExportPdf} />}
     {activeTab === "adminBups" && <AdminBupsPage />}

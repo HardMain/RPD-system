@@ -40,6 +40,15 @@ export function OutcomesEditor() {
     api.getAssessmentTools().then(r => setTools(r.data)).catch(() => setTools([]));
   }, [reloadRows]);
 
+  const autoAddedRef = useRef(false);
+  useEffect(() => {
+    if (autoAddedRef.current) return;
+    if (!loaded || !isManual || !isEdit || !canEdit) return;
+    if (rows.length > 0) return;
+    autoAddedRef.current = true;
+    addManualRow({});
+  }, [loaded, isManual, isEdit, canEdit, rows.length]);
+
   async function saveRow(idx, patch) {
     const row = rows[idx];
     const next = { ...row, ...patch };
@@ -115,34 +124,24 @@ export function OutcomesEditor() {
 
   const wrap = { wordBreak: "normal", overflowWrap: "break-word" };
   return <div>
-
-    <div style={{ marginBottom: 14, padding: "10px 12px", background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 6, overflowX: "auto" }} className="table-scroll">
-      <div style={{ display: "flex", alignItems: "center", gap: 12, whiteSpace: "nowrap" }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", flexShrink: 0 }}>
-          {isManual ? "Дисциплина (ручной ввод)" : "Дисциплина БУП"}
-        </span>
-        {bds.length === 1 ? (
-          <span style={{ fontSize: 13, fontWeight: 600 }}>
-            {isManual
-              ? (rpd.discipline_name || "—")
-              : `${currentBd.bup_year ? currentBd.bup_year + " " : ""}${currentBd.bup_name || "БУП"}${currentBd.code ? ` · ${currentBd.code}` : ""}`}
-          </span>
-        ) : (
-          <BupDropdown
-            bds={bds}
-            value={currentBdId}
-            onChange={setCurrentBdId}
-            title="Переключить текущую БУП-дисциплину"
-          />
-        )}
+    {bds.length > 1 && (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <span style={{ fontSize: 12, color: T.textMuted, flexShrink: 0 }}>Дисциплина:</span>
+        <BupDropdown
+          bds={bds}
+          value={currentBdId}
+          onChange={setCurrentBdId}
+          compact
+          title="Переключить текущую БУП-дисциплину"
+        />
       </div>
-      {currentBd && (
-        <div style={{ marginTop: 6, fontSize: 11, color: T.textMuted, whiteSpace: "nowrap" }}>
-          {currentBd.direction_code ? `${currentBd.direction_code} ${currentBd.direction_name || ""}` : (currentBd.direction_name || "—")}
-          {currentBd.direction_profile ? ` · ${currentBd.direction_profile}` : ""}
-        </div>
-      )}
-    </div>
+    )}
+    {bds.length > 1 && currentBd && (currentBd.direction_code || currentBd.direction_name) && (
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>
+        {currentBd.direction_code || ""} {currentBd.direction_name || ""}
+        {currentBd.direction_profile ? ` · ${currentBd.direction_profile}` : ""}
+      </div>
+    )}
 
     {rows.length === 0 && !isManual && (
       <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>
@@ -173,7 +172,7 @@ export function OutcomesEditor() {
         {rows.map((r, idx) => {
           const fromBase = !!r.id_indicator;
           const codeEditable = editable && isManual && !fromBase;
-          const trProps = (isManual && editable && r.id_outcome)
+          const trProps = (isManual && editable && r.id_outcome && rows.length > 1)
             ? { "data-trash-row": "", "data-trash-id": String(r.id_outcome) }
             : {};
           return <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`} {...trProps}>
@@ -217,7 +216,7 @@ export function OutcomesEditor() {
     )}
 
     {isManual && editable && (
-      <div style={{ marginTop: 10 }}>
+      <div style={{ marginTop: 8 }}>
         <CompetencyAdder onAdd={addManualRow} />
       </div>
     )}
@@ -226,7 +225,11 @@ export function OutcomesEditor() {
 
 function SnapshotInput({ value, onSave, placeholder, bold }) {
   const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
+  const lastSyncedRef = useRef(value);
+  useEffect(() => {
+    if (local === lastSyncedRef.current) setLocal(value);
+    lastSyncedRef.current = value;
+  }, [value]);
   return <input
     value={local}
     onChange={e => setLocal(e.target.value)}
@@ -238,7 +241,11 @@ function SnapshotInput({ value, onSave, placeholder, bold }) {
 
 function SnapshotTextarea({ value, onSave, placeholder }) {
   const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
+  const lastSyncedRef = useRef(value);
+  useEffect(() => {
+    if (local === lastSyncedRef.current) setLocal(value);
+    lastSyncedRef.current = value;
+  }, [value]);
   return <ExpandableTextarea
     value={local}
     onChange={e => setLocal(e.target.value)}
@@ -339,7 +346,11 @@ function CompetencyAdder({ onAdd }) {
 
 function OutcomeTextarea({ value, disabled, onSave }) {
   const [local, setLocal] = useState(value);
-  useEffect(() => { setLocal(value); }, [value]);
+  const lastSyncedRef = useRef(value);
+  useEffect(() => {
+    if (local === lastSyncedRef.current) setLocal(value);
+    lastSyncedRef.current = value;
+  }, [value]);
   if (disabled) {
     return <div style={{ padding: "6px 8px", whiteSpace: "pre-wrap", fontSize: 13, color: T.text }}>{value || ""}</div>;
   }

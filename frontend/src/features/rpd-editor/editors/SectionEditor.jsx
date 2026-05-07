@@ -148,22 +148,24 @@ export function SectionEditor() {
                 section={s}
                 number={globalIdx}
                 editable={editable}
+                deletable={list.length > 1}
                 onSave={(patch) => saveSec(s, patch)}
               />
             );
           }
 
-          if (editable) {
+          if (isMultiSemester && editable) {
             groupRows.push(
               <tr key={`sem-${semNum}-add`}>
                 <td colSpan={5} style={{ ...td, padding: 4, background: T.surface }}>
-                  <Btn small onClick={() => addEmpty(isMultiSemester ? semNum : null)}>
-                    <PlusIcon /> Добавить раздел{isMultiSemester ? ` в ${semNum}-й семестр` : ""}
+                  <Btn small onClick={() => addEmpty(semNum)}>
+                    <PlusIcon /> Добавить раздел в {semNum}-й семестр
                   </Btn>
                 </td>
               </tr>
             );
           }
+
           if (isMultiSemester) {
             const tLec = list.reduce((a, s) => a + (s.lecture_hours || 0), 0);
             const tLab = list.reduce((a, s) => a + (s.lab_hours || 0), 0);
@@ -196,18 +198,16 @@ export function SectionEditor() {
             <td style={{ ...td, textAlign: "center", fontWeight: 700, background: T.accentLight, fontVariantNumeric: "tabular-nums" }}>{tSrs}</td>
           </tr>;
         })()}
-        {(!rpd.sections || rpd.sections.length === 0) && !editable && (
-          <tr>
-            <td colSpan={5} style={{ ...td, textAlign: "center", color: T.textMuted, fontStyle: "italic" }}>
-              Разделы не добавлены
-            </td>
-          </tr>
-        )}
       </tbody>
     </table>
     </div>
     {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить раздел" />}
     </div>
+    {editable && !isMultiSemester && (
+      <div style={{ marginTop: 8 }}>
+        <Btn small onClick={() => addEmpty(null)}><PlusIcon /> Добавить раздел</Btn>
+      </div>
+    )}
   </div>;
 }
 
@@ -231,7 +231,7 @@ function computePlanSemesters(rpd) {
   return [...set].sort((a, b) => a - b);
 }
 
-function SectionRow({ section, number, editable, onSave }) {
+function SectionRow({ section, number, editable, deletable, onSave }) {
   const [local, setLocal] = useState(section);
 
   const lastSyncedRef = useRef(section);
@@ -272,7 +272,8 @@ function SectionRow({ section, number, editable, onSave }) {
     </tr>;
   }
 
-  return <tr data-trash-row data-trash-id={section.id_section}>
+  const trashProps = deletable ? { "data-trash-row": "", "data-trash-id": section.id_section } : {};
+  return <tr {...trashProps}>
     <td style={{ ...td, padding: 6 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
         <span style={{ fontWeight: 700, color: T.textMuted, flexShrink: 0, minWidth: 18 }}>{number}.</span>

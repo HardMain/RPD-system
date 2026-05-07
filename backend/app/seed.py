@@ -1,4 +1,8 @@
+from collections import defaultdict
+from pathlib import Path
+
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.core.database import async_session
 from app.core.auth import hash_password
@@ -9,6 +13,15 @@ from app.models import (
     RpdDeveloper, Notification,
     Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
 )
+from app.services.bup_parser import parse_bup_xls
+from app.services.bup_importer import import_parsed_bup
+
+SEED_BUPS_DIR = Path(__file__).resolve().parent.parent / "seed_data" / "bups"
+SEED_BUP_FILES = [
+    "2015 МТФ_ТАМП_б (полный).xls",
+    "2015_ГумФ_ГМУ_б (полный).xls",
+    "2015_ГумФ_ОПД_б (полный).xls",
+]
 
 async def seed_reference():
     async with async_session() as db:
@@ -36,6 +49,11 @@ async def seed_reference():
 
 async def seed_data():
     await seed_reference()
+    await _seed_demo_data()
+    await seed_test_samples()
+
+
+async def _seed_demo_data():
     async with async_session() as db:
         existing = await db.execute(select(Role))
         if existing.scalars().first():
@@ -507,3 +525,208 @@ async def seed_data():
 
         await db.commit()
         print("✅ Seed data created successfully")
+
+
+def _fill_rpd_link_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> None:
+    bup = bd.bup
+    direc = bup.direction if bup else None
+    link.bup_name = bup.name if bup else None
+    link.bup_year = bup.year if bup else None
+    link.bup_profile = bup.profile if bup else None
+    link.direction_code = direc.code if direc else None
+    link.direction_name = direc.name if direc else None
+    link.direction_profile = direc.profile if direc else None
+    link.code = bd.code
+    link.semester = bd.semester
+    link.control_form = bd.control_form
+    link.total_hours = bd.total_hours
+    link.exam_hours = bd.exam_hours
+    link.lecture_hours = bd.lecture_hours
+    link.lab_hours = bd.lab_hours
+    link.practice_hours = bd.practice_hours
+    link.ksr_hours = bd.ksr_hours
+    link.self_study_hours = bd.self_study_hours
+    link.zet = bd.zet
+    link.semesters_data = bd.semesters_data
+    link.discipline_name = bd.discipline.name if bd.discipline else None
+    link.form_of_study = bup.form_of_study if bup else None
+
+
+async def seed_test_samples():
+    async with async_session() as db:
+        marker = await db.execute(select(Rpd).where(Rpd.comment.like("[ТЕСТ]%")))
+        if marker.scalars().first():
+            return
+
+        teacher_res = await db.execute(select(User).where(User.ldap_uid == "ivanov"))
+        teacher = teacher_res.scalar_one_or_none()
+        if teacher is None:
+            return
+
+        bup_records: list[Bup] = []
+        for fname in SEED_BUP_FILES:
+            path = SEED_BUPS_DIR / fname
+            if not path.is_file():
+                print(f"⚠️  BUP file missing, skip: {path}")
+                continue
+            try:
+                parsed = parse_bup_xls(path.read_bytes())
+            except Exception as e:
+                print(f"⚠️  Failed to parse {fname}: {e}")
+                continue
+            try:
+                bup = await import_parsed_bup(db, parsed, year=2015, name_override=path.stem)
+            except Exception as e:
+                print(f"⚠️  Failed to import {fname}: {e}")
+                continue
+            bup_records.append(bup)
+        await db.flush()
+
+        if not bup_records:
+            await db.commit()
+            return
+
+        res = await db.execute(
+            select(Bup)
+            .where(Bup.id_bup.in_([b.id_bup for b in bup_records]))
+            .options(
+                selectinload(Bup.direction),
+                selectinload(Bup.disciplines).selectinload(BupDiscipline.discipline),
+                selectinload(Bup.disciplines).selectinload(BupDiscipline.bup).selectinload(Bup.direction),
+            )
+        )
+        bups_full = res.scalars().all()
+
+        def sem_count(bd: BupDiscipline) -> int:
+            return len(bd.semesters_data or [])
+
+        new_rpds: list[Rpd] = []
+
+        for bup in bups_full:
+            single = next((bd for bd in bup.disciplines if sem_count(bd) == 1), None)
+            multi = next((bd for bd in bup.disciplines if sem_count(bd) >= 2), None)
+            if single:
+                rpd = Rpd(
+                    id_discipline=single.id_discipline,
+                    id_author=teacher.id_user,
+                    academic_year="2025/2026",
+                    status="Черновик",
+                    comment=f"[ТЕСТ] Один семестр · БУП «{bup.name}» · дисциплина «{single.discipline.name}»",
+                )
+                db.add(rpd)
+                await db.flush()
+                link = RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=single.id_bup_discipline)
+                _fill_rpd_link_snapshot(link, single)
+                db.add(link)
+                new_rpds.append(rpd)
+            if multi:
+                rpd = Rpd(
+                    id_discipline=multi.id_discipline,
+                    id_author=teacher.id_user,
+                    academic_year="2025/2026",
+                    status="Черновик",
+                    comment=f"[ТЕСТ] Несколько семестров · БУП «{bup.name}» · дисциплина «{multi.discipline.name}»",
+                )
+                db.add(rpd)
+                await db.flush()
+                link = RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=multi.id_bup_discipline)
+                _fill_rpd_link_snapshot(link, multi)
+                db.add(link)
+                new_rpds.append(rpd)
+
+        disc_to_bds: dict[int, list[BupDiscipline]] = defaultdict(list)
+        for bup in bups_full:
+            for bd in bup.disciplines:
+                disc_to_bds[bd.id_discipline].append(bd)
+        cross_bd_list = next((bds for bds in disc_to_bds.values() if len(bds) >= 2), None)
+        if cross_bd_list:
+            disc_name = cross_bd_list[0].discipline.name
+            bup_names = ", ".join(f"«{bd.bup.name}»" for bd in cross_bd_list)
+            rpd = Rpd(
+                id_discipline=cross_bd_list[0].id_discipline,
+                id_author=teacher.id_user,
+                academic_year="2025/2026",
+                status="Черновик",
+                comment=f"[ТЕСТ] Привязка к нескольким БУП-дисциплинам · дисциплина «{disc_name}» · {bup_names}",
+            )
+            db.add(rpd)
+            await db.flush()
+            for bd in cross_bd_list:
+                link = RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=bd.id_bup_discipline)
+                _fill_rpd_link_snapshot(link, bd)
+                db.add(link)
+            new_rpds.append(rpd)
+
+        manual_disc_one = await _get_or_create_discipline_by_name(db, "Тестовая ручная дисциплина (1 семестр)")
+        rpd_manual_one = Rpd(
+            id_discipline=manual_disc_one.id_discipline,
+            id_author=teacher.id_user,
+            academic_year="2025/2026",
+            status="Черновик",
+            comment="[ТЕСТ] Ручная РПД (без БУПа) · один семестр",
+        )
+        db.add(rpd_manual_one)
+        await db.flush()
+        link_one = RpdBupDiscipline(
+            id_rpd=rpd_manual_one.id_rpd,
+            id_bup_discipline=None,
+            is_manual=True,
+            discipline_name=manual_disc_one.name,
+            semester="3",
+            control_form="Экзамен (3)",
+            total_hours=144, exam_hours=36,
+            lecture_hours=36, lab_hours=18, practice_hours=18, self_study_hours=72, zet=4,
+            direction_code="—", direction_name="Без БУПа",
+            form_of_study="очная",
+            semesters_data=[
+                {"number": 3, "lecture": 36, "lab": 18, "practice": 18, "ksr": None, "srs": 72},
+            ],
+        )
+        db.add(link_one)
+        new_rpds.append(rpd_manual_one)
+
+        manual_disc_multi = await _get_or_create_discipline_by_name(db, "Тестовая ручная дисциплина (несколько семестров)")
+        rpd_manual_multi = Rpd(
+            id_discipline=manual_disc_multi.id_discipline,
+            id_author=teacher.id_user,
+            academic_year="2025/2026",
+            status="Черновик",
+            comment="[ТЕСТ] Ручная РПД (без БУПа) · несколько семестров",
+        )
+        db.add(rpd_manual_multi)
+        await db.flush()
+        link_multi = RpdBupDiscipline(
+            id_rpd=rpd_manual_multi.id_rpd,
+            id_bup_discipline=None,
+            is_manual=True,
+            discipline_name=manual_disc_multi.name,
+            semester="1, 2",
+            control_form="Экзамен (2), Зачёт (1)",
+            total_hours=180,
+            lecture_hours=36, lab_hours=36, practice_hours=18, self_study_hours=90, zet=5,
+            direction_code="—", direction_name="Без БУПа",
+            form_of_study="очная",
+            semesters_data=[
+                {"number": 1, "lecture": 18, "lab": 18, "practice": 9, "ksr": None, "srs": 45},
+                {"number": 2, "lecture": 18, "lab": 18, "practice": 9, "ksr": None, "srs": 45},
+            ],
+        )
+        db.add(link_multi)
+        new_rpds.append(rpd_manual_multi)
+
+        for rpd in new_rpds:
+            db.add(RpdDeveloper(id_rpd=rpd.id_rpd, id_user=teacher.id_user))
+
+        await db.commit()
+        print(f"✅ Seeded {len(new_rpds)} test RPD samples + {len(bups_full)} BUPs")
+
+
+async def _get_or_create_discipline_by_name(db, name: str) -> Discipline:
+    res = await db.execute(select(Discipline).where(Discipline.name == name))
+    d = res.scalars().first()
+    if d:
+        return d
+    d = Discipline(name=name)
+    db.add(d)
+    await db.flush()
+    return d

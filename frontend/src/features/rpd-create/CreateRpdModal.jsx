@@ -61,6 +61,13 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const [year, setYear] = useState(draft?.year ?? "2025/2026");
   const [baseId, setBaseId] = useState(draft?.baseId ?? "");
   const [submitting, setSubmitting] = useState(false);
+  const [errorPulse, setErrorPulse] = useState(0);
+  const [pulseSnapshot, setPulseSnapshot] = useState(null);
+  const pulseTimerRef = useRef(null);
+
+  useEffect(() => () => {
+    if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+  }, []);
 
   const semTbodyRef = useRef(null);
 
@@ -225,40 +232,47 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const totalMismatch = totalTarget > 0 && totalTarget !== sums.aud;
   const examMismatch = examTarget !== sums.exam;
 
-  const manualErrors = useMemo(() => {
-    if (mode !== "manual") return [];
-    const errs = [];
-    if (!manualHasDiscipline) errs.push("дисциплина");
-    if (!manual.direction_code.trim()) errs.push("код направления");
-    if (!manual.direction_name.trim()) errs.push("название направления");
-    if (!manual.direction_profile.trim()) errs.push("профиль");
-    if (!manual.form_of_study) errs.push("форма обучения");
-    if (!(+manual.zet > 0)) errs.push("ЗЕ (> 0)");
-    if (manualSemesters.length === 0) {
-      errs.push("хотя бы один семестр");
-    } else {
-      const semsNoControls = manualSemesters
-        .filter(s => !(s.controls || []).length)
-        .map(s => s.number);
-      if (semsNoControls.length > 0) {
-        errs.push(`контроль в семестре${semsNoControls.length > 1 ? "ах" : ""} ${semsNoControls.join(", ")}`);
-      }
-      const examSems = manualSemesters
-        .filter(s => (s.controls || []).includes("экзамен") && !(+s.exam > 0))
-        .map(s => s.number);
-      if (examSems.length > 0) {
-        errs.push(`часы экзамена в семестре${examSems.length > 1 ? "ах" : ""} ${examSems.join(", ")}`);
-      }
-    }
-    if (totalMismatch || examMismatch) {
-      errs.push("часы не сходятся (см. красные итоги в таблице)");
-    }
-    return errs;
+  const manualFieldIssues = useMemo(() => {
+    if (mode !== "manual") return null;
+    const semIssues = manualSemesters.map(s => ({
+      number: s.number,
+      noControl: !(s.controls || []).length,
+      examMissingHours: (s.controls || []).includes("экзамен") && !(+s.exam > 0),
+    }));
+    return {
+      discipline: !manualHasDiscipline,
+      direction_code: !manual.direction_code.trim(),
+      direction_name: !manual.direction_name.trim(),
+      direction_profile: !manual.direction_profile.trim(),
+      form_of_study: !manual.form_of_study,
+      zet: !(+manual.zet > 0),
+      no_semesters: manualSemesters.length === 0,
+      semesters: semIssues,
+      hours_mismatch: totalMismatch || examMismatch,
+    };
   }, [mode, manualHasDiscipline, manual, manualSemesters, totalMismatch, examMismatch]);
 
-  const canSubmit = mode === "bup"
-    ? (!!discId && bdIds.size > 0 && !mismatch)
-    : manualErrors.length === 0;
+  const manualHasErrors = useMemo(() => {
+    if (!manualFieldIssues) return false;
+    const f = manualFieldIssues;
+    if (f.discipline || f.direction_code || f.direction_name || f.direction_profile
+        || f.form_of_study || f.zet || f.no_semesters || f.hours_mismatch) return true;
+    return f.semesters.some(s => s.noControl || s.examMissingHours);
+  }, [manualFieldIssues]);
+
+  const bupFieldIssues = useMemo(() => {
+    if (mode !== "bup") return null;
+    return {
+      bupDiscipline: !discId,
+      bdSelection: !!discId && (bdIds.size === 0 || !!mismatch),
+    };
+  }, [mode, discId, bdIds, mismatch]);
+
+  const bupHasErrors = !!bupFieldIssues && (bupFieldIssues.bupDiscipline || bupFieldIssues.bdSelection);
+
+  const flashField = (key) => !!pulseSnapshot?.[key];
+  const flashSemControl = (idx) => !!pulseSnapshot?.semesters?.[idx]?.noControl;
+  const flashSemExam = (idx) => !!pulseSnapshot?.semesters?.[idx]?.examMissingHours;
 
   function buildControlForm(sems) {
     const groups = new Map();
@@ -285,7 +299,20 @@ export function CreateRpdModal({ onClose, onCreated }) {
   }
 
   async function go() {
-    if (!canSubmit) return;
+    if (mode === "manual" && manualHasErrors) {
+      setErrorPulse(p => p + 1);
+      setPulseSnapshot(manualFieldIssues);
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+      pulseTimerRef.current = setTimeout(() => setPulseSnapshot(null), 2200);
+      return;
+    }
+    if (mode === "bup" && bupHasErrors) {
+      setErrorPulse(p => p + 1);
+      setPulseSnapshot(bupFieldIssues);
+      if (pulseTimerRef.current) clearTimeout(pulseTimerRef.current);
+      pulseTimerRef.current = setTimeout(() => setPulseSnapshot(null), 2200);
+      return;
+    }
     setSubmitting(true);
     try {
       let payload;
@@ -365,14 +392,16 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
       {mode === "bup" && <>
         <div style={{ marginBottom: 14 }}>
-          <label style={labelStyle}>Дисциплина</label>
+          <label style={labelStyle}>
+            Дисциплина <span style={{ color: T.red }}>*</span>
+          </label>
           <input
             value={discFilter}
             onChange={e => setDiscFilter(e.target.value)}
             placeholder="Поиск по названию или направлению…"
             style={{ ...inputStyle, marginBottom: 6 }}
           />
-          <div style={{ border: "1px solid " + T.border, borderRadius: 6, maxHeight: 200, overflow: "auto", background: T.surface }}>
+          <div key={errorPulse} className={flashField("bupDiscipline") ? "err-flash" : ""} style={{ border: "1px solid " + T.border, borderRadius: 6, maxHeight: 200, overflow: "auto", background: T.surface }} title="Обязательное поле">
             {filteredDisciplines.length === 0 && (
               <div style={{ padding: 14, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>
                 {disciplines.length === 0 ? "Дисциплин пока нет — попросите администратора загрузить XLS-файл БУПа." : "Ничего не нашлось."}
@@ -401,7 +430,9 @@ export function CreateRpdModal({ onClose, onCreated }) {
         {discId && (
           <div style={{ marginBottom: 14 }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
-              <label style={{ ...labelStyle, marginBottom: 0 }}>БУП-дисциплины (выберите одну или несколько)</label>
+              <label style={{ ...labelStyle, marginBottom: 0 }}>
+                БУП-дисциплины (выберите одну или несколько) <span style={{ color: T.red }}>*</span>
+              </label>
               <div style={{ flex: 1 }} />
               {bupDisciplines.length > 0 && (
                 <button type="button" onClick={toggleAllBd}
@@ -410,7 +441,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
                 </button>
               )}
             </div>
-            <div style={{ border: "1px solid " + T.border, borderRadius: 6, maxHeight: 240, overflow: "auto", background: T.surface }}>
+            <div key={errorPulse} className={flashField("bdSelection") ? "err-flash" : ""} style={{ border: "1px solid " + T.border, borderRadius: 6, maxHeight: 240, overflow: "auto", background: T.surface }} title="Обязательное поле">
               {bdLoading && <div style={{ padding: 14, fontSize: 13, color: T.textMuted }}>Загружаю…</div>}
               {!bdLoading && bupDisciplines.length === 0 && (
                 <div style={{ padding: 14, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>
@@ -450,14 +481,19 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
       {mode === "manual" && <>
         <div ref={discWrapRef} style={{ marginBottom: 14, position: "relative" }}>
-          <label style={labelStyle}>Дисциплина</label>
-          <input
-            value={discQuery}
-            onChange={e => onDiscQueryChange(e.target.value)}
-            onFocus={() => setDiscListOpen(true)}
-            placeholder="Введите название или выберите из списка"
-            style={inputStyle}
-          />
+          <label style={labelStyle}>
+            Дисциплина <span style={{ color: T.red }}>*</span>
+          </label>
+          <div key={errorPulse} className={flashField("discipline") ? "err-flash" : ""} style={{ borderRadius: 4 }}>
+            <input
+              value={discQuery}
+              onChange={e => onDiscQueryChange(e.target.value)}
+              onFocus={() => setDiscListOpen(true)}
+              placeholder="Введите название или выберите из списка"
+              title="Обязательное поле"
+              style={inputStyle}
+            />
+          </div>
           {discListOpen && (
             <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 2, zIndex: 10, border: "1px solid " + T.border, borderRadius: 6, background: T.surface, boxShadow: "0 4px 14px rgba(0,0,0,.10)", maxHeight: 200, overflow: "auto" }}>
               {filteredManualDisciplines.length === 0 && (
@@ -499,30 +535,35 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
         <ManualBlock title="Направление подготовки">
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <ManualField label="Код" value={manual.direction_code} onChange={v => manualField("direction_code", v)} placeholder="09.03.04" width={120} />
-            <ManualField label="Название" value={manual.direction_name} onChange={v => manualField("direction_name", v)} placeholder="Программная инженерия" />
+            <ManualField label="Код" required flash={flashField("direction_code")} pulseKey={errorPulse} value={manual.direction_code} onChange={v => manualField("direction_code", v)} placeholder="09.03.04" width={120} />
+            <ManualField label="Название" required flash={flashField("direction_name")} pulseKey={errorPulse} value={manual.direction_name} onChange={v => manualField("direction_name", v)} placeholder="Программная инженерия" />
           </div>
-          <ManualField label="Профиль" value={manual.direction_profile} onChange={v => manualField("direction_profile", v)} placeholder="—" />
+          <ManualField label="Профиль" required flash={flashField("direction_profile")} pulseKey={errorPulse} value={manual.direction_profile} onChange={v => manualField("direction_profile", v)} placeholder="—" />
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "0 0 220px", minWidth: 200 }}>
-              <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Форма обучения</div>
-              <select
-                value={manual.form_of_study || ""}
-                onChange={e => manualField("form_of_study", e.target.value)}
-                style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, boxSizing: "border-box", outline: "none" }}
-              >
-                <option value="">— не указана —</option>
-                <option value="очная">очная</option>
-                <option value="заочная">заочная</option>
-                <option value="очно-заочная">очно-заочная</option>
-              </select>
+              <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>
+                Форма обучения <span style={{ color: T.red }}>*</span>
+              </div>
+              <div key={errorPulse} className={flashField("form_of_study") ? "err-flash" : ""} style={{ borderRadius: 4 }}>
+                <select
+                  value={manual.form_of_study || ""}
+                  onChange={e => manualField("form_of_study", e.target.value)}
+                  title="Обязательное поле"
+                  style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, boxSizing: "border-box", outline: "none" }}
+                >
+                  <option value="">— не указана —</option>
+                  <option value="очная">очная</option>
+                  <option value="заочная">заочная</option>
+                  <option value="очно-заочная">очно-заочная</option>
+                </select>
+              </div>
             </div>
           </div>
         </ManualBlock>
 
         <ManualBlock title="Общая трудоёмкость дисциплины">
           <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-            <ManualField label="ЗЕ" type="number" min={0} value={manual.zet} onChange={v => manualField("zet", v)} width={120} />
+            <ManualField label="ЗЕ" required flash={flashField("zet")} pulseKey={errorPulse} type="number" min={0} value={manual.zet} onChange={v => manualField("zet", v)} width={120} />
             <div style={{ flex: "0 0 200px", minWidth: 180 }}>
               <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Общая трудоёмкость (часы)</div>
               <div style={{ padding: "6px 10px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, background: T.bg, color: totalTarget > 0 ? T.text : T.textMuted, fontStyle: totalTarget > 0 ? "normal" : "italic", boxSizing: "border-box", lineHeight: "16px" }}>
@@ -569,6 +610,8 @@ export function CreateRpdModal({ onClose, onCreated }) {
                   const hasExam = (s.controls || []).includes("экзамен");
                   const trashable = manualSemesters.length > 1;
                   const trProps = trashable ? { "data-trash-row": "", "data-trash-id": String(idx) } : {};
+                  const controlFlash = flashSemControl(idx);
+                  const examFlash = flashSemExam(idx);
                   return <tr key={idx} {...trProps}>
                     <td style={semCell}><HourInput value={s.number} min={1} max={12} onChange={v => setSemester(idx, { number: Math.max(1, Math.min(12, +v || 1)) })} /></td>
                     <td style={semCell}><HourInput value={s.lecture} onChange={v => setSemester(idx, { lecture: v })} /></td>
@@ -579,16 +622,18 @@ export function CreateRpdModal({ onClose, onCreated }) {
                     <td style={{ ...semCell, textAlign: "center", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>{itog}</td>
                     <td style={semCell}>
                       {hasExam
-                        ? <HourInput value={s.exam} step={EXAM_DEFAULT} onChange={v => setSemester(idx, { exam: v })} />
+                        ? <HourInput value={s.exam} step={EXAM_DEFAULT} flash={examFlash} pulseKey={errorPulse} title="Укажите часы экзамена (обязательно)" onChange={v => setSemester(idx, { exam: v })} />
                         : <div style={{ textAlign: "center", color: T.textMuted, fontSize: 12 }}>—</div>}
                     </td>
                     <td style={semCell}>
-                      <MultiSelectDropdown
-                        value={s.controls}
-                        options={CONTROL_OPTIONS}
-                        onChange={(v) => setSemester(idx, { controls: v })}
-                        placeholder="—"
-                      />
+                      <div key={errorPulse} className={controlFlash ? "err-flash" : ""} style={{ borderRadius: 4 }} title="Выберите хотя бы одну форму контроля (обязательно)">
+                        <MultiSelectDropdown
+                          value={s.controls}
+                          options={CONTROL_OPTIONS}
+                          onChange={(v) => setSemester(idx, { controls: v })}
+                          placeholder="—"
+                        />
+                      </div>
                     </td>
                     <td style={semCell}></td>
                   </tr>;
@@ -635,13 +680,8 @@ export function CreateRpdModal({ onClose, onCreated }) {
     </div>
 
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderTop: "1px solid " + T.borderLight }}>
-      {mode === "manual" && manualErrors.length > 0 && (
-        <div style={{ flex: 1, fontSize: 11, color: T.red, lineHeight: 1.45 }}>
-          Нужно заполнить: {manualErrors.join("; ")}
-        </div>
-      )}
-      {!(mode === "manual" && manualErrors.length > 0) && <div style={{ flex: 1 }} />}
-      <Btn primary onClick={go} disabled={submitting || !canSubmit}>{submitting ? "Создание…" : "Создать"}</Btn>
+      <div style={{ flex: 1 }} />
+      <Btn primary onClick={go} disabled={submitting}>{submitting ? "Создание…" : "Создать"}</Btn>
       <Btn onClick={discardAndClose}>Закрыть</Btn>
     </div>
   </Modal>;
@@ -674,7 +714,7 @@ function ManualBlock({ title, children }) {
   </div>;
 }
 
-function ManualField({ label, value, onChange, placeholder, type, width, min, step }) {
+function ManualField({ label, value, onChange, placeholder, type, width, min, step, required, flash, pulseKey }) {
   const style = {
     width: "100%",
     padding: "6px 10px",
@@ -697,21 +737,26 @@ function ManualField({ label, value, onChange, placeholder, type, width, min, st
     }
   }
   return <div style={{ flex: width ? `0 0 ${width}px` : 1, minWidth: width || 120 }}>
-    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>{label}</div>
-    <input
-      type={type || "text"}
-      min={type === "number" ? (min ?? 0) : undefined}
-      step={type === "number" ? (step ?? 1) : undefined}
-      value={value ?? ""}
-      onChange={onChangeNum}
-      placeholder={placeholder}
-      style={style}
-    />
+    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>
+      {label}{required && <span style={{ color: T.red }}> *</span>}
+    </div>
+    <div key={pulseKey} className={flash ? "err-flash" : ""} style={{ borderRadius: 4 }}>
+      <input
+        type={type || "text"}
+        min={type === "number" ? (min ?? 0) : undefined}
+        step={type === "number" ? (step ?? 1) : undefined}
+        value={value ?? ""}
+        onChange={onChangeNum}
+        placeholder={placeholder}
+        title={required ? "Обязательное поле" : undefined}
+        style={style}
+      />
+    </div>
   </div>;
 }
 
-function HourInput({ value, onChange, min = 0, max, step }) {
-  return <input
+function HourInput({ value, onChange, min = 0, max, step, flash, pulseKey, title }) {
+  const input = <input
     type="number"
     min={min}
     max={max}
@@ -727,8 +772,11 @@ function HourInput({ value, onChange, min = 0, max, step }) {
       if (typeof max === "number" && v > max) v = max;
       onChange(v);
     }}
+    title={title}
     style={hourInputStyle}
   />;
+  if (pulseKey === undefined) return input;
+  return <div key={pulseKey} className={flash ? "err-flash" : ""} style={{ borderRadius: 4 }}>{input}</div>;
 }
 
 function totalCell(mismatch) {

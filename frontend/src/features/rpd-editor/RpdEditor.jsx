@@ -165,7 +165,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const pdfDirtyRef = useRef(true);
   const initialLoadRef = useRef(true);
 
-  const prevPdfSnapRef = useRef(null);
+  const pdfRenderedSnapRef = useRef(null);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
   const isEdit = editMode; const isHead = userRole === "Зав. кафедрой";
   const showPdf = !isEdit;
@@ -180,17 +180,15 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       setEditTexts({ goals: mergedGoals, objects: r.objects_text || "", requirements: r.requirements_text || "", educational_tech: r.educational_tech || "", methodical_recommendations: r.methodical_recommendations || "" });
 
       const newSnap = pdfRelevantSnapshot(r);
-      let pdfChanged = false;
+      let differsFromRendered = false;
       if (initialLoadRef.current) {
         initialLoadRef.current = false;
-
-      } else {
-        pdfChanged = newSnap !== prevPdfSnapRef.current;
-        if (pdfChanged) pdfDirtyRef.current = true;
+      } else if (pdfRenderedSnapRef.current !== null) {
+        differsFromRendered = newSnap !== pdfRenderedSnapRef.current;
+        if (differsFromRendered) pdfDirtyRef.current = true;
       }
-      prevPdfSnapRef.current = newSnap;
       if (!silent) setLoading(false);
-      return pdfChanged;
+      return differsFromRendered;
     } catch {
       if (!silent) setLoading(false);
       return false;
@@ -240,8 +238,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (reloadDebounceRef.current) clearTimeout(reloadDebounceRef.current);
     reloadDebounceRef.current = setTimeout(async () => {
       reloadDebounceRef.current = null;
-      const changed = await load(true);
-      if (changed && showPdf) setPdfStale(true);
+      const differsFromRendered = await load(true);
+      if (showPdf) setPdfStale(differsFromRendered);
     }, 400);
     return () => { if (reloadDebounceRef.current) { clearTimeout(reloadDebounceRef.current); reloadDebounceRef.current = null; } };
   }, [reloadKey]);
@@ -254,12 +252,15 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     const controller = new AbortController();
     setPdfLoading(true); setPdfError(null); setPdfData(null); setPdfNumPages(0); setPdfCurrentPage(1);
 
+    const snapAtFetch = rpd ? pdfRelevantSnapshot(rpd) : null;
     api.fetchPdfInline(rpdId, { signal: controller.signal }, pdfBdId).then(r => {
       if (cancelled) return;
       createdUrl = window.URL.createObjectURL(r.data);
       setPdfData(createdUrl);
       transferred = true;
       pdfDirtyRef.current = false;
+      if (snapAtFetch !== null) pdfRenderedSnapRef.current = snapAtFetch;
+      setPdfStale(false);
     }).catch(() => { if (!cancelled) setPdfError("Не удалось сформировать PDF"); })
       .finally(() => { if (!cancelled) setPdfLoading(false); });
     return () => {

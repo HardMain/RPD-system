@@ -81,7 +81,12 @@ export function DatabasesEditor() {
 
 function DatabaseRow({ item, editable, onSave }) {
   const [name, setName] = useState(item.name || "");
-  useEffect(() => { setName(item.name || ""); }, [item.name]);
+  const lastSyncedRef = useRef(item.name || "");
+  useEffect(() => {
+    const next = item.name || "";
+    if (name === lastSyncedRef.current) setName(next);
+    lastSyncedRef.current = next;
+  }, [item.name]);
 
   function commitName() {
     if (name === (item.name || "")) return;

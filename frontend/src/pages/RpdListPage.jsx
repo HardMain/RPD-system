@@ -153,7 +153,23 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userR
           {filteredSorted.map(r => {
             const canEdit = r.status === "Черновик" || r.status === "На доработке";
             const iconBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "5px 7px", borderRadius: 4, border: "1px solid " + T.border, background: T.surface, color: T.text, fontFamily: F };
-            return <tr key={r.id_rpd} onDoubleClick={() => onOpen(r)} style={{ background: T.surface, cursor: "pointer" }}>
+            const openByDblClick = (e) => {
+              if (e.ctrlKey) onOpen(r);
+              else if (canEdit) onEdit(r);
+              else onOpen(r);
+            };
+            const openInBackground = (e) => {
+              if (e.ctrlKey) onOpen(r, { skipFocus: true });
+              else if (canEdit) onEdit(r, { skipFocus: true });
+              else onOpen(r, { skipFocus: true });
+            };
+            return <tr key={r.id_rpd}
+              onDoubleClick={openByDblClick}
+              onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
+              onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); openInBackground(e); } }}
+              style={{ background: T.surface, cursor: "pointer" }}
+              title="Двойной клик — редактор · Ctrl+двойной клик — просмотр · Колесико — фоновая вкладка (редактор) · Ctrl+колесико — фоновая (просмотр)"
+            >
               <td style={{ ...tcell, color: r.direction_code ? T.text : T.textMuted }}>{r.direction_code || "—"}</td>
               <td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td>
               <td style={{ ...tcell, textAlign: "center", color: r.academic_year ? T.text : T.textMuted }}>{r.academic_year || "—"}</td>

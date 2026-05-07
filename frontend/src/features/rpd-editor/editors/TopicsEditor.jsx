@@ -21,8 +21,8 @@ export function TopicsEditor({ kind }) {
   }, 0);
 
   if (totalHoursForKind <= 0) {
-    return <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted }}>
-      В содержании дисциплины нет часов {kind === "lab" ? "лабораторных работ" : "практических занятий"} — раздел не используется.
+    return <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
+      Не используется
     </div>;
   }
 
@@ -84,19 +84,13 @@ function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
         </tr>
       </thead>
       <tbody ref={tbodyRef}>
-        {topics.length === 0 && (
-          <tr>
-            <td colSpan={2} style={{ ...td, textAlign: "center", color: T.textMuted, fontStyle: "italic" }}>
-              Не используется
-            </td>
-          </tr>
-        )}
         {topics.map((t, i) => (
           <TopicRow
             key={t.id_topic}
             topic={t}
             index={i + 1}
             editable={editable}
+            deletable={topics.length > 1}
             onSave={(title) => saveTitle(t, title)}
           />
         ))}
@@ -112,9 +106,14 @@ function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
   </div>;
 }
 
-function TopicRow({ topic, index, editable, onSave }) {
+function TopicRow({ topic, index, editable, deletable, onSave }) {
   const [local, setLocal] = useState(topic.title || "");
-  useEffect(() => { setLocal(topic.title || ""); }, [topic.title]);
+  const lastSyncedRef = useRef(topic.title || "");
+  useEffect(() => {
+    const next = topic.title || "";
+    if (local === lastSyncedRef.current) setLocal(next);
+    lastSyncedRef.current = next;
+  }, [topic.title]);
 
   if (!editable) {
     return <tr>
@@ -123,7 +122,8 @@ function TopicRow({ topic, index, editable, onSave }) {
     </tr>;
   }
 
-  return <tr data-trash-row data-trash-id={topic.id_topic}>
+  const trashProps = deletable ? { "data-trash-row": "", "data-trash-id": topic.id_topic } : {};
+  return <tr {...trashProps}>
     <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
     <td style={{ ...td, padding: 4 }}>
       <input

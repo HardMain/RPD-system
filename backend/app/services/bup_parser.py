@@ -228,17 +228,14 @@ def parse_bup_xls(content: bytes) -> ParsedBup:
         if not code or not name or total is None:
             continue
 
-        control_form, primary_sem = _build_control_form(row)
-
-        if primary_sem is None:
-            sems = _semesters_used(row)
-            if sems:
-                primary_sem = ", ".join(str(s) for s in sems)
+        control_form, control_primary = _build_control_form(row)
+        semesters = _extract_semesters(row)
+        if semesters:
+            primary_sem = ", ".join(str(s.number) for s in semesters)
+        else:
+            primary_sem = control_primary
 
         comp_codes = _split_competencies(_to_str(row[57]) if len(row) > 57 else "")
-        semesters = _extract_semesters(row)
-        if primary_sem is None and semesters:
-            primary_sem = ", ".join(str(s.number) for s in semesters)
 
         parsed.disciplines.append(ParsedDiscipline(
             code=code,
