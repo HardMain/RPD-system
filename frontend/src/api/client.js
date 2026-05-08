@@ -26,6 +26,12 @@ export const login = (username, password) =>
   });
 export const getMe = () => api.get('/auth/me');
 
+export function userCan(user, perm) {
+  const perms = user?.permissions;
+  if (!Array.isArray(perms)) return false;
+  return perms.includes("*") || perms.includes(perm);
+}
+
 export const getRpds = (params) => api.get('/rpd/', { params });
 export const getRpd = (id) => api.get(`/rpd/${id}`);
 export const createRpd = (data) => api.post('/rpd/', data);
@@ -34,6 +40,8 @@ export const deleteRpd = (id) => api.delete(`/rpd/${id}`);
 export const sendForApproval = (id) => api.post(`/rpd/${id}/send-approval`);
 export const reviewRpd = (id, data) => api.post(`/rpd/${id}/review`, data);
 export const getApprovals = (rpdId) => api.get(`/rpd/${rpdId}/approvals`);
+export const getReviewers = () => api.get('/rpd/reviewers');
+export const setApprovalRoute = (rpdId, reviewerIds) => api.put(`/rpd/${rpdId}/approval-route`, { reviewer_ids: reviewerIds });
 
 export const addSection = (rpdId, data) => api.post(`/rpd/${rpdId}/sections`, data);
 export const updateSection = (sectionId, data) => api.put(`/rpd/sections/${sectionId}`, data);
@@ -88,6 +96,14 @@ export const selectFosFile = (rpdId, payload) => api.post(`/rpd/${rpdId}/fos/sel
 export const deleteFosLink = (fosId) => api.delete(`/rpd/fos/${fosId}`);
 export const getFosLibrary = () => api.get(`/rpd/fos/library`);
 
+export const adminListUsers = () => api.get('/admin/users');
+export const adminCreateUser = (data) => api.post('/admin/users', data);
+export const adminUpdateUser = (userId, data) => api.patch(`/admin/users/${userId}`, data);
+export const adminDeactivateUser = (userId) => api.delete(`/admin/users/${userId}`);
+export const adminListRoles = () => api.get('/admin/roles');
+export const adminListDepartments = () => api.get('/admin/departments');
+export const searchUsers = (q) => api.get('/admin/users/search', { params: { q } });
+
 export const adminListDirections = () => api.get('/admin/directions/');
 export const adminUploadFgos = (directionId, file) => {
   const form = new FormData();
@@ -138,13 +154,6 @@ export const getUnreadCount = () => api.get('/notifications/unread-count');
 export const markNotificationRead = (id) => api.post(`/notifications/${id}/read`);
 export const readAllNotifications = () => api.post('/notifications/read-all');
 
-export const getUsers = () => api.get('/admin/users');
-export const createUser = (data) => api.post('/admin/users', data);
-export const updateUser = (id, data) => api.patch(`/admin/users/${id}`, data);
-export const deactivateUser = (id) => api.delete(`/admin/users/${id}`);
-export const searchUsers = (q) => api.get('/admin/users/search', { params: { q } });
-export const getRoles = () => api.get('/admin/roles');
-export const getDepartments = () => api.get('/admin/departments');
 
 export const attachBupDiscipline = (rpdId, bdId) => api.post(`/rpd/${rpdId}/bup-disciplines/${bdId}`);
 export const detachBupDiscipline = (rpdId, bdId) => api.delete(`/rpd/${rpdId}/bup-disciplines/${bdId}`);

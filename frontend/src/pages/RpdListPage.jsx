@@ -4,6 +4,7 @@ import { hdr, tcell } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon } from "../components/icons.jsx";
 import { STATUSES, StatusBadge } from "../components/StatusBadge.jsx";
+import { userCan } from "../api/client.js";
 
 const COLS = [
   { key: "direction_code", label: "Направление", align: "left", sortable: true, accessor: r => r.direction_code || "" },
@@ -28,8 +29,8 @@ function loadFilterState() {
   } catch { return null; }
 }
 
-export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, userRole }) {
-  const canCreate = ["Зав. кафедрой", "Сотрудник УМУ", "Администратор"].includes(userRole);
+export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user }) {
+  const canCreate = userCan(user, "rpd.create");
 
   const initial = loadFilterState();
   const [query, setQuery] = useState(initial?.query ?? "");

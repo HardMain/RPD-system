@@ -9,6 +9,22 @@ class Role(Base):
     id_role = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(50), nullable=False, unique=True)
     users = relationship("User", back_populates="role")
+    permissions = relationship(
+        "RolePermission", back_populates="role", cascade="all, delete-orphan",
+    )
+
+class Permission(Base):
+    __tablename__ = "permissions"
+    id_permission = Column(Integer, primary_key=True, autoincrement=True)
+    code = Column(String(80), nullable=False, unique=True)
+    description = Column(String(300))
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    id_role = Column(Integer, ForeignKey("roles.id_role", ondelete="CASCADE"), primary_key=True)
+    id_permission = Column(Integer, ForeignKey("permissions.id_permission", ondelete="CASCADE"), primary_key=True)
+    role = relationship("Role", back_populates="permissions")
+    permission = relationship("Permission")
 
 class Department(Base):
     __tablename__ = "departments"
@@ -24,6 +40,8 @@ class User(Base):
     id_department = Column(Integer, ForeignKey("departments.id_department"), nullable=False)
     ldap_uid = Column(String(100), nullable=False, unique=True)
     full_name = Column(String(200), nullable=False)
+    title = Column(String(150))
+    employee_type = Column(String(50))
     email = Column(String(150))
     password_hash = Column(String(200))
     is_active = Column(Boolean, default=True)
@@ -53,5 +71,5 @@ from app.models.rpd import (
     Rpd, RpdDeveloper, RpdSection, RpdTopic, RpdLearningOutcome,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase,
     RpdFosFile,
-    UploadedDocument, LlmGenerationLog, ApprovalStage,
+    UploadedDocument, LlmGenerationLog, ApprovalStage, RpdApprovalRoute,
 )

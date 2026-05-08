@@ -48,6 +48,10 @@ class RpdCreate(BaseModel):
     academic_year: str
     based_on_rpd_id: int | None = None
     manual: RpdManualPayload | None = None
+    reviewer_ids: list[int] = []
+
+class ApprovalRouteUpdate(BaseModel):
+    reviewer_ids: list[int]
 
 class OutcomeUpsert(BaseModel):
     id_outcome: int | None = None
@@ -227,6 +231,7 @@ class DeveloperOut(BaseModel):
     id_rpd_developer: int
     id_user: int
     full_name: str
+    title: str | None = None
 
     class Config:
         from_attributes = True
@@ -257,6 +262,29 @@ class ApprovalOut(BaseModel):
     class Config:
         from_attributes = True
 
+class ApprovalRouteStepOut(BaseModel):
+    id_route: int
+    step_order: int
+    id_reviewer: int
+    reviewer_name: str
+    reviewer_title: str | None = None
+    status: str
+    comment: str | None = None
+    reviewed_at: datetime | None = None
+
+    class Config:
+        from_attributes = True
+
+class ReviewerCandidateOut(BaseModel):
+    id_user: int
+    full_name: str
+    title: str | None = None
+    role: str
+    department: str
+
+    class Config:
+        from_attributes = True
+
 class LlmGenerateRequest(BaseModel):
     section: str
     context: str | None = None
@@ -280,6 +308,7 @@ class RpdListOut(BaseModel):
     updated_at: datetime | None = None
     comment: str | None = None
     developer_names: list[str] = []
+    current_reviewer_id: int | None = None
 
     class Config:
         from_attributes = True
@@ -328,6 +357,7 @@ class RpdDetailOut(BaseModel):
     methodical_recommendations: str | None = None
     comment: str | None = None
     author_name: str
+    id_author: int | None = None
     semester: str | None = None
     total_hours: int | None = None
     lecture_hours: int | None = None
@@ -347,6 +377,7 @@ class RpdDetailOut(BaseModel):
     developers: list[DeveloperOut] = []
     uploaded_documents: list[UploadedDocumentOut] = []
     approvals: list[ApprovalOut] = []
+    approval_route: list[ApprovalRouteStepOut] = []
     created_at: datetime | None = None
     updated_at: datetime | None = None
 

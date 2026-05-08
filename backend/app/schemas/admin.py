@@ -5,6 +5,8 @@ from datetime import datetime
 class UserCreate(BaseModel):
     ldap_uid: str
     full_name: str
+    title: str | None = None
+    employee_type: str | None = None
     email: str | None = None
     id_role: int
     id_department: int
@@ -14,6 +16,8 @@ class UserDetailOut(BaseModel):
     id_user: int
     ldap_uid: str
     full_name: str
+    title: str | None = None
+    employee_type: str | None = None
     email: str | None = None
     is_active: bool
     role: str

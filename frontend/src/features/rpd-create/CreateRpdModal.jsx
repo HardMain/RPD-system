@@ -7,6 +7,7 @@ import { Input } from "../../components/Input.jsx";
 import { MultiSelectDropdown } from "../../components/MultiSelectDropdown.jsx";
 import { RowTrashOverlay } from "../../components/RowTrashOverlay.jsx";
 import { PlusIcon } from "../../components/icons.jsx";
+import { ReviewerChain } from "../../components/ReviewerChain.jsx";
 
 const CONTROL_OPTIONS = ["экзамен", "зачёт", "диф. зачет", "курсовой проект", "курсовая работа"];
 const EXAM_DEFAULT = 36;
@@ -60,6 +61,8 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const [archiveRpds, setArchiveRpds] = useState([]);
   const [year, setYear] = useState(draft?.year ?? "2025/2026");
   const [baseId, setBaseId] = useState(draft?.baseId ?? "");
+  const [reviewers, setReviewers] = useState([]);
+  const [reviewerIds, setReviewerIds] = useState(Array.isArray(draft?.reviewerIds) ? draft.reviewerIds : []);
   const [submitting, setSubmitting] = useState(false);
   const [errorPulse, setErrorPulse] = useState(0);
   const [pulseSnapshot, setPulseSnapshot] = useState(null);
@@ -79,10 +82,10 @@ export function CreateRpdModal({ onClose, onCreated }) {
         bdIds: Array.from(bdIds),
         discQuery, discPickedId,
         manual, manualSemesters,
-        year, baseId,
+        year, baseId, reviewerIds,
       }));
     } catch {}
-  }, [mode, discFilter, discId, bdIds, discQuery, discPickedId, manual, manualSemesters, year, baseId]);
+  }, [mode, discFilter, discId, bdIds, discQuery, discPickedId, manual, manualSemesters, year, baseId, reviewerIds]);
 
   function discardAndClose() {
     clearDraft();
@@ -93,6 +96,14 @@ export function CreateRpdModal({ onClose, onCreated }) {
     api.getDisciplines().then(r => setDisciplines(r.data || [])).catch(() => setDisciplines([]));
     api.getDisciplines({ include_unbound: true }).then(r => setManualDisciplines(r.data || [])).catch(() => setManualDisciplines([]));
     api.getRpds({ status: "Согласовано" }).then(r => setArchiveRpds(r.data || [])).catch(() => {});
+    api.getReviewers().then(r => {
+      const list = r.data || [];
+      setReviewers(list);
+      setReviewerIds(prev => {
+        if (prev.length > 0) return prev.filter(id => list.some(u => u.id_user === id));
+        return list.length === 1 ? [list[0].id_user] : [];
+      });
+    }).catch(() => setReviewers([]));
   }, []);
 
   const initialDiscEffectRef = useRef(true);
@@ -321,6 +332,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
           bup_discipline_ids: Array.from(bdIds),
           academic_year: year,
           based_on_rpd_id: baseId ? +baseId : null,
+          reviewer_ids: reviewerIds,
         };
       } else {
         const sortedSems = [...manualSemesters].sort((a, b) => a.number - b.number);
@@ -336,6 +348,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
         payload = {
           academic_year: year,
           based_on_rpd_id: baseId ? +baseId : null,
+          reviewer_ids: reviewerIds,
           manual: {
             id_discipline: discPickedId || null,
             discipline_name: discPickedId ? null : discQuery.trim(),
@@ -389,6 +402,15 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
     <div style={{ padding: 20 }}>
       <Input label="Учебный год" value={year} onChange={e => setYear(e.target.value)} />
+
+      <div style={{ marginBottom: 14 }}>
+        <label style={labelStyle}>Маршрут согласования</label>
+        <ReviewerChain
+          reviewers={reviewers}
+          selectedIds={reviewerIds}
+          onChange={setReviewerIds}
+        />
+      </div>
 
       {mode === "bup" && <>
         <div style={{ marginBottom: 14 }}>

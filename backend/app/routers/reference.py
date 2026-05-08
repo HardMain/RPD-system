@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, user_can
 from app.core.database import get_db
 from app.models import AssessmentTool, User
 from pydantic import BaseModel
@@ -30,8 +30,8 @@ async def create_assessment_tool(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not user.role or user.role.name != "Администратор":
-        raise HTTPException(status_code=403, detail="Только для администратора")
+    if not user_can(user, "reference.manage"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
     name = data.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Пустое имя")

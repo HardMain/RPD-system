@@ -4,8 +4,9 @@ import { T, F } from "../../theme.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { TrashIcon } from "../../components/icons.jsx";
+import { ReviewerChain } from "../../components/ReviewerChain.jsx";
 
-export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
+export function RpdMetaModal({ rpd, rpdId, canEdit, user, reload, onClose }) {
   const totalZet = (rpd.bup_disciplines || []).reduce((s, b) => s + (b.zet || 0), 0);
   const totalHours = (rpd.bup_disciplines || []).reduce((s, b) => s + (b.total_hours || 0), 0);
   const rpdName = `${rpd.academic_year} ${rpd.discipline_name}` + (totalHours ? ` (${totalHours} ч)` : "");
@@ -102,6 +103,10 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, reload, onClose }) {
 
       <Section title="Разработчики">
         <DeveloperEditor rpdId={rpdId} developers={rpd.developers || []} canEdit={canEdit} reload={reload} />
+      </Section>
+
+      <Section title="Маршрут согласования">
+        <ApprovalRouteEditor rpdId={rpdId} rpd={rpd} canEdit={canEdit} user={user} reload={reload} />
       </Section>
     </div>
 
@@ -227,6 +232,72 @@ function ManualDisciplineTable({ bupDisciplines, disciplineName }) {
   </div>;
 }
 
+function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
+  const route = rpd.approval_route || [];
+  const status = rpd.status;
+  const hasChainPerm = api.userCan(user, "approval_chain.edit");
+  const isOwner = !!user && rpd.id_author === user.id_user;
+  const ownerEditable = isOwner && canEdit && (status === "Черновик" || status === "На доработке");
+  const editable = status !== "Согласовано" && (ownerEditable || hasChainPerm);
+  const routeIdsKey = route.map(s => s.id_reviewer).join(",");
+  const [editing, setEditing] = useState(false);
+  const [reviewers, setReviewers] = useState([]);
+  const [draftIds, setDraftIds] = useState(route.map(s => s.id_reviewer));
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => { setDraftIds(route.map(s => s.id_reviewer)); }, [routeIdsKey]);
+
+  useEffect(() => {
+    if (!editing) return;
+    api.getReviewers().then(r => setReviewers(r.data || [])).catch(() => setReviewers([]));
+  }, [editing]);
+
+  async function save() {
+    setSaving(true);
+    try {
+      await api.setApprovalRoute(rpdId, draftIds);
+      setEditing(false);
+      await reload();
+    } catch (e) {
+      alert("Не удалось сохранить маршрут: " + (e?.response?.data?.detail || e.message));
+    }
+    setSaving(false);
+  }
+
+  if (!editing) {
+    const reviewersForDisplay = route.map(s => ({
+      id_user: s.id_reviewer, full_name: s.reviewer_name,
+      title: s.reviewer_title, role: "", department: "",
+    }));
+    return <div>
+      <ReviewerChain
+        reviewers={reviewersForDisplay}
+        selectedIds={route.map(s => s.id_reviewer)}
+        onChange={() => {}}
+        readOnly
+        statuses={route.map(s => s.status)}
+      />
+      {editable && (
+        <div style={{ marginTop: 8 }}>
+          <Btn small onClick={() => setEditing(true)}>Изменить маршрут</Btn>
+        </div>
+      )}
+    </div>;
+  }
+
+  return <div>
+    <ReviewerChain
+      reviewers={reviewers}
+      selectedIds={draftIds}
+      onChange={setDraftIds}
+    />
+    <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+      <Btn small primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
+      <Btn small onClick={() => { setDraftIds(route.map(s => s.id_reviewer)); setEditing(false); }}>Отмена</Btn>
+    </div>
+  </div>;
+}
+
 function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
   const [showPicker, setShowPicker] = useState(false);
   const max = 2;
@@ -241,7 +312,10 @@ function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
     {developers.map((d, i) => (
       <div key={d.id_rpd_developer} style={{ display: "flex", alignItems: "center", padding: "8px 12px", borderBottom: i < developers.length - 1 ? "1px solid " + T.borderLight : "none", fontSize: 13 }}>
         <span style={{ width: 110, color: T.textMuted, fontSize: 12 }}>Разработчик {i + 1}</span>
-        <span style={{ flex: 1 }}>{d.full_name}</span>
+        <span style={{ flex: 1 }}>
+          {d.full_name}
+          {d.title && <span style={{ color: T.textMuted, marginLeft: 8, fontSize: 12 }}>· {d.title}</span>}
+        </span>
         {canEdit && <button onClick={() => handleDelete(d.id_rpd_developer)} title="Убрать" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
       </div>
     ))}
@@ -299,7 +373,7 @@ function DeveloperPicker({ excludeIds, onPick, onCancel }) {
         <button key={u.id_user} onClick={() => onPick(u.id_user)}
           style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 10px", border: "none", borderBottom: "1px solid " + T.borderLight, background: "none", cursor: "pointer", fontFamily: F, fontSize: 13 }}>
           <div style={{ fontWeight: 600 }}>{u.full_name}</div>
-          <div style={{ fontSize: 11, color: T.textMuted }}>{u.role}{u.department ? " · " + u.department : ""}</div>
+          <div style={{ fontSize: 11, color: T.textMuted }}>{[u.title, u.role, u.department].filter(Boolean).join(" · ")}</div>
         </button>
       ))}
     </div>

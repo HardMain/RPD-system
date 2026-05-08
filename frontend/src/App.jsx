@@ -12,8 +12,7 @@ import { BellIcon } from "./components/icons.jsx";
 
 import { LoginPage } from "./pages/LoginPage.jsx";
 import { RpdListPage } from "./pages/RpdListPage.jsx";
-import { ApprovalPage } from "./pages/ApprovalPage.jsx";
-import { ArchivePage } from "./pages/ArchivePage.jsx";
+import { AdminUsersPage } from "./pages/AdminUsersPage.jsx";
 import { SystemInfoPage } from "./pages/SystemInfoPage.jsx";
 import { AdminBupsPage } from "./pages/AdminBupsPage.jsx";
 import { AdminDirectionsPage } from "./pages/AdminDirectionsPage.jsx";
@@ -80,7 +79,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    if (activeTab === "my" || activeTab === "archive" || activeTab === "approval") {
+    if (activeTab === "my") {
       loadRpds();
     }
   }, [user, activeTab, loadRpds]);
@@ -264,10 +263,10 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const r = user.role;
-    const allowed = new Set(["my", "archive", "system", "edit"]);
-    if (r === "Зав. кафедрой") allowed.add("approval");
-    if (r === "Администратор") { allowed.add("adminBups"); allowed.add("adminDirections"); }
+    const allowed = new Set(["my", "system", "edit"]);
+    if (api.userCan(user, "users.manage") || api.userCan(user, "users.create")) allowed.add("adminUsers");
+    if (api.userCan(user, "bups.manage")) allowed.add("adminBups");
+    if (api.userCan(user, "directions.manage")) allowed.add("adminDirections");
     if (!allowed.has(activeTab)) setActiveTab("my");
   }, [user, activeTab]);
 
@@ -275,14 +274,14 @@ export default function App() {
   if (!user) return <LoginPage onLogin={u => setUser(u)} />;
 
   const role = user.role;
-  const isHead = role === "Зав. кафедрой";
-  const isAdmin = role === "Администратор";
+  const canManageBups = api.userCan(user, "bups.manage");
+  const canManageDirections = api.userCan(user, "directions.manage");
+  const canManageUsers = api.userCan(user, "users.manage") || api.userCan(user, "users.create");
   const navTabs = [
-    { id: "my", label: `Мои РПД (${rpds.length})` },
-    isHead ? { id: "approval", label: "Согласование" } : null,
-    { id: "archive", label: `Архив (${rpds.filter(r => r.status === "Согласовано").length})` },
-    isAdmin ? { id: "adminBups", label: "БУПы" } : null,
-    isAdmin ? { id: "adminDirections", label: "ФГОС" } : null,
+    { id: "my", label: `РПД (${rpds.length})` },
+    canManageUsers ? { id: "adminUsers", label: "Пользователи" } : null,
+    canManageBups ? { id: "adminBups", label: "БУПы" } : null,
+    canManageDirections ? { id: "adminDirections", label: "ФГОС" } : null,
     { id: "system", label: "Система" },
   ].filter(Boolean);
 
@@ -303,7 +302,10 @@ export default function App() {
           </button>
           <span style={{ width: 1, height: 20, background: "rgba(255,255,255,.2)" }} />
           <span style={{ fontSize: 12, opacity: .7, padding: "2px 8px", border: "1px solid rgba(255,255,255,.2)", borderRadius: 4 }}>{role}</span>
-          <span style={{ fontSize: 13, fontWeight: 600 }}>{user.full_name}</span>
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.15 }}>
+            <span style={{ fontSize: 13, fontWeight: 600 }}>{user.full_name}</span>
+            {user.title && <span style={{ fontSize: 11, opacity: .65 }}>{user.title}</span>}
+          </span>
           <button onClick={handleLogout} style={{ border: "none", background: "none", color: T.headerText, cursor: "pointer", fontSize: 12, opacity: .7 }}>Выйти</button>
         </div>
       </div>
@@ -324,9 +326,8 @@ export default function App() {
       />
     </div>
 
-    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} userRole={role} />}
-    {activeTab === "approval" && <ApprovalPage rpds={rpds} onOpen={r => openRpdFn(r, true)} />}
-    {activeTab === "archive" && <ArchivePage rpds={rpds} onOpen={r => openRpdFn(r, false)} onExportPdf={handleExportPdf} />}
+    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} user={user} />}
+    {activeTab === "adminUsers" && <AdminUsersPage user={user} />}
     {activeTab === "adminBups" && <AdminBupsPage />}
     {activeTab === "adminDirections" && <AdminDirectionsPage />}
     {activeTab === "system" && <SystemInfoPage />}
@@ -359,7 +360,7 @@ export default function App() {
             reloadKey={tabReloadKeys[t.tabId] || 0}
             onAfterSave={() => notifyRpdChanged(t.tabId)}
             onOpenPair={() => openPairFor(t.tabId)}
-            userRole={role}
+            user={user}
             onCloseTab={() => closeRpdTab(t.tabId)}
             onExportPdf={handleExportPdf}
             onToggleMode={() => toggleTabMode(t.tabId)}

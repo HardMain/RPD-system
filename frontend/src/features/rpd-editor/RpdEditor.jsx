@@ -106,7 +106,7 @@ function pdfRelevantSnapshot(r) {
   });
 }
 
-export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, userRole, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
+export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, user, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
@@ -167,7 +167,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
   const pdfRenderedSnapRef = useRef(null);
   const refs = Object.fromEntries(SEC_KEYS.map(k => [k, useRef(null)]));
-  const isEdit = editMode; const isHead = userRole === "Зав. кафедрой";
+  const isEdit = editMode; const isHead = api.userCan(user, "rpd.approve");
+  const currentReviewerStep = (rpd?.approval_route || []).find(s => s.status === "pending");
+  const canReviewNow = !!(currentReviewerStep && user && currentReviewerStep.id_reviewer === user.id_user);
   const showPdf = !isEdit;
   const activeSec = showPdf ? activeSecPdf : activeSecEdit;
 
@@ -1015,6 +1017,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         isEdit={isEdit}
         isHead={isHead}
         canEdit={canEdit}
+        canReviewNow={canReviewNow}
         savedTick={savedTick}
         status={rpd.status}
         completion={requiredCompletion}
@@ -1034,6 +1037,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         rpd={rpd}
         rpdId={rpdId}
         canEdit={canEdit}
+        user={user}
         reload={() => load(true)}
         onClose={() => setShowMeta(false)}
       />}

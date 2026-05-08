@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, user_can
 from app.core.database import get_db
 from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency,
@@ -27,8 +27,8 @@ from app.services.bup_importer import import_parsed_bup, _normalize_competency_c
 router = APIRouter(prefix="/api/admin/bups", tags=["admin-bups"])
 
 def _require_admin(user: User):
-    if not user.role or user.role.name != "Администратор":
-        raise HTTPException(status_code=403, detail="Доступ только для администратора")
+    if not user_can(user, "bups.manage"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 def _year_from_filename(name: str) -> int | None:
     m = re.search(r"(20\d{2}|19\d{2})", name or "")

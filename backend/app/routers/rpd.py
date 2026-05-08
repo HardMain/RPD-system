@@ -5,13 +5,13 @@ from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, user_can
 from app.models import (
     User, Rpd, Discipline, Direction, RpdSection, RpdTopic,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification, ApprovalStage, CompetencyIndicator, Competency,
     UploadedDocument, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
-    RpdFosFile,
+    RpdFosFile, RpdApprovalRoute, Role, RolePermission, Permission,
 )
 from app.schemas import (
     RpdCreate, RpdUpdate, RpdListOut, RpdDetailOut,
@@ -22,6 +22,7 @@ from app.schemas import (
     DatabaseCreate, DatabaseOut,
     LearningOutcomeCreate, LearningOutcomeOut,
     DeveloperOut, ApprovalAction, ApprovalOut,
+    ApprovalRouteStepOut, ApprovalRouteUpdate, ReviewerCandidateOut,
     DirectionOut, DisciplineOut, UploadedDocumentOut,
     OutcomeUpsert, OutcomeRowOut, BupDisciplineRefOut, FosFileOut,
     ManualLinkUpdate, ManualOutcomeCreate,
@@ -54,6 +55,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         id_rpd_developer=dev.id_rpd_developer,
         id_user=dev.id_user,
         full_name=dev.user.full_name if dev.user else "",
+        title=dev.user.title if dev.user else None,
     ) for dev in r.developers]
     approvals = [ApprovalOut(
         id_approval=a.id_approval,
@@ -71,6 +73,16 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         file_size=doc.file_size,
         uploaded_at=doc.uploaded_at,
     ) for doc in r.uploaded_documents]
+    route = [ApprovalRouteStepOut(
+        id_route=s.id_route,
+        step_order=s.step_order,
+        id_reviewer=s.id_reviewer,
+        reviewer_name=s.reviewer.full_name if s.reviewer else "",
+        reviewer_title=s.reviewer.title if s.reviewer else None,
+        status=s.status,
+        comment=s.comment,
+        reviewed_at=s.reviewed_at,
+    ) for s in (r.approval_route or [])]
 
     def _pick(link_value, fk_value):
         return link_value if link_value not in (None, "") else fk_value
@@ -134,6 +146,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         educational_tech=r.educational_tech, methodical_recommendations=r.methodical_recommendations,
         comment=r.comment,
         author_name=r.author.full_name,
+        id_author=r.id_author,
         semester=rep_link_pick(rep_link.semester if rep_link else None, rep_bd.semester if rep_bd else None),
         total_hours=rep_link_pick(rep_link.total_hours if rep_link else None, rep_bd.total_hours if rep_bd else None),
         lecture_hours=rep_link_pick(rep_link.lecture_hours if rep_link else None, rep_bd.lecture_hours if rep_bd else None),
@@ -154,6 +167,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         developers=devs,
         uploaded_documents=docs,
         approvals=approvals,
+        approval_route=route,
         created_at=r.created_at, updated_at=r.updated_at,
     )
 
@@ -177,6 +191,7 @@ def _rpd_select_options():
         selectinload(Rpd.fos_files).selectinload(RpdFosFile.file),
         selectinload(Rpd.uploaded_documents),
         selectinload(Rpd.approvals).selectinload(ApprovalStage.reviewer),
+        selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer),
     ]
 
 async def _get_rpd_full(rpd_id: int, db: AsyncSession) -> Rpd:
@@ -250,6 +265,7 @@ async def list_rpds(
                 .selectinload(Bup.direction),
             selectinload(Rpd.author),
             selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
+            selectinload(Rpd.approval_route),
         )
     )
     if status:
@@ -265,6 +281,7 @@ async def list_rpds(
         bd = link.bup_discipline if link else None
         rep_dir = bd.bup.direction if bd and bd.bup else None
         pick = lambda val, fk: val if val not in (None, "") else fk
+        current_step = next((s for s in (r.approval_route or []) if s.status == "pending"), None)
         out.append(RpdListOut(
             id_rpd=r.id_rpd,
             discipline_name=r.discipline.name,
@@ -278,8 +295,32 @@ async def list_rpds(
             updated_at=r.updated_at,
             comment=r.comment,
             developer_names=[dev.user.full_name for dev in (r.developers or []) if dev.user],
+            current_reviewer_id=current_step.id_reviewer if current_step else None,
         ))
     return out
+
+@router.get("/reviewers", response_model=list[ReviewerCandidateOut])
+async def list_reviewer_candidates(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    res = await db.execute(
+        select(User)
+        .join(User.role).join(Role.permissions).join(RolePermission.permission)
+        .where(User.is_active == True)
+        .where(Permission.code == "rpd.approve")
+        .options(selectinload(User.role), selectinload(User.department))
+        .order_by(User.full_name)
+        .distinct()
+    )
+    return [
+        ReviewerCandidateOut(
+            id_user=u.id_user, full_name=u.full_name, title=u.title,
+            role=u.role.name if u.role else "",
+            department=u.department.name if u.department else "",
+        )
+        for u in res.scalars().all()
+    ]
 
 @router.get("/{rpd_id}", response_model=RpdDetailOut)
 async def get_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -429,8 +470,37 @@ def _fill_manual_link(link: RpdBupDiscipline, payload, *, discipline_name: str) 
     if payload.zet is not None:
         link.total_hours = int(payload.zet) * 36
 
+async def _validate_reviewer_ids(db: AsyncSession, reviewer_ids: list[int]) -> None:
+    if not reviewer_ids:
+        return
+    if len(reviewer_ids) != len(set(reviewer_ids)):
+        raise HTTPException(status_code=400, detail="Согласующие в маршруте не должны повторяться")
+    rows = await db.execute(
+        select(User).where(User.id_user.in_(reviewer_ids))
+        .options(selectinload(User.role).selectinload(Role.permissions).selectinload(RolePermission.permission))
+    )
+    by_id = {u.id_user: u for u in rows.scalars().all()}
+    if len(by_id) != len(set(reviewer_ids)):
+        raise HTTPException(status_code=400, detail="Не все согласующие найдены")
+    for uid in reviewer_ids:
+        u = by_id[uid]
+        if not user_can(u, "rpd.approve"):
+            raise HTTPException(status_code=400, detail=f"У пользователя «{u.full_name}» нет права согласования")
+
+async def _replace_approval_route(db: AsyncSession, rpd: Rpd, reviewer_ids: list[int]) -> None:
+    await db.execute(
+        delete(RpdApprovalRoute).where(RpdApprovalRoute.id_rpd == rpd.id_rpd)
+    )
+    for i, uid in enumerate(reviewer_ids):
+        db.add(RpdApprovalRoute(
+            id_rpd=rpd.id_rpd, step_order=i, id_reviewer=uid, status="waiting",
+        ))
+
 @router.post("/", response_model=RpdDetailOut, status_code=201)
 async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    if not user_can(user, "rpd.create"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав для создания РПД")
+    await _validate_reviewer_ids(db, data.reviewer_ids)
     if data.manual is not None:
         id_discipline = await _resolve_or_create_discipline(
             db,
@@ -450,6 +520,8 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
         link = RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=None)
         _fill_manual_link(link, data.manual, discipline_name=disc.name if disc else "")
         db.add(link)
+        if data.reviewer_ids:
+            await _replace_approval_route(db, rpd, data.reviewer_ids)
         await db.commit()
         rpd_full = await _get_rpd_full(rpd.id_rpd, db)
         return _build_rpd_detail(rpd_full)
@@ -580,6 +652,9 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
     if data.bup_discipline_ids:
         await _autofill_outcomes_from_bup_disciplines(rpd, data.bup_discipline_ids, db)
 
+    if data.reviewer_ids:
+        await _replace_approval_route(db, rpd, data.reviewer_ids)
+
     await db.commit()
     rpd_full = await _get_rpd_full(rpd.id_rpd, db)
     return _build_rpd_detail(rpd_full)
@@ -602,7 +677,7 @@ async def delete_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User
     rpd = result.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404, detail="РПД не найдена")
-    if rpd.id_author != user.id_user and user.role.name not in ("Администратор",):
+    if rpd.id_author != user.id_user and not user_can(user, "rpd.delete_any"):
         raise HTTPException(status_code=403, detail="Нет прав на удаление")
     if rpd.status not in ("Черновик",):
         raise HTTPException(status_code=400, detail="Удалить можно только черновик")
@@ -838,6 +913,10 @@ async def update_manual_link(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    rpd_row = await db.get(Rpd, rpd_id)
+    if not rpd_row:
+        raise HTTPException(status_code=404, detail="РПД не найдена")
+
     res = await db.execute(
         select(RpdBupDiscipline)
         .where(RpdBupDiscipline.id_rpd == rpd_id)
@@ -1157,7 +1236,12 @@ async def add_developer(rpd_id: int, user_id: int = Query(...), db: AsyncSession
         .options(selectinload(RpdDeveloper.user))
     )
     dev = result.scalar_one()
-    return DeveloperOut(id_rpd_developer=dev.id_rpd_developer, id_user=dev.id_user, full_name=dev.user.full_name)
+    return DeveloperOut(
+        id_rpd_developer=dev.id_rpd_developer,
+        id_user=dev.id_user,
+        full_name=dev.user.full_name,
+        title=dev.user.title,
+    )
 
 @router.delete("/developers/{dev_id}", status_code=204)
 async def remove_developer(dev_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
@@ -1169,58 +1253,151 @@ async def remove_developer(dev_id: int, db: AsyncSession = Depends(get_db), user
 
 @router.post("/{rpd_id}/send-approval", status_code=200)
 async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    result = await db.execute(select(Rpd).where(Rpd.id_rpd == rpd_id))
+    result = await db.execute(
+        select(Rpd).where(Rpd.id_rpd == rpd_id)
+        .options(selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer))
+    )
     rpd = result.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404)
     if rpd.status not in ("Черновик", "На доработке"):
         raise HTTPException(status_code=400, detail="РПД не может быть отправлена на согласование в текущем статусе")
-    rpd.status = "На согласовании"
-    approval = ApprovalStage(
-        id_rpd=rpd_id, id_reviewer=user.id_user,
-        stage="Зав. кафедрой", status="Ожидание",
-    )
-    db.add(approval)
 
-    notif = Notification(
+    route = sorted(rpd.approval_route or [], key=lambda s: s.step_order)
+    if not route:
+        raise HTTPException(status_code=400, detail="Не задан маршрут согласования")
+
+    for step in route:
+        step.status = "waiting"
+        step.comment = None
+        step.reviewed_at = None
+    route[0].status = "pending"
+    rpd.status = "На согласовании"
+
+    first = route[0]
+    db.add(ApprovalStage(
+        id_rpd=rpd_id, id_reviewer=first.id_reviewer,
+        stage=first.reviewer.full_name if first.reviewer else "Согласующий",
+        status="Ожидание",
+    ))
+    db.add(Notification(
         id_user=user.id_user, id_rpd=rpd_id,
-        message=f"РПД отправлена на согласование",
-    )
-    db.add(notif)
+        message="РПД отправлена на согласование",
+    ))
+    if first.id_reviewer != user.id_user:
+        db.add(Notification(
+            id_user=first.id_reviewer, id_rpd=rpd_id,
+            message="Вам на согласование поступила РПД",
+        ))
     await db.commit()
     return {"detail": "РПД отправлена на согласование"}
 
 @router.post("/{rpd_id}/review")
 async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
-    result = await db.execute(select(Rpd).where(Rpd.id_rpd == rpd_id))
+    if not user_can(user, "rpd.approve"):
+        raise HTTPException(status_code=403, detail="Недостаточно прав для согласования")
+    if data.action not in ("approve", "reject"):
+        raise HTTPException(status_code=400, detail="Неизвестное действие")
+
+    result = await db.execute(
+        select(Rpd).where(Rpd.id_rpd == rpd_id)
+        .options(selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer))
+    )
     rpd = result.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404)
 
-    if data.action == "approve":
-        rpd.status = "Согласовано"
-    elif data.action == "reject":
-        rpd.status = "На доработке"
-    else:
-        raise HTTPException(status_code=400, detail="Неизвестное действие")
+    route = sorted(rpd.approval_route or [], key=lambda s: s.step_order)
+    current = next((s for s in route if s.status == "pending"), None)
+    if current is None:
+        raise HTTPException(status_code=400, detail="РПД не находится на согласовании")
+    if current.id_reviewer != user.id_user:
+        raise HTTPException(status_code=403, detail="Этот этап согласования назначен другому пользователю")
 
-    approval = ApprovalStage(
-        id_rpd=rpd_id, id_reviewer=user.id_user,
-        stage="Зав. кафедрой",
+    now = datetime.now(timezone.utc)
+    current.reviewed_at = now
+    current.comment = data.comment
+    stage_name = current.reviewer.full_name if current.reviewer else "Согласующий"
+
+    if data.action == "approve":
+        current.status = "approved"
+        next_step = next((s for s in route if s.step_order > current.step_order), None)
+        if next_step is not None:
+            next_step.status = "pending"
+            db.add(ApprovalStage(
+                id_rpd=rpd_id, id_reviewer=next_step.id_reviewer,
+                stage=next_step.reviewer.full_name if next_step.reviewer else "Согласующий",
+                status="Ожидание",
+            ))
+            db.add(Notification(
+                id_user=next_step.id_reviewer, id_rpd=rpd_id,
+                message="Вам на согласование поступила РПД",
+            ))
+        else:
+            rpd.status = "Согласовано"
+    else:
+        current.status = "rejected"
+        rpd.status = "На доработке"
+
+    db.add(ApprovalStage(
+        id_rpd=rpd_id, id_reviewer=user.id_user, stage=stage_name,
         status="Согласовано" if data.action == "approve" else "Отклонено",
-        comment=data.comment,
-        reviewed_at=datetime.now(timezone.utc),
-    )
-    db.add(approval)
+        comment=data.comment, reviewed_at=now,
+    ))
 
     status_text = "согласована" if data.action == "approve" else "возвращена на доработку"
     msg = f"РПД {status_text}"
     if data.comment:
         msg += f": {data.comment}"
-    notif = Notification(id_user=rpd.id_author, id_rpd=rpd_id, message=msg)
-    db.add(notif)
+    db.add(Notification(id_user=rpd.id_author, id_rpd=rpd_id, message=msg))
     await db.commit()
     return {"detail": f"РПД {rpd.status}"}
+
+@router.put("/{rpd_id}/approval-route", response_model=RpdDetailOut)
+async def set_approval_route(
+    rpd_id: int, data: ApprovalRouteUpdate,
+    db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
+):
+    result = await db.execute(select(Rpd).where(Rpd.id_rpd == rpd_id))
+    rpd = result.scalar_one_or_none()
+    if not rpd:
+        raise HTTPException(status_code=404)
+    is_owner = rpd.id_author == user.id_user
+    has_chain_perm = user_can(user, "approval_chain.edit")
+    if not is_owner and not has_chain_perm:
+        raise HTTPException(status_code=403, detail="Нет прав на изменение маршрута согласования")
+    if rpd.status == "Согласовано":
+        raise HTTPException(status_code=400, detail="Маршрут согласованной РПД менять нельзя")
+    if rpd.status == "На согласовании" and not has_chain_perm:
+        raise HTTPException(status_code=400, detail="Маршрут можно менять только в черновике или после возврата")
+
+    await _validate_reviewer_ids(db, data.reviewer_ids)
+    await _replace_approval_route(db, rpd, data.reviewer_ids)
+
+    if rpd.status == "На согласовании" and data.reviewer_ids:
+        await db.flush()
+        new_route_res = await db.execute(
+            select(RpdApprovalRoute)
+            .where(RpdApprovalRoute.id_rpd == rpd_id)
+            .order_by(RpdApprovalRoute.step_order)
+            .options(selectinload(RpdApprovalRoute.reviewer))
+        )
+        new_route = list(new_route_res.scalars().all())
+        if new_route:
+            first = new_route[0]
+            first.status = "pending"
+            db.add(ApprovalStage(
+                id_rpd=rpd_id, id_reviewer=first.id_reviewer,
+                stage=first.reviewer.full_name if first.reviewer else "Согласующий",
+                status="Ожидание",
+            ))
+            db.add(Notification(
+                id_user=first.id_reviewer, id_rpd=rpd_id,
+                message="Маршрут согласования был изменён, РПД ожидает вашего согласования",
+            ))
+
+    await db.commit()
+    return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
 
 @router.get("/{rpd_id}/approvals", response_model=list[ApprovalOut])
 async def get_approvals(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):

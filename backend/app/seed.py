@@ -12,6 +12,7 @@ from app.models import (
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification,
     Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
+    Permission, RolePermission, RpdApprovalRoute,
 )
 from app.services.bup_parser import parse_bup_xls
 from app.services.bup_importer import import_parsed_bup
@@ -47,9 +48,65 @@ async def seed_reference():
             db.add(AssessmentTool(name=name))
         await db.commit()
 
+PERMISSION_CATALOG: list[tuple[str, str]] = [
+    ("*", "Полный доступ ко всем операциям системы"),
+    ("rpd.create", "Создание новых РПД"),
+    ("rpd.approve", "Согласование и отклонение РПД"),
+    ("rpd.delete_any", "Удаление РПД любого автора"),
+    ("rpd.edit_meta", "Редактирование мета-параметров чужих РПД (направление, профиль, часы, семестры)"),
+    ("approval_chain.edit", "Изменение маршрута согласования чужих РПД"),
+    ("users.manage", "Управление пользователями (создание, редактирование, деактивация)"),
+    ("users.create", "Создание пользователей в рамках своего scope"),
+    ("bups.manage", "Управление БУПами"),
+    ("directions.manage", "Управление направлениями подготовки и ФГОС"),
+    ("reference.manage", "Управление справочниками"),
+]
+
+ROLE_PERMISSIONS: dict[str, list[str]] = {
+    "Преподаватель": [],
+    "Зав. кафедрой": ["rpd.create", "rpd.approve"],
+    "Сотрудник УМУ": ["rpd.create"],
+    "Начальник отдела УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit"],
+    "Начальник управления УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit"],
+    "Проректор": ["rpd.approve"],
+    "Ректор": ["rpd.approve"],
+    "Техник УМУ": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "rpd.delete_any", "users.create"],
+    "Техник кафедры": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "users.create"],
+    "Администратор": ["*"],
+}
+
+async def seed_permissions():
+    async with async_session() as db:
+        existing = await db.execute(select(Permission))
+        if existing.scalars().first():
+            return
+
+        perms_by_code: dict[str, Permission] = {}
+        for code, desc in PERMISSION_CATALOG:
+            p = Permission(code=code, description=desc)
+            db.add(p)
+            perms_by_code[code] = p
+        await db.flush()
+
+        roles_res = await db.execute(select(Role))
+        roles_by_name = {r.name: r for r in roles_res.scalars().all()}
+
+        for role_name, perm_codes in ROLE_PERMISSIONS.items():
+            role = roles_by_name.get(role_name)
+            if not role:
+                continue
+            for pc in perm_codes:
+                p = perms_by_code.get(pc)
+                if p:
+                    db.add(RolePermission(id_role=role.id_role, id_permission=p.id_permission))
+
+        await db.commit()
+        print("✅ Permissions seeded")
+
 async def seed_data():
     await seed_reference()
     await _seed_demo_data()
+    await seed_permissions()
     await seed_test_samples()
 
 
@@ -62,39 +119,99 @@ async def _seed_demo_data():
         r_teacher = Role(name="Преподаватель")
         r_head = Role(name="Зав. кафедрой")
         r_umu = Role(name="Сотрудник УМУ")
+        r_umu_chief = Role(name="Начальник отдела УМУ")
+        r_umu_dir = Role(name="Начальник управления УМУ")
+        r_vice_rector = Role(name="Проректор")
+        r_rector = Role(name="Ректор")
+        r_tech_umu = Role(name="Техник УМУ")
+        r_tech_dept = Role(name="Техник кафедры")
         r_admin = Role(name="Администратор")
-        db.add_all([r_teacher, r_head, r_umu, r_admin])
+        db.add_all([r_teacher, r_head, r_umu, r_umu_chief, r_umu_dir, r_vice_rector, r_rector, r_tech_umu, r_tech_dept, r_admin])
         await db.flush()
 
         dept = Department(
             name="Информационных технологий и автоматизированных систем",
             faculty="Электротехнический факультет",
         )
-        db.add(dept)
+        dept_umu = Department(
+            name="Учебно-методическое управление",
+            faculty=None,
+        )
+        dept_rectorate = Department(
+            name="Ректорат",
+            faculty=None,
+        )
+        db.add_all([dept, dept_umu, dept_rectorate])
         await db.flush()
 
         pwd = hash_password("password")
         teacher = User(
             id_role=r_teacher.id_role, id_department=dept.id_department,
             ldap_uid="ivanov", full_name="Иванов Иван Иванович",
+            title="Доцент", employee_type="teacher",
             email="ivanov@pstu.ru", password_hash=pwd,
         )
         teacher2 = User(
             id_role=r_teacher.id_role, id_department=dept.id_department,
             ldap_uid="kozlova", full_name="Козлова Мария Сергеевна",
+            title="Старший преподаватель", employee_type="teacher",
             email="kozlova@pstu.ru", password_hash=pwd,
         )
         head = User(
             id_role=r_head.id_role, id_department=dept.id_department,
             ldap_uid="petrov", full_name="Петров Пётр Петрович",
+            title="Заведующий кафедрой, профессор", employee_type="head",
             email="petrov@pstu.ru", password_hash=pwd,
         )
         admin_user = User(
             id_role=r_admin.id_role, id_department=dept.id_department,
             ldap_uid="admin", full_name="Сидоров Алексей Михайлович",
+            title="Системный администратор", employee_type="admin",
             email="admin@pstu.ru", password_hash=pwd,
         )
-        db.add_all([teacher, teacher2, head, admin_user])
+        umu_chief = User(
+            id_role=r_umu_chief.id_role, id_department=dept_umu.id_department,
+            ldap_uid="solovieva", full_name="Соловьёва Ольга Викторовна",
+            title="Начальник учебно-методического отдела",
+            employee_type="umu_chief",
+            email="solovieva@pstu.ru", password_hash=pwd,
+        )
+        umu_dir = User(
+            id_role=r_umu_dir.id_role, id_department=dept_umu.id_department,
+            ldap_uid="kuznetsov", full_name="Кузнецов Дмитрий Александрович",
+            title="Начальник учебно-методического управления",
+            employee_type="umu_dir",
+            email="kuznetsov@pstu.ru", password_hash=pwd,
+        )
+        vice_rector = User(
+            id_role=r_vice_rector.id_role, id_department=dept_rectorate.id_department,
+            ldap_uid="orlov", full_name="Орлов Сергей Андреевич",
+            title="Проректор по учебной работе",
+            employee_type="vice_rector",
+            email="orlov@pstu.ru", password_hash=pwd,
+        )
+        rector = User(
+            id_role=r_rector.id_role, id_department=dept_rectorate.id_department,
+            ldap_uid="rector", full_name="Беляев Анатолий Николаевич",
+            title="Ректор",
+            employee_type="rector",
+            email="rector@pstu.ru", password_hash=pwd,
+        )
+        tech_umu = User(
+            id_role=r_tech_umu.id_role, id_department=dept_umu.id_department,
+            ldap_uid="tech_umu", full_name="Васильева Анна Игоревна",
+            title="Техник учебно-методического управления",
+            employee_type="tech_umu",
+            email="tech_umu@pstu.ru", password_hash=pwd,
+        )
+        tech_dept = User(
+            id_role=r_tech_dept.id_role, id_department=dept.id_department,
+            ldap_uid="tech_dept", full_name="Морозов Илья Викторович",
+            title="Техник кафедры ИТАС",
+            employee_type="tech_dept",
+            email="tech_dept@pstu.ru", password_hash=pwd,
+        )
+        db.add_all([teacher, teacher2, head, admin_user, umu_chief, umu_dir, vice_rector, rector, tech_umu, tech_dept])
         await db.flush()
 
         dir1 = Direction(
@@ -311,6 +428,27 @@ async def _seed_demo_data():
         for r, bd in rpd_bd_pairs:
             db.add(RpdBupDiscipline(id_rpd=r.id_rpd, id_bup_discipline=bd.id_bup_discipline))
         await db.flush()
+
+        single_rpd_routes = [
+            (rpd1, "waiting"),
+            (rpd2, "waiting"),
+            (rpd4, "approved"),
+        ]
+        for r, st in single_rpd_routes:
+            db.add(RpdApprovalRoute(
+                id_rpd=r.id_rpd, step_order=0, id_reviewer=head.id_user, status=st,
+            ))
+
+        rpd3_chain = [
+            (head.id_user, "approved"),
+            (umu_chief.id_user, "pending"),
+            (umu_dir.id_user, "waiting"),
+            (vice_rector.id_user, "waiting"),
+        ]
+        for i, (uid, st) in enumerate(rpd3_chain):
+            db.add(RpdApprovalRoute(
+                id_rpd=rpd3.id_rpd, step_order=i, id_reviewer=uid, status=st,
+            ))
 
         kg_sections = [
             ("Введение в компьютерную графику", "История, классификация, области применения КГ.", 4, 0, 4, 16),
@@ -714,8 +852,16 @@ async def seed_test_samples():
         db.add(link_multi)
         new_rpds.append(rpd_manual_multi)
 
+        head_res = await db.execute(select(User).where(User.ldap_uid == "petrov"))
+        head_user = head_res.scalar_one_or_none()
+        head_uid = head_user.id_user if head_user else None
+
         for rpd in new_rpds:
             db.add(RpdDeveloper(id_rpd=rpd.id_rpd, id_user=teacher.id_user))
+            if head_uid:
+                db.add(RpdApprovalRoute(
+                    id_rpd=rpd.id_rpd, step_order=0, id_reviewer=head_uid, status="waiting",
+                ))
 
         await db.commit()
         print(f"✅ Seeded {len(new_rpds)} test RPD samples + {len(bups_full)} BUPs")

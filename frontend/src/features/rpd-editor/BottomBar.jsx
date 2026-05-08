@@ -4,15 +4,16 @@ import { Btn } from "../../components/Btn.jsx";
 import { StatusBadge } from "../../components/StatusBadge.jsx";
 
 export function BottomBar({
-  showPdf, isEdit, isHead, canEdit, savedTick, status,
+  showPdf, isEdit, isHead, canEdit, canReviewNow, savedTick, status,
   completion, onJumpToMissing, updatedAt,
   onSendApproval, onApprove, onReject,
 }) {
+  const showReviewButtons = canReviewNow && status === "На согласовании";
   return <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 16px", flexShrink: 0, background: T.surface, borderTop: "1px solid " + T.border }}>
     {status && <StatusBadge status={status} />}
     {completion && <CompletionIndicator completion={completion} onJumpToMissing={onJumpToMissing} />}
     {updatedAt && <UpdatedAgo updatedAt={updatedAt} />}
-    {isEdit && canEdit && !isHead && <>
+    {isEdit && canEdit && !showReviewButtons && <>
       {savedTick > 0 && (
         <span key={savedTick} className="saved-fade" style={{ fontSize: 12, color: T.green, fontWeight: 600 }}>
           Сохранено
@@ -21,12 +22,12 @@ export function BottomBar({
       <div style={{ flex: 1 }} />
       <Btn small primary onClick={onSendApproval}>Отправить на согласование</Btn>
     </>}
-    {isHead && status === "На согласовании" && <>
+    {showReviewButtons && <>
       <div style={{ flex: 1 }} />
       <Btn small primary onClick={onApprove}>Согласовать</Btn>
       <Btn small danger onClick={onReject}>На доработку</Btn>
     </>}
-    {showPdf && !(isHead && status === "На согласовании") && <>
+    {showPdf && !showReviewButtons && <>
       <div style={{ flex: 1 }} />
       <span style={{ fontSize: 12, color: T.textMuted }}>Режим просмотра</span>
     </>}

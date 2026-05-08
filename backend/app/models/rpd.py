@@ -46,6 +46,8 @@ class Rpd(Base):
     llm_logs = relationship("LlmGenerationLog", back_populates="rpd", cascade="all, delete-orphan")
     approvals = relationship("ApprovalStage", back_populates="rpd", cascade="all, delete-orphan",
                              order_by="ApprovalStage.created_at.desc()")
+    approval_route = relationship("RpdApprovalRoute", back_populates="rpd", cascade="all, delete-orphan",
+                                  order_by="RpdApprovalRoute.step_order")
 
 class RpdDeveloper(Base):
     __tablename__ = "rpd_developers"
@@ -188,4 +190,16 @@ class ApprovalStage(Base):
     reviewed_at = Column(DateTime(timezone=True))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     rpd = relationship("Rpd", back_populates="approvals")
+    reviewer = relationship("User")
+
+class RpdApprovalRoute(Base):
+    __tablename__ = "rpd_approval_routes"
+    id_route = Column(Integer, primary_key=True, autoincrement=True)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd", ondelete="CASCADE"), nullable=False)
+    step_order = Column(SmallInteger, nullable=False)
+    id_reviewer = Column(Integer, ForeignKey("users.id_user"), nullable=False)
+    status = Column(String(20), nullable=False, default="waiting")
+    comment = Column(Text)
+    reviewed_at = Column(DateTime(timezone=True))
+    rpd = relationship("Rpd", back_populates="approval_route")
     reviewer = relationship("User")
