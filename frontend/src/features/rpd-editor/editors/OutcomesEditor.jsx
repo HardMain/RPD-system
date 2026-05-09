@@ -9,12 +9,31 @@ import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { Btn } from "../../../components/Btn.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
+import { ConfirmDeleteModal, AlertModal } from "../EditorModals.jsx";
+
+function compareOutcomeRows(a, b) {
+  const ac = (a.competency_code || "").trim();
+  const bc = (b.competency_code || "").trim();
+  if (ac !== bc) {
+    if (!ac) return 1;
+    if (!bc) return -1;
+    const cmp = ac.localeCompare(bc, "ru", { numeric: true, sensitivity: "base" });
+    if (cmp !== 0) return cmp;
+  }
+  const ai = (a.indicator_code || "").trim();
+  const bi = (b.indicator_code || "").trim();
+  if (!ai && bi) return 1;
+  if (ai && !bi) return -1;
+  return ai.localeCompare(bi, "ru", { numeric: true, sensitivity: "base" });
+}
 
 export function OutcomesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const [rows, setRows] = useState([]);
   const [tools, setTools] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   const bds = rpd?.bup_disciplines || [];
   const isManual = bds.some(b => b.is_manual);
@@ -30,7 +49,7 @@ export function OutcomesEditor() {
   const reloadRows = useCallback(async () => {
     try {
       const r = await api.getOutcomesTable(rpdId, currentBdId);
-      setRows(r.data);
+      setRows([...(r.data || [])].sort(compareOutcomeRows));
       setLoaded(true);
     } catch { setLoaded(true); }
   }, [rpdId, currentBdId]);
@@ -68,10 +87,12 @@ export function OutcomesEditor() {
         const id_outcome = r.data.id_outcome || null;
         setRows(prev => prev.map((rr, i) => i === idx ? { ...rr, id_outcome } : rr));
       }
+      const sortAffected = "competency_code" in patch || "indicator_code" in patch;
+      if (sortAffected) setRows(prev => [...prev].sort(compareOutcomeRows));
       reload?.();
     } catch (e) {
       setRows(prev => prev.map((r, i) => i === idx ? row : r));
-      alert("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
+      setErrorMsg("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
     }
   }
 
@@ -90,24 +111,35 @@ export function OutcomesEditor() {
       reload?.();
       return r.data;
     } catch (e) {
-      alert("Не удалось добавить строку: " + (e?.response?.data?.detail || e.message));
+      setErrorMsg("Не удалось добавить строку: " + (e?.response?.data?.detail || e.message));
     }
   }
 
-  async function deleteRow(row) {
-    if (!row.id_outcome) return;
-    if ((row.outcome_text || "").trim() && !confirm("Удалить строку?")) return;
+  async function performDelete(row) {
+    if (!row?.id_outcome) return;
     try {
       await api.deleteOutcome(row.id_outcome);
       await reloadRows();
       reload?.();
     } catch (e) {
-      alert("Не удалось удалить: " + (e?.response?.data?.detail || e.message));
+      setErrorMsg("Не удалось удалить: " + (e?.response?.data?.detail || e.message));
     }
   }
-  async function deleteById(id) {
+  function deleteRow(row) {
+    if (!row.id_outcome) return;
+    const hasFilledField = !!row.id_indicator
+      || (row.competency_code || "").trim()
+      || (row.competency_name || "").trim()
+      || (row.indicator_code || "").trim()
+      || (row.indicator_description || "").trim()
+      || (row.outcome_text || "").trim()
+      || (row.assessment_tool || "").trim();
+    if (hasFilledField) { setPendingDelete(row); return; }
+    performDelete(row);
+  }
+  function deleteById(id) {
     const row = rows.find(r => String(r.id_outcome) === String(id));
-    if (row) await deleteRow(row);
+    if (row) deleteRow(row);
   }
   const tbodyRef = useRef(null);
 
@@ -145,7 +177,7 @@ export function OutcomesEditor() {
 
     {rows.length === 0 && !isManual && (
       <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>
-        У выбранной БУП-дисциплины ({currentBd.code || "—"}, БУП «{currentBd.bup_name || "—"}») в базе нет привязанных компетенций или у её компетенций не заполнены индикаторы.
+        У выбранной БУП-дисциплины ({currentBd.code || "—"}, БУП «{currentBd.bup_name || "—"}») в базе нет привязанных компетенций или у её компетенций не заполнены индикаторы.{editable ? " Добавьте строки вручную или из базы кнопкой ниже." : ""}
       </div>
     )}
 
@@ -171,8 +203,8 @@ export function OutcomesEditor() {
       <tbody ref={tbodyRef}>
         {rows.map((r, idx) => {
           const fromBase = !!r.id_indicator;
-          const codeEditable = editable && isManual && !fromBase;
-          const trProps = (isManual && editable && r.id_outcome && rows.length > 1)
+          const codeEditable = editable && !fromBase;
+          const trProps = (editable && r.id_outcome)
             ? { "data-trash-row": "", "data-trash-id": String(r.id_outcome) }
             : {};
           return <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`} {...trProps}>
@@ -211,15 +243,23 @@ export function OutcomesEditor() {
       </tbody>
     </table>
     </div>
-    {isManual && editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={deleteById} title="Удалить строку" />}
+    {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={deleteById} title="Удалить строку" />}
     </div>
     )}
 
-    {isManual && editable && (
+    {editable && (
       <div style={{ marginTop: 8 }}>
         <CompetencyAdder onAdd={addManualRow} />
       </div>
     )}
+
+    {pendingDelete && <ConfirmDeleteModal
+      title="Удалить строку?"
+      message="Строка содержит данные. После удаления восстановить её будет нельзя."
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const r = pendingDelete; setPendingDelete(null); await performDelete(r); }}
+    />}
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
 }
 

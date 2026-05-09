@@ -12,7 +12,7 @@ import { PDF_PAGE_MAP_FALLBACK, scanPdfForSections } from "./pdfMap.js";
 import { RpdEditorProvider } from "./RpdEditorContext.jsx";
 import { Sidebar, SIDEBAR_COLLAPSED_W } from "./Sidebar.jsx";
 import { BottomBar } from "./BottomBar.jsx";
-import { SentModal, ErrorModal, ApprovedModal, RejectModal, ValidationModal } from "./EditorModals.jsx";
+import { SentModal, ErrorModal, ApprovedModal, RejectModal, ValidationModal, StalePdfDownloadModal } from "./EditorModals.jsx";
 import { BupDropdown } from "./BupDropdown.jsx";
 
 import { EditableBlock } from "./editors/EditableBlock.jsx";
@@ -47,7 +47,9 @@ function pdfRelevantSnapshot(r) {
     .filter(t => norm(t.title))
     .map(t => ({ k: t.topic_type, t: norm(t.title) }));
   const literature = (r.literature || [])
-    .filter(l => norm(l.title) || norm(l.url))
+    .filter(l => norm(l.title) || norm(l.url) || norm(l.source_type)
+      || (Array.isArray(l.availability) && l.availability.length > 0)
+      || l.copies_count != null)
     .map(l => ({
       st: norm(l.source_type),
       t: norm(l.title),
@@ -56,19 +58,22 @@ function pdfRelevantSnapshot(r) {
       a: Array.isArray(l.availability) ? [...l.availability].sort() : [],
     }));
   const software = (r.software || [])
-    .filter(s => norm(s.name))
+    .filter(s => norm(s.name) || norm(s.license_type))
     .map(s => ({ n: norm(s.name), lt: norm(s.license_type) }));
   const databases = (r.databases || [])
-    .filter(d => norm(d.name))
+    .filter(d => norm(d.name) || norm(d.db_type))
     .map(d => ({ n: norm(d.name), tp: norm(d.db_type) }));
   const mtech = (r.material_tech || [])
-    .filter(m => norm(m.room_type) || norm(m.equipment))
+    .filter(m => norm(m.room_type) || norm(m.equipment) || m.quantity != null)
     .map(m => ({ rt: norm(m.room_type), eq: norm(m.equipment), q: m.quantity ?? 0 }));
   const outcomes = (r.learning_outcomes || [])
-    .filter(o => norm(o.outcome_text) || norm(o.indicator_code))
+    .filter(o => norm(o.competency_code) || norm(o.indicator_code)
+      || norm(o.outcome_text) || norm(o.indicator_description)
+      || norm(o.assessment_tool) || !!o.id_indicator)
     .map(o => ({
       cc: norm(o.competency_code),
       ic: norm(o.indicator_code),
+      ind: norm(o.indicator_description),
       o: norm(o.outcome_text),
       at: norm(o.assessment_tool),
     }));
@@ -829,7 +834,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </div>
               )}
               <Btn small onClick={() => { setPdfStale(false); reloadPdf(); }} disabled={pdfLoading} primary={pdfStale}>↻ Обновить</Btn>
-              <Btn small onClick={() => onExportPdf(rpdId, pdfBdId)}><DownloadIcon /> Скачать</Btn>
+              <Btn small onClick={() => { if (pdfStale) setModal("staleDownload"); else onExportPdf(rpdId, pdfBdId); }}><DownloadIcon /> Скачать</Btn>
             </div>
             {pdfStale && (
 
@@ -1033,6 +1038,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       {modal === "approved" && <ApprovedModal onClose={() => { setModal(null); onCloseTab && onCloseTab(); }} />}
       {modal === "reject" && <RejectModal comment={rejectComment} onChange={setRejectComment} onClose={() => setModal(null)} onSubmit={() => { handleReview("reject"); setModal(null); }} />}
       {modal === "validation" && <ValidationModal errors={validationErrors} onGoTo={(secKey) => { goTo(secKey); setModal(null); }} onClose={() => setModal(null)} />}
+      {modal === "staleDownload" && <StalePdfDownloadModal
+        onClose={() => setModal(null)}
+        onRefreshAndDownload={() => { setPdfStale(false); reloadPdf(); onExportPdf(rpdId, pdfBdId); setModal(null); }}
+        onDownloadAnyway={() => { onExportPdf(rpdId, pdfBdId); setModal(null); }}
+      />}
       {showMeta && <RpdMetaModal
         rpd={rpd}
         rpdId={rpdId}

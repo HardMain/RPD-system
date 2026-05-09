@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { T } from "../theme.js";
 
 export function Modal({ children, onClose, width }) {
-  const overlayDownRef = useRef(false);
+  const startedOnOverlayRef = useRef(false);
 
   useEffect(() => {
     const handler = (e) => { if (e.key === "Escape") onClose(); };
@@ -11,14 +11,15 @@ export function Modal({ children, onClose, width }) {
   }, [onClose]);
 
   function onOverlayMouseDown(e) {
-    overlayDownRef.current = e.target === e.currentTarget;
+    startedOnOverlayRef.current = e.target === e.currentTarget;
   }
-  function onOverlayClick(e) {
-    if (e.target === e.currentTarget && overlayDownRef.current) onClose();
-    overlayDownRef.current = false;
+  function onOverlayMouseUp(e) {
+    const startedOnOverlay = startedOnOverlayRef.current;
+    startedOnOverlayRef.current = false;
+    if (startedOnOverlay && e.target === e.currentTarget) onClose();
   }
 
-  return <div onMouseDown={onOverlayMouseDown} onClick={onOverlayClick} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(44,37,32,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+  return <div onMouseDown={onOverlayMouseDown} onMouseUp={onOverlayMouseUp} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(44,37,32,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
     <div style={{ background: T.surface, borderRadius: 10, boxShadow: "0 20px 60px rgba(44,37,32,.25)", width: width || 480, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }}>{children}</div>
   </div>;
 }

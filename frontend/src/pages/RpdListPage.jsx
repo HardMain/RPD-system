@@ -31,6 +31,15 @@ function loadFilterState() {
 
 export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user }) {
   const canCreate = userCan(user, "rpd.create");
+  const canReview = userCan(user, "rpd.approve");
+  const myReviewIds = useMemo(() => {
+    if (!canReview || !user) return null;
+    const set = new Set();
+    for (const r of rpds) {
+      if (r.status === "На согласовании" && r.current_reviewer_id === user.id_user) set.add(r.id_rpd);
+    }
+    return set;
+  }, [rpds, canReview, user]);
 
   const initial = loadFilterState();
   const [query, setQuery] = useState(initial?.query ?? "");
@@ -56,17 +65,19 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
   }, [rpds, query]);
 
   const statusCounts = useMemo(() => {
-    const counts = { all: queryFiltered.length };
+    const counts = { all: queryFiltered.length, mine_to_review: 0 };
     for (const s of STATUSES) counts[s.value] = 0;
     for (const r of queryFiltered) {
       if (counts[r.status] !== undefined) counts[r.status] += 1;
+      if (myReviewIds && myReviewIds.has(r.id_rpd)) counts.mine_to_review += 1;
     }
     return counts;
-  }, [queryFiltered]);
+  }, [queryFiltered, myReviewIds]);
 
   const filteredSorted = useMemo(() => {
     let list = queryFiltered;
-    if (statusFilter !== "all") list = list.filter(r => r.status === statusFilter);
+    if (statusFilter === "mine_to_review") list = list.filter(r => myReviewIds && myReviewIds.has(r.id_rpd));
+    else if (statusFilter !== "all") list = list.filter(r => r.status === statusFilter);
     const col = COLS.find(c => c.key === sort.key);
     if (col && col.accessor) {
       const acc = col.accessor;
@@ -78,7 +89,7 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
       });
     }
     return list;
-  }, [queryFiltered, statusFilter, sort]);
+  }, [queryFiltered, statusFilter, sort, myReviewIds]);
 
   function toggleSort(colKey) {
     setSort(prev => prev.key === colKey
@@ -103,17 +114,34 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
       />
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         <FilterChip label="Все" count={statusCounts.all} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
-        {STATUSES.map(s => (
-          <FilterChip
-            key={s.value}
-            label={s.value}
-            count={statusCounts[s.value] || 0}
-            active={statusFilter === s.value}
-            color={s.color}
-            bg={s.bg}
-            onClick={() => setStatusFilter(prev => prev === s.value ? "all" : s.value)}
-          />
-        ))}
+        {STATUSES.map(s => {
+          const chip = (
+            <FilterChip
+              key={s.value}
+              label={s.value}
+              count={statusCounts[s.value] || 0}
+              active={statusFilter === s.value}
+              color={s.color}
+              bg={s.bg}
+              onClick={() => setStatusFilter(prev => prev === s.value ? "all" : s.value)}
+            />
+          );
+          if (s.value === "Согласовано" && canReview) {
+            return [
+              <FilterChip
+                key="mine_to_review"
+                label="Согласование"
+                count={statusCounts.mine_to_review}
+                active={statusFilter === "mine_to_review"}
+                color={T.orange}
+                bg={T.orangeLight}
+                onClick={() => setStatusFilter(prev => prev === "mine_to_review" ? "all" : "mine_to_review")}
+              />,
+              chip,
+            ];
+          }
+          return chip;
+        })}
       </div>
       {isFiltered && (
         <button

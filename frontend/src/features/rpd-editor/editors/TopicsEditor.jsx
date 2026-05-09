@@ -6,6 +6,7 @@ import { Btn } from "../../../components/Btn.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
+import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
 export function TopicsEditor({ kind }) {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
@@ -40,19 +41,24 @@ export function TopicsEditor({ kind }) {
 
 function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
   const tbodyRef = useRef(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
   async function addTopic() {
     try {
       await api.addTopic(rpdId, { topic_type: kind, title: "" });
       await reload();
     } catch {}
   }
-  async function delTopic(t) {
-    if ((t.title || "").trim() && !confirm("Удалить тему?")) return;
+  async function performDelete(t) {
+    if (!t) return;
     try { await api.deleteTopic(t.id_topic); await reload(); } catch {}
   }
-  async function delById(id) {
+  function delTopic(t) {
+    if ((t.title || "").trim()) { setPendingDelete(t); return; }
+    performDelete(t);
+  }
+  function delById(id) {
     const t = topics.find(it => String(it.id_topic) === String(id));
-    if (t) await delTopic(t);
+    if (t) delTopic(t);
   }
 
   const autoAddedRef = useRef(false);
@@ -103,6 +109,12 @@ function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
         <Btn small onClick={addTopic}><PlusIcon /> Добавить тему</Btn>
       </div>
     )}
+    {pendingDelete && <ConfirmDeleteModal
+      title="Удалить тему?"
+      message="У темы заполнено название. После удаления восстановить её будет нельзя."
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const t = pendingDelete; setPendingDelete(null); await performDelete(t); }}
+    />}
   </div>;
 }
 

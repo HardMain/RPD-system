@@ -10,11 +10,13 @@ import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { LITERATURE_TYPES, ELS_OPTIONS } from "../catalogs.js";
+import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
 export function LiteratureEditor({ kind }) {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const isElectronic = kind === "electronic";
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const items = (rpd.literature || []).filter(l => isElectronic ? !!l.url : !l.url);
 
@@ -26,14 +28,17 @@ export function LiteratureEditor({ kind }) {
     try { await api.addLiterature(rpdId, payload); await reload(); } catch {}
   }
 
-  async function delRow(item) {
-
+  async function performDelete(item) {
+    if (!item) return;
+    try { await api.deleteLiterature(item.id_literature); await reload(); } catch {}
+  }
+  function delRow(item) {
     const filled = isElectronic
       ? ((item.title || "").trim() || (item.url || "").trim()
          || (item.source_type || "").trim() || (item.availability?.length > 0))
       : ((item.title || "").trim() || (item.copies_count != null && item.copies_count !== 0));
-    if (filled && !confirm("Удалить запись?")) return;
-    try { await api.deleteLiterature(item.id_literature); await reload(); } catch {}
+    if (filled) { setPendingDelete(item); return; }
+    performDelete(item);
   }
 
   async function saveField(item, patch) {
@@ -49,24 +54,37 @@ export function LiteratureEditor({ kind }) {
 
   }, [editable, isElectronic]);
 
-  if (isElectronic) {
-    return <ElectronicTable
-      items={items}
-      editable={editable}
+  const confirmModal = pendingDelete ? <ConfirmDeleteModal
+    title="Удалить запись?"
+    message="Запись содержит данные. После удаления восстановить её будет нельзя."
+    onClose={() => setPendingDelete(null)}
+    onConfirm={async () => { const it = pendingDelete; setPendingDelete(null); await performDelete(it); }}
+  /> : null;
 
-      onAdd={() => addRow("")}
-      onDelete={delRow}
-      onSave={saveField}
-    />;
+  if (isElectronic) {
+    return <>
+      <ElectronicTable
+        items={items}
+        editable={editable}
+
+        onAdd={() => addRow("")}
+        onDelete={delRow}
+        onSave={saveField}
+      />
+      {confirmModal}
+    </>;
   }
 
-  return <PrintedTable
-    items={items}
-    editable={editable}
-    onAdd={addRow}
-    onDelete={delRow}
-    onSave={saveField}
-  />;
+  return <>
+    <PrintedTable
+      items={items}
+      editable={editable}
+      onAdd={addRow}
+      onDelete={delRow}
+      onSave={saveField}
+    />
+    {confirmModal}
+  </>;
 }
 
 const ADDITIONAL_MAIN_TYPE = "Учебные и научные издания (дополнительные)";

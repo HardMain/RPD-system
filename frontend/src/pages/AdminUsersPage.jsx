@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F } from "../theme.js";
-import { hdr, tcell } from "../styles.js";
+import { hdr, tcell, iconBtn } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
 import { Spinner } from "../components/Spinner.jsx";
+import { PencilIcon, UserOffIcon, PlusIcon } from "../components/icons.jsx";
+import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
 export function AdminUsersPage({ user }) {
   const [users, setUsers] = useState([]);
@@ -14,6 +16,8 @@ export function AdminUsersPage({ user }) {
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
   const [showOnlyActive, setShowOnlyActive] = useState(true);
+  const [pendingDeactivate, setPendingDeactivate] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   const reload = () => {
     setLoading(true);
@@ -24,58 +28,67 @@ export function AdminUsersPage({ user }) {
   };
   useEffect(() => { reload(); }, []);
 
-  async function handleDeactivate(u) {
-    if (!confirm(`Деактивировать пользователя «${u.full_name}»?`)) return;
+  async function performDeactivate(u) {
+    if (!u) return;
     try { await api.adminDeactivateUser(u.id_user); reload(); }
-    catch (e) { alert("Не удалось: " + (e?.response?.data?.detail || e.message)); }
+    catch (e) { setErrorMsg("Не удалось деактивировать: " + (e?.response?.data?.detail || e.message)); }
   }
+  function handleDeactivate(u) { setPendingDeactivate(u); }
 
   const visible = showOnlyActive ? users.filter(u => u.is_active) : users;
 
   return <div style={{ flex: 1, overflow: "auto", padding: 24, background: T.bg }}>
     <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
         <div style={{ fontSize: 18, fontWeight: 700 }}>Пользователи</div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.textMuted, cursor: "pointer" }}>
             <input type="checkbox" checked={showOnlyActive} onChange={e => setShowOnlyActive(e.target.checked)} />
             Только активные
           </label>
-          <Btn primary onClick={() => setEditing({ create: true })}>+ Добавить</Btn>
+          <Btn small onClick={() => setEditing({ create: true })}><PlusIcon /> Добавить</Btn>
         </div>
       </div>
 
-      <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 8, overflow: "hidden" }}>
+      <div className="table-scroll">
         {loading ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
         : visible.length === 0
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13 }}>Пользователей нет.</div>
-          : <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
-            <thead><tr style={{ background: T.bg }}>
+          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+            <thead><tr style={{ background: T.surface }}>
               {["ФИО", "Логин", "Должность", "Роль", "Подразделение", "Статус", ""].map(h =>
                 <th key={h} style={hdr}>{h}</th>
               )}
             </tr></thead>
             <tbody>
-              {visible.map(u => (
-                <tr key={u.id_user}
+              {visible.map(u => {
+                const isSelf = u.id_user === user.id_user;
+                const canDeactivate = u.is_active && !isSelf;
+                return <tr key={u.id_user}
                     onDoubleClick={() => setEditing({ ...u })}
-                    style={{ borderTop: "1px solid " + T.borderLight, cursor: "pointer", background: u.is_active ? "transparent" : T.bg }}>
+                    style={{ background: T.surface, cursor: "pointer", opacity: u.is_active ? 1 : 0.55 }}
+                    title="Двойной клик — редактировать">
                   <td style={{ ...tcell, fontWeight: 600 }}>{u.full_name}</td>
                   <td style={tcell}>{u.ldap_uid}</td>
-                  <td style={tcell}>{u.title || ""}</td>
+                  <td style={{ ...tcell, color: u.title ? T.text : T.textMuted }}>{u.title || "—"}</td>
                   <td style={tcell}>{u.role}</td>
                   <td style={tcell}>{u.department}</td>
-                  <td style={tcell}>{u.is_active ? "Активен" : "Деактивирован"}</td>
-                  <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap" }}>
-                    <Btn small onClick={() => setEditing({ ...u })}>Изменить</Btn>
-                    {u.is_active && u.id_user !== user.id_user && (
-                      <Btn small danger onClick={() => handleDeactivate(u)} style={{ marginLeft: 6 }}>Деактивировать</Btn>
-                    )}
+                  <td style={tcell}><UserStatusBadge active={u.is_active} /></td>
+                  <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }}>
+                    <div style={{ display: "inline-flex", gap: 4 }}>
+                      <button onClick={(e) => { e.stopPropagation(); setEditing({ ...u }); }} title="Редактировать" style={{ ...iconBtn, cursor: "pointer" }}><PencilIcon /></button>
+                      <button
+                        onClick={canDeactivate ? (e) => { e.stopPropagation(); handleDeactivate(u); } : undefined}
+                        disabled={!canDeactivate}
+                        title={isSelf ? "Нельзя деактивировать самого себя" : (u.is_active ? "Деактивировать" : "Уже деактивирован")}
+                        style={{ ...iconBtn, cursor: canDeactivate ? "pointer" : "not-allowed", opacity: canDeactivate ? 1 : 0.35 }}
+                      ><UserOffIcon /></button>
+                    </div>
                   </td>
-                </tr>
-              ))}
+                </tr>;
+              })}
             </tbody>
-          </table></div>}
+          </table>}
       </div>
     </div>
 
@@ -86,6 +99,14 @@ export function AdminUsersPage({ user }) {
       onClose={() => setEditing(null)}
       onSaved={() => { setEditing(null); reload(); }}
     />}
+    {pendingDeactivate && <ConfirmDeleteModal
+      title={`Деактивировать пользователя «${pendingDeactivate.full_name}»?`}
+      message="Пользователь больше не сможет войти в систему. Его авторские РПД и история согласований сохранятся, и его можно будет снова активировать в этом же списке."
+      confirmLabel="Деактивировать"
+      onClose={() => setPendingDeactivate(null)}
+      onConfirm={async () => { const u = pendingDeactivate; setPendingDeactivate(null); await performDeactivate(u); }}
+    />}
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
 }
 
@@ -103,14 +124,16 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
     is_active: isCreate ? true : data.is_active,
   });
   const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
   async function save() {
-    if (!form.full_name.trim()) { alert("ФИО обязательно"); return; }
-    if (isCreate && !form.ldap_uid.trim()) { alert("Логин обязателен"); return; }
-    if (!form.id_role) { alert("Выберите роль"); return; }
-    if (!form.id_department) { alert("Выберите подразделение"); return; }
+    if (!form.full_name.trim()) { setErr("ФИО обязательно"); return; }
+    if (isCreate && !form.ldap_uid.trim()) { setErr("Логин обязателен"); return; }
+    if (!form.id_role) { setErr("Выберите роль"); return; }
+    if (!form.id_department) { setErr("Выберите подразделение"); return; }
+    setErr("");
     setSaving(true);
     try {
       if (isCreate) {
@@ -140,7 +163,7 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
       }
       onSaved();
     } catch (e) {
-      alert("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
+      setErr("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
     }
     setSaving(false);
   }
@@ -183,12 +206,28 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
           Активен
         </label>
       )}
+
+      {err && <div style={{ background: "#fde6e3", color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13 }}>{err}</div>}
     </div>
     <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "flex-end", gap: 10 }}>
       <Btn onClick={onClose}>Отмена</Btn>
       <Btn primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
     </div>
   </Modal>;
+}
+
+function UserStatusBadge({ active }) {
+  const color = active ? T.green : T.textMuted;
+  const bg = active ? T.greenLight : T.borderLight;
+  return <span style={{
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: 10,
+    fontSize: 11,
+    fontWeight: 600,
+    color, background: bg,
+    whiteSpace: "nowrap",
+  }}>{active ? "Активен" : "Деактивирован"}</span>;
 }
 
 const labelStyle = { fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 };

@@ -8,6 +8,7 @@ import { MultiSelectDropdown } from "../../components/MultiSelectDropdown.jsx";
 import { RowTrashOverlay } from "../../components/RowTrashOverlay.jsx";
 import { PlusIcon } from "../../components/icons.jsx";
 import { ReviewerChain } from "../../components/ReviewerChain.jsx";
+import { AlertModal, ConfirmDeleteModal } from "../rpd-editor/EditorModals.jsx";
 
 const CONTROL_OPTIONS = ["экзамен", "зачёт", "диф. зачет", "курсовой проект", "курсовая работа"];
 const EXAM_DEFAULT = 36;
@@ -64,6 +65,8 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const [reviewers, setReviewers] = useState([]);
   const [reviewerIds, setReviewerIds] = useState(Array.isArray(draft?.reviewerIds) ? draft.reviewerIds : []);
   const [submitting, setSubmitting] = useState(false);
+  const [createError, setCreateError] = useState(null);
+  const [pendingDeleteSemIdx, setPendingDeleteSemIdx] = useState(null);
   const [errorPulse, setErrorPulse] = useState(0);
   const [pulseSnapshot, setPulseSnapshot] = useState(null);
   const pulseTimerRef = useRef(null);
@@ -220,8 +223,19 @@ export function CreateRpdModal({ onClose, onCreated }) {
       return [...prev, emptySemester(next)];
     });
   }
-  function removeSemester(idx) {
+  function performRemoveSemester(idx) {
     setManualSemesters(prev => prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev);
+  }
+  function isSemesterFilled(s) {
+    if (!s) return false;
+    return (+s.lecture || 0) > 0 || (+s.lab || 0) > 0 || (+s.practice || 0) > 0
+      || (+s.ksr || 0) > 0 || (+s.srs || 0) > 0 || (+s.exam || 0) > 0
+      || (s.controls || []).length > 0;
+  }
+  function removeSemester(idx) {
+    const s = manualSemesters[idx];
+    if (isSemesterFilled(s)) { setPendingDeleteSemIdx(idx); return; }
+    performRemoveSemester(idx);
   }
 
   const sums = useMemo(() => {
@@ -374,7 +388,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
       clearDraft();
       onCreated(r.data);
     } catch (e) {
-      alert("Не удалось создать РПД: " + (e?.response?.data?.detail || e.message));
+      setCreateError("Не удалось создать РПД: " + (e?.response?.data?.detail || e.message));
     }
     setSubmitting(false);
   }
@@ -706,6 +720,13 @@ export function CreateRpdModal({ onClose, onCreated }) {
       <Btn primary onClick={go} disabled={submitting}>{submitting ? "Создание…" : "Создать"}</Btn>
       <Btn onClick={discardAndClose}>Закрыть</Btn>
     </div>
+    {createError && <AlertModal title="Не удалось создать РПД" message={createError} onClose={() => setCreateError(null)} />}
+    {pendingDeleteSemIdx != null && <ConfirmDeleteModal
+      title={`Удалить ${manualSemesters[pendingDeleteSemIdx]?.number}-й семестр?`}
+      message="В строке семестра уже заполнены часы или формы контроля. После удаления данные будут потеряны."
+      onClose={() => setPendingDeleteSemIdx(null)}
+      onConfirm={() => { const idx = pendingDeleteSemIdx; setPendingDeleteSemIdx(null); performRemoveSemester(idx); }}
+    />}
   </Modal>;
 }
 

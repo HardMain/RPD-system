@@ -5,6 +5,7 @@ import { Btn } from "../../components/Btn.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { TrashIcon } from "../../components/icons.jsx";
 import { ReviewerChain } from "../../components/ReviewerChain.jsx";
+import { ConfirmDeleteModal, AlertModal } from "./EditorModals.jsx";
 
 export function RpdMetaModal({ rpd, rpdId, canEdit, user, reload, onClose }) {
   const totalZet = (rpd.bup_disciplines || []).reduce((s, b) => s + (b.zet || 0), 0);
@@ -252,6 +253,7 @@ function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
     api.getReviewers().then(r => setReviewers(r.data || [])).catch(() => setReviewers([]));
   }, [editing]);
 
+  const [errorMsg, setErrorMsg] = useState(null);
   async function save() {
     setSaving(true);
     try {
@@ -259,7 +261,7 @@ function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
       setEditing(false);
       await reload();
     } catch (e) {
-      alert("Не удалось сохранить маршрут: " + (e?.response?.data?.detail || e.message));
+      setErrorMsg("Не удалось сохранить маршрут: " + (e?.response?.data?.detail || e.message));
     }
     setSaving(false);
   }
@@ -295,17 +297,20 @@ function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
       <Btn small primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
       <Btn small onClick={() => { setDraftIds(route.map(s => s.id_reviewer)); setEditing(false); }}>Отмена</Btn>
     </div>
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
 }
 
 function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
   const max = 2;
 
-  async function handleDelete(id) {
-    if (!confirm("Убрать разработчика?")) return;
-    try { await api.removeDeveloper(id); await reload(); } catch {}
+  async function performDelete(dev) {
+    if (!dev) return;
+    try { await api.removeDeveloper(dev.id_rpd_developer); await reload(); } catch {}
   }
+  function handleDelete(dev) { setPendingDelete(dev); }
 
   return <div style={{ border: "1px solid " + T.borderLight, borderRadius: 4, overflow: "hidden" }}>
     {developers.length === 0 && <div style={{ padding: "8px 12px", fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>Не указаны</div>}
@@ -316,7 +321,7 @@ function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
           {d.full_name}
           {d.title && <span style={{ color: T.textMuted, marginLeft: 8, fontSize: 12 }}>· {d.title}</span>}
         </span>
-        {canEdit && <button onClick={() => handleDelete(d.id_rpd_developer)} title="Убрать" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
+        {canEdit && <button onClick={() => handleDelete(d)} title="Убрать" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
       </div>
     ))}
     {canEdit && developers.length < max && (
@@ -332,6 +337,13 @@ function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
             <Btn small onClick={() => setShowPicker(true)}>+ Добавить разработчика</Btn>
           </div>
     )}
+    {pendingDelete && <ConfirmDeleteModal
+      title="Убрать разработчика?"
+      message={`«${pendingDelete.full_name}» будет удалён из списка разработчиков этой РПД. Сам пользователь в системе остаётся.`}
+      confirmLabel="Убрать"
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const d = pendingDelete; setPendingDelete(null); await performDelete(d); }}
+    />}
   </div>;
 }
 

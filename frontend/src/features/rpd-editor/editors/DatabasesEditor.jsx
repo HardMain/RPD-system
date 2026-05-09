@@ -8,24 +8,30 @@ import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { DATABASE_TYPES } from "../catalogs.js";
+import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
 export function DatabasesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const items = rpd.databases || [];
   const tbodyRef = useRef(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   async function addRow() {
     try { await api.addDatabase(rpdId, { name: "", db_type: null }); await reload(); } catch {}
   }
-  async function delRow(item) {
-    const filled = (item.name || "").trim() || (item.db_type || "").trim();
-    if (filled && !confirm("Удалить запись?")) return;
+  async function performDelete(item) {
+    if (!item) return;
     try { await api.deleteDatabase(item.id_database); await reload(); } catch {}
   }
-  async function delById(id) {
+  function delRow(item) {
+    const filled = (item.name || "").trim() || (item.db_type || "").trim();
+    if (filled) { setPendingDelete(item); return; }
+    performDelete(item);
+  }
+  function delById(id) {
     const item = items.find(it => String(it.id_database) === String(id));
-    if (item) await delRow(item);
+    if (item) delRow(item);
   }
   async function saveRow(item, patch) {
     try {
@@ -76,6 +82,12 @@ export function DatabasesEditor() {
         <Btn small onClick={addRow}><PlusIcon /> Добавить запись</Btn>
       </div>
     )}
+    {pendingDelete && <ConfirmDeleteModal
+      title="Удалить запись?"
+      message="Запись содержит данные. После удаления восстановить её будет нельзя."
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const it = pendingDelete; setPendingDelete(null); await performDelete(it); }}
+    />}
   </div>;
 }
 

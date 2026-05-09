@@ -7,24 +7,30 @@ import { PlusIcon } from "../../../components/icons.jsx";
 import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
+import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
 export function MtechEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const items = rpd.material_tech || [];
   const tbodyRef = useRef(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   async function addRow() {
     try { await api.addMaterialTech(rpdId, { room_type: "", equipment: "", quantity: null }); await reload(); } catch {}
   }
-  async function delRow(item) {
-    const filled = (item.room_type || "").trim() || (item.equipment || "").trim() || item.quantity != null;
-    if (filled && !confirm("Удалить запись?")) return;
+  async function performDelete(item) {
+    if (!item) return;
     try { await api.deleteMaterialTech(item.id_material_tech); await reload(); } catch {}
   }
-  async function delById(id) {
+  function delRow(item) {
+    const filled = (item.room_type || "").trim() || (item.equipment || "").trim() || item.quantity != null;
+    if (filled) { setPendingDelete(item); return; }
+    performDelete(item);
+  }
+  function delById(id) {
     const item = items.find(it => String(it.id_material_tech) === String(id));
-    if (item) await delRow(item);
+    if (item) delRow(item);
   }
   async function saveRow(item, patch) {
     try {
@@ -78,6 +84,12 @@ export function MtechEditor() {
         <Btn small onClick={addRow}><PlusIcon /> Добавить запись</Btn>
       </div>
     )}
+    {pendingDelete && <ConfirmDeleteModal
+      title="Удалить запись?"
+      message="Запись содержит данные. После удаления восстановить её будет нельзя."
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const it = pendingDelete; setPendingDelete(null); await performDelete(it); }}
+    />}
   </div>;
 }
 

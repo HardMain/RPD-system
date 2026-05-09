@@ -8,10 +8,12 @@ import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { PlanSummary } from "./PlanSummary.jsx";
+import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
 export function SectionEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
+  const [pendingDelete, setPendingDelete] = useState(null);
 
   const planSemesters = computePlanSemesters(rpd);
   const isMultiSemester = planSemesters.length > 1;
@@ -60,13 +62,17 @@ export function SectionEditor() {
       && !s.lab_hours && !s.self_study_hours;
   }
 
-  async function delSec(s) {
-    if (!isSectionEmpty(s) && !confirm("Удалить раздел?")) return;
+  async function performDelete(s) {
+    if (!s) return;
     try { await api.deleteSection(s.id_section); await reload(); } catch {}
   }
-  async function delById(id) {
+  function delSec(s) {
+    if (!isSectionEmpty(s)) { setPendingDelete(s); return; }
+    performDelete(s);
+  }
+  function delById(id) {
     const s = (rpd.sections || []).find(it => String(it.id_section) === String(id));
-    if (s) await delSec(s);
+    if (s) delSec(s);
   }
   const tbodyRef = useRef(null);
 
@@ -208,6 +214,12 @@ export function SectionEditor() {
         <Btn small onClick={() => addEmpty(null)}><PlusIcon /> Добавить раздел</Btn>
       </div>
     )}
+    {pendingDelete && <ConfirmDeleteModal
+      title="Удалить раздел?"
+      message="В разделе заполнены название, содержание или часы. После удаления восстановить его будет нельзя."
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const s = pendingDelete; setPendingDelete(null); await performDelete(s); }}
+    />}
   </div>;
 }
 

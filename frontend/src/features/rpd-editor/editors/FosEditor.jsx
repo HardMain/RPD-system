@@ -5,6 +5,7 @@ import { Btn } from "../../../components/Btn.jsx";
 import { Modal } from "../../../components/Modal.jsx";
 import { TrashIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
+import { ConfirmDeleteModal, AlertModal } from "../EditorModals.jsx";
 
 const cell = { padding: "8px 10px", borderBottom: "1px solid " + T.borderLight, fontSize: 13, verticalAlign: "middle" };
 const head = { ...cell, fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", background: T.bg };
@@ -61,43 +62,61 @@ function EmptyRow({ text }) {
 function FileRow({ link, canEdit, onChanged, asTable }) {
   const sizeMb = link.size_bytes ? (link.size_bytes / 1024 / 1024).toFixed(2) : null;
   const url = api.fileUrl(link.id_file);
-  async function unlink() {
-    if (!confirm("Открепить файл от РПД? Сам файл в хранилище останется.")) return;
+  const [confirming, setConfirming] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
+  async function performUnlink() {
     try { await api.deleteFosLink(link.id_rpd_fos); onChanged?.(); }
-    catch { alert("Не удалось"); }
+    catch { setErrorMsg("Не удалось открепить файл."); }
   }
+  const modals = <>
+    {confirming && <ConfirmDeleteModal
+      title="Открепить файл от РПД?"
+      message="Файл будет отвязан от этой РПД. Сам файл в общем хранилище останется."
+      confirmLabel="Открепить"
+      onClose={() => setConfirming(false)}
+      onConfirm={async () => { setConfirming(false); await performUnlink(); }}
+    />}
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
+  </>;
   if (asTable) {
-    return <tr>
-      <td style={cell}><b>{link.name || link.original_name}</b></td>
-      <td style={cell}>{link.comment || ""}</td>
-      <td style={cell}><a href={url} target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>📄 {link.original_name}</a> {sizeMb && <span style={{ color: T.textMuted, fontSize: 11 }}>({sizeMb} МБ)</span>}</td>
-      <td style={{ ...cell, textAlign: "right", whiteSpace: "nowrap" }}>
-        {canEdit && <button onClick={unlink} title="Открепить" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
-      </td>
-    </tr>;
+    return <>
+      <tr>
+        <td style={cell}><b>{link.name || link.original_name}</b></td>
+        <td style={cell}>{link.comment || ""}</td>
+        <td style={cell}><a href={url} target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>📄 {link.original_name}</a> {sizeMb && <span style={{ color: T.textMuted, fontSize: 11 }}>({sizeMb} МБ)</span>}</td>
+        <td style={{ ...cell, textAlign: "right", whiteSpace: "nowrap" }}>
+          {canEdit && <button onClick={() => setConfirming(true)} title="Открепить" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
+        </td>
+      </tr>
+      {modals}
+    </>;
   }
-  return <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid " + T.borderLight, borderRadius: 6 }}>
-    <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, color: T.accent, fontWeight: 600, textDecoration: "none" }}>
-      📄 {link.name || link.original_name}
-      <span style={{ marginLeft: 8, color: T.textMuted, fontSize: 11, fontWeight: 400 }}>{link.original_name}{sizeMb ? ` · ${sizeMb} МБ` : ""}</span>
-    </a>
-    {canEdit && <button onClick={unlink} title="Открепить" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
-  </div>;
+  return <>
+    <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid " + T.borderLight, borderRadius: 6 }}>
+      <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, color: T.accent, fontWeight: 600, textDecoration: "none" }}>
+        📄 {link.name || link.original_name}
+        <span style={{ marginLeft: 8, color: T.textMuted, fontSize: 11, fontWeight: 400 }}>{link.original_name}{sizeMb ? ` · ${sizeMb} МБ` : ""}</span>
+      </a>
+      {canEdit && <button onClick={() => setConfirming(true)} title="Открепить" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
+    </div>
+    {modals}
+  </>;
 }
 
 function FileActions({ rpdId, role, replace, onChanged }) {
   const inputRef = useRef(null);
   const [busy, setBusy] = useState(false);
   const [showLib, setShowLib] = useState(false);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   async function handleFileChosen(e) {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
-    if (!file.name.toLowerCase().endsWith(".pdf")) { alert("Ожидается PDF"); return; }
+    if (!file.name.toLowerCase().endsWith(".pdf")) { setErrorMsg("Ожидается PDF-файл."); return; }
     setBusy(true);
     try { await api.uploadFosFile(rpdId, file, role); onChanged?.(); }
-    catch (err) { alert(err?.response?.data?.detail || err.message); }
+    catch (err) { setErrorMsg(err?.response?.data?.detail || err.message); }
     setBusy(false);
   }
 
@@ -108,6 +127,7 @@ function FileActions({ rpdId, role, replace, onChanged }) {
     </Btn>
     <Btn small onClick={() => setShowLib(true)}>Выбрать из хранилища…</Btn>
     {showLib && <FosLibraryModal rpdId={rpdId} role={role} onClose={() => setShowLib(false)} onPicked={() => { setShowLib(false); onChanged?.(); }} />}
+    {errorMsg && <AlertModal title="Не удалось загрузить" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
 }
 
@@ -116,6 +136,7 @@ function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
   const [busyId, setBusyId] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
     api.getFosLibrary().then(r => {
@@ -141,7 +162,7 @@ function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
       await api.selectFosFile(rpdId, { id_file: it.id_file, role, name: it.name, comment: it.comment });
       onPicked();
     } catch (e) {
-      alert(e?.response?.data?.detail || e.message);
+      setErrorMsg(e?.response?.data?.detail || e.message);
     }
     setBusyId(null);
   }
@@ -171,5 +192,6 @@ function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
         <Btn onClick={onClose}>Закрыть</Btn>
       </div>
     </div>
+    {errorMsg && <AlertModal title="Не удалось выбрать файл" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </Modal>;
 }

@@ -62,6 +62,7 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
           onBlur={() => saveField?.(fieldKey)}
           placeholder={ph}
           style={{
+            display: "block",
             width: "100%",
             minHeight: COLLAPSED_HEIGHT,
             maxHeight: expanded ? "none" : COLLAPSED_HEIGHT,

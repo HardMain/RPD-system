@@ -1092,14 +1092,13 @@ async def detach_bup_discipline(
 @router.get("/{rpd_id}/outcomes-table", response_model=list[OutcomeRowOut])
 async def get_outcomes_table(
     rpd_id: int,
-    bd_id: int | None = Query(default=None, description="Если задан — возвращаются только строки, относящиеся к компетенциям выбранной БУП-дисциплины"),
+    bd_id: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     rpd_res = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
         .options(
-            selectinload(Rpd.bup_links).selectinload(RpdBupDiscipline.bup_discipline),
             selectinload(Rpd.learning_outcomes)
                 .selectinload(RpdLearningOutcome.indicator)
                 .selectinload(CompetencyIndicator.competency),
@@ -1108,30 +1107,6 @@ async def get_outcomes_table(
     rpd = rpd_res.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404)
-
-    live_bd_ids = [link.id_bup_discipline for link in rpd.bup_links if link.id_bup_discipline is not None]
-    if not rpd.learning_outcomes and live_bd_ids:
-        await _autofill_outcomes_from_bup_disciplines(rpd, live_bd_ids, db)
-        await db.commit()
-        rpd_res = await db.execute(
-            select(Rpd).where(Rpd.id_rpd == rpd_id)
-            .options(
-                selectinload(Rpd.learning_outcomes)
-                    .selectinload(RpdLearningOutcome.indicator)
-                    .selectinload(CompetencyIndicator.competency),
-            )
-        )
-        rpd = rpd_res.scalar_one()
-
-    bd_indicator_ids: set[int] | None = None
-    if bd_id is not None and bd_id in live_bd_ids:
-        ind_res = await db.execute(
-            select(CompetencyIndicator.id_indicator)
-            .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
-            .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
-            .where(BupDisciplineCompetency.id_bup_discipline == bd_id)
-        )
-        bd_indicator_ids = set(ind_res.scalars().all())
 
     rows: list[OutcomeRowOut] = []
     seen_keys: set[tuple] = set()
@@ -1143,8 +1118,6 @@ async def get_outcomes_table(
         ),
     )
     for lo in sorted_outcomes:
-        if bd_indicator_ids is not None and lo.id_indicator not in bd_indicator_ids:
-            continue
         ind = lo.indicator
         comp = ind.competency if ind else None
         if lo.id_indicator is not None:

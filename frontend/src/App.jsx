@@ -22,6 +22,7 @@ import { CreateRpdModal } from "./features/rpd-create/CreateRpdModal.jsx";
 import { OpenRpdsBar } from "./features/tabs/OpenRpdsBar.jsx";
 import { PaneDropZones } from "./features/tabs/PaneDropZones.jsx";
 import { RpdEditor } from "./features/rpd-editor/RpdEditor.jsx";
+import { AlertModal } from "./features/rpd-editor/EditorModals.jsx";
 
 pdfjs.GlobalWorkerOptions.workerPort = new PdfJsWorker();
 
@@ -243,13 +244,14 @@ export default function App() {
     document.body.style.cursor = "col-resize";
   }
 
+  const [exportError, setExportError] = useState(null);
   async function handleExportPdf(rpdId, bdId) {
     try {
       const r = await api.exportPdf(rpdId, bdId);
       const url = window.URL.createObjectURL(r.data);
       const a = document.createElement("a"); a.href = url; a.download = `RPD_${rpdId}.pdf`; a.click();
       window.URL.revokeObjectURL(url);
-    } catch { alert("Ошибка экспорта PDF"); }
+    } catch { setExportError("Не удалось сформировать PDF — попробуйте ещё раз."); }
   }
 
   const handleLogout = () => {
@@ -408,5 +410,6 @@ export default function App() {
 
     <NotifPanel show={showNotif} onClose={() => { setShowNotif(false); api.getUnreadCount().then(r => setUnreadCount(r.data.count)).catch(() => { }); }} />
     {showCreate && <CreateRpdModal onClose={() => setShowCreate(false)} onCreated={(r) => { setShowCreate(false); loadRpds(); openRpdFn(r, true); }} />}
+    {exportError && <AlertModal title="Ошибка экспорта" message={exportError} onClose={() => setExportError(null)} />}
   </div>;
 }

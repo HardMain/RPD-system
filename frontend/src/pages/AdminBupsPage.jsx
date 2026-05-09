@@ -1,17 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F } from "../theme.js";
-import { hdr, tcell } from "../styles.js";
+import { hdr, tcell, iconBtn } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
 import { Spinner } from "../components/Spinner.jsx";
+import { TrashIcon, UploadIcon } from "../components/icons.jsx";
+import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
 export function AdminBupsPage() {
   const [bups, setBups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
   const [openBup, setOpenBup] = useState(null);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   const reload = () => {
     setLoading(true);
@@ -19,26 +23,27 @@ export function AdminBupsPage() {
   };
   useEffect(() => { reload(); }, []);
 
-  async function handleDelete(b) {
-    if (!confirm(`Удалить БУП «${b.name}»? БУП и все его данные будут стёрты из базы (дисциплины, компетенции и индикаторы — те, что использовались только этим планом). Уже созданные РПД не изменятся: их часы, компетенции и направление сохранены в самих РПД.`)) return;
+  async function performDelete(b) {
+    if (!b) return;
     try { await api.adminDeleteBup(b.id_bup); reload(); }
-    catch { alert("Не удалось удалить"); }
+    catch { setErrorMsg("Не удалось удалить БУП"); }
   }
+  function handleDelete(b) { setPendingDelete(b); }
 
   return <div style={{ flex: 1, overflow: "auto", padding: 24, background: T.bg }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div style={{ fontSize: 18, fontWeight: 700 }}>БУПы (базовые учебные планы)</div>
-        <Btn primary onClick={() => setShowImport(true)}>Загрузить XLS БУПа</Btn>
+        <Btn small onClick={() => setShowImport(true)}><UploadIcon /> Загрузить XLS БУПа</Btn>
       </div>
 
-      <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 8, overflow: "hidden" }}>
+      <div className="table-scroll">
         {loading ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
         : bups.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13 }}>
             БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины.
           </div>
-        : <div className="table-scroll"><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
-            <thead><tr style={{ background: T.bg }}>
+        : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+            <thead><tr style={{ background: T.surface }}>
               <th style={{ ...hdr, textAlign: "center", width: 80 }}>Год</th>
               <th style={hdr}>Наименование</th>
               <th style={hdr}>Направление</th>
@@ -46,23 +51,32 @@ export function AdminBupsPage() {
               <th style={{ ...hdr, width: 1 }} />
             </tr></thead>
             <tbody>
-              {bups.map(b => <tr key={b.id_bup} style={{ cursor: "pointer" }}
-                  onClick={() => setOpenBup(b.id_bup)}>
+              {bups.map(b => <tr key={b.id_bup}
+                  onDoubleClick={() => setOpenBup(b.id_bup)}
+                  style={{ background: T.surface, cursor: "pointer" }}
+                  title="Двойной клик — открыть детали">
                 <td style={{ ...tcell, textAlign: "center" }}>{b.year ?? "—"}</td>
                 <td style={{ ...tcell, fontWeight: 600 }}>{b.name}</td>
                 <td style={tcell}>{b.direction_code ? `${b.direction_code} ${b.direction_name}` : (b.direction_name || "—")}</td>
                 <td style={tcell}>{b.faculty || "—"}</td>
-                <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap", width: 1 }}>
-                  <Btn small danger onClick={(e) => { e.stopPropagation(); handleDelete(b); }}>Удалить</Btn>
+                <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }}>
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(b); }} title="Удалить БУП" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
                 </td>
               </tr>)}
             </tbody>
-          </table></div>}
+          </table>}
       </div>
     </div>
 
     {showImport && <ImportBupModal onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); reload(); }} />}
     {openBup != null && <BupDetailModal bupId={openBup} onClose={() => setOpenBup(null)} />}
+    {pendingDelete && <ConfirmDeleteModal
+      title={`Удалить БУП «${pendingDelete.name}»?`}
+      message="БУП и его данные (дисциплины, компетенции и индикаторы, использовавшиеся только в этом плане) будут стёрты из базы. Уже созданные РПД не изменятся — их часы, компетенции и направление сохранены внутри самих РПД."
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const b = pendingDelete; setPendingDelete(null); await performDelete(b); }}
+    />}
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
 }
 
