@@ -16,6 +16,7 @@ import { AdminUsersPage } from "./pages/AdminUsersPage.jsx";
 import { SystemInfoPage } from "./pages/SystemInfoPage.jsx";
 import { AdminBupsPage } from "./pages/AdminBupsPage.jsx";
 import { AdminDirectionsPage } from "./pages/AdminDirectionsPage.jsx";
+import { AdminDictionariesPage } from "./pages/AdminDictionariesPage.jsx";
 
 import { NotifPanel } from "./features/notifications/NotifPanel.jsx";
 import { CreateRpdModal } from "./features/rpd-create/CreateRpdModal.jsx";
@@ -269,6 +270,7 @@ export default function App() {
     if (api.userCan(user, "users.manage") || api.userCan(user, "users.create")) allowed.add("adminUsers");
     if (api.userCan(user, "bups.manage")) allowed.add("adminBups");
     if (api.userCan(user, "directions.manage")) allowed.add("adminDirections");
+    if (api.userCan(user, "reference.manage")) allowed.add("adminDictionaries");
     if (!allowed.has(activeTab)) setActiveTab("my");
   }, [user, activeTab]);
 
@@ -279,11 +281,13 @@ export default function App() {
   const canManageBups = api.userCan(user, "bups.manage");
   const canManageDirections = api.userCan(user, "directions.manage");
   const canManageUsers = api.userCan(user, "users.manage") || api.userCan(user, "users.create");
+  const canManageDictionaries = api.userCan(user, "reference.manage");
   const navTabs = [
     { id: "my", label: `РПД (${rpds.length})` },
     canManageUsers ? { id: "adminUsers", label: "Пользователи" } : null,
     canManageBups ? { id: "adminBups", label: "БУПы" } : null,
     canManageDirections ? { id: "adminDirections", label: "ФГОС" } : null,
+    canManageDictionaries ? { id: "adminDictionaries", label: "Справочники" } : null,
     { id: "system", label: "Система" },
   ].filter(Boolean);
 
@@ -332,6 +336,7 @@ export default function App() {
     {activeTab === "adminUsers" && <AdminUsersPage user={user} />}
     {activeTab === "adminBups" && <AdminBupsPage />}
     {activeTab === "adminDirections" && <AdminDirectionsPage />}
+    {activeTab === "adminDictionaries" && <AdminDictionariesPage />}
     {activeTab === "system" && <SystemInfoPage />}
 
     <div ref={splitContainerRef} style={{ display: activeTab === "edit" ? "block" : "none", flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>

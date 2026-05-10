@@ -4,12 +4,17 @@ import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { BupDropdown } from "../BupDropdown.jsx";
-import { Dropdown } from "../../../components/Dropdown.jsx";
+import { Combobox } from "../../../components/Combobox.jsx";
 import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { Btn } from "../../../components/Btn.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../EditorModals.jsx";
+
+const fetchAssessmentToolSuggestions = async (q) => {
+  const r = await api.getSuggestions("assessment_tool", { q });
+  return r.data?.items || [];
+};
 
 function compareOutcomeRows(a, b) {
   const ac = (a.competency_code || "").trim();
@@ -30,7 +35,6 @@ function compareOutcomeRows(a, b) {
 export function OutcomesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const [rows, setRows] = useState([]);
-  const [tools, setTools] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -56,7 +60,6 @@ export function OutcomesEditor() {
 
   useEffect(() => {
     reloadRows();
-    api.getAssessmentTools().then(r => setTools(r.data)).catch(() => setTools([]));
   }, [reloadRows]);
 
   const autoAddedRef = useRef(false);
@@ -210,12 +213,12 @@ export function OutcomesEditor() {
           return <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`} {...trProps}>
             <td style={{ ...td, padding: codeEditable ? 4 : undefined, ...wrap }}>
               {codeEditable
-                ? <SnapshotInput value={r.competency_code || ""} onSave={v => saveRow(idx, { competency_code: v })} placeholder="напр. ОПК-1" bold />
+                ? <SnapshotInput value={r.competency_code || ""} onSave={v => saveRow(idx, { competency_code: v })} placeholder="напр. ОПК-1" bold kind="competency_code" />
                 : <b>{r.competency_code}</b>}
             </td>
             <td style={{ ...td, padding: codeEditable ? 4 : undefined, ...wrap }}>
               {codeEditable
-                ? <SnapshotInput value={r.indicator_code || ""} onSave={v => saveRow(idx, { indicator_code: v })} placeholder="ОПК-1.1" />
+                ? <SnapshotInput value={r.indicator_code || ""} onSave={v => saveRow(idx, { indicator_code: v })} placeholder="ОПК-1.1" kind="indicator_code" parent={r.competency_code || ""} />
                 : (r.indicator_code || "")}
             </td>
             <td style={{ ...td, padding: 4, ...wrap }}>
@@ -227,13 +230,12 @@ export function OutcomesEditor() {
             </td>
             <td style={{ ...td, padding: codeEditable ? 4 : undefined, ...wrap }}>
               {codeEditable
-                ? <SnapshotTextarea value={r.indicator_description || ""} onSave={v => saveRow(idx, { indicator_description: v })} placeholder="Описание индикатора достижения компетенции" />
+                ? <SnapshotTextarea value={r.indicator_description || ""} onSave={v => saveRow(idx, { indicator_description: v })} placeholder="Описание индикатора достижения компетенции" parent={r.indicator_code || ""} />
                 : (r.indicator_description || "")}
             </td>
             <td style={{ ...td, padding: 4, ...wrap }}>
               <AssessmentToolPicker
                 value={r.assessment_tool || ""}
-                tools={tools}
                 disabled={!editable}
                 onSave={v => saveRow(idx, { assessment_tool: v })}
               />
@@ -263,36 +265,34 @@ export function OutcomesEditor() {
   </div>;
 }
 
-function SnapshotInput({ value, onSave, placeholder, bold }) {
-  const [local, setLocal] = useState(value);
-  const lastSyncedRef = useRef(value);
-  useEffect(() => {
-    if (local === lastSyncedRef.current) setLocal(value);
-    lastSyncedRef.current = value;
-  }, [value]);
-  return <input
-    value={local}
-    onChange={e => setLocal(e.target.value)}
-    onBlur={() => { if (local !== value) onSave(local); }}
+async function fetchKind(kind, q, source_type) {
+  const params = { q };
+  if (source_type) params.source_type = source_type;
+  const r = await api.getSuggestions(kind, params);
+  return r.data?.items || [];
+}
+
+function SnapshotInput({ value, onSave, placeholder, bold, kind, parent }) {
+  const style = { width: "100%", padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontWeight: bold ? 700 : 400, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
+  return <Combobox
+    value={value || ""}
+    onCommit={v => { if (v !== (value || "")) onSave(v); }}
+    fetchSuggestions={(q) => fetchKind(kind, q, parent)}
     placeholder={placeholder}
-    style={{ width: "100%", padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontWeight: bold ? 700 : 400, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
+    style={style}
   />;
 }
 
-function SnapshotTextarea({ value, onSave, placeholder }) {
-  const [local, setLocal] = useState(value);
-  const lastSyncedRef = useRef(value);
-  useEffect(() => {
-    if (local === lastSyncedRef.current) setLocal(value);
-    lastSyncedRef.current = value;
-  }, [value]);
-  return <ExpandableTextarea
-    value={local}
-    onChange={e => setLocal(e.target.value)}
-    onBlur={() => { if (local !== value) onSave(local); }}
+function SnapshotTextarea({ value, onSave, placeholder, parent }) {
+  const style = { width: "100%", minHeight: 48, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
+  return <Combobox
+    value={value || ""}
+    onCommit={v => { if (v !== (value || "")) onSave(v); }}
+    fetchSuggestions={(q) => fetchKind("indicator_description", q, parent)}
     placeholder={placeholder}
+    textarea
     collapsedMaxHeight={64}
-    style={{ width: "100%", minHeight: 48, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
+    style={style}
   />;
 }
 
@@ -404,18 +404,16 @@ function OutcomeTextarea({ value, disabled, onSave }) {
   />;
 }
 
-function AssessmentToolPicker({ value, tools, disabled, onSave }) {
+function AssessmentToolPicker({ value, disabled, onSave }) {
   if (disabled) {
     return <div style={{ padding: "6px 8px", fontSize: 13, color: T.text }}>{value || ""}</div>;
   }
-
-  const options = tools.map(t => ({ value: t.name, label: t.name }));
-  return <Dropdown
+  return <Combobox
     value={value || ""}
-    options={options}
-    onChange={v => { if (v !== value) onSave(v); }}
-    placeholder="Выбрать средство оценки"
-    clearLabel="Не выбрано"
+    onCommit={v => { if (v !== value) onSave(v); }}
+    fetchSuggestions={fetchAssessmentToolSuggestions}
+    placeholder="Средство оценки"
     title="Средство оценки"
+    style={{ width: "100%", padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
   />;
 }

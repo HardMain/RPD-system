@@ -240,65 +240,54 @@ function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
   const isOwner = !!user && rpd.id_author === user.id_user;
   const ownerEditable = isOwner && canEdit && (status === "Черновик" || status === "На доработке");
   const editable = status !== "Согласовано" && (ownerEditable || hasChainPerm);
-  const routeIdsKey = route.map(s => s.id_reviewer).join(",");
-  const [editing, setEditing] = useState(false);
-  const [reviewers, setReviewers] = useState([]);
-  const [draftIds, setDraftIds] = useState(route.map(s => s.id_reviewer));
-  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { setDraftIds(route.map(s => s.id_reviewer)); }, [routeIdsKey]);
+  const [reviewers, setReviewers] = useState([]);
+  const [errorMsg, setErrorMsg] = useState(null);
 
   useEffect(() => {
-    if (!editing) return;
+    if (!editable) return;
     api.getReviewers().then(r => setReviewers(r.data || [])).catch(() => setReviewers([]));
-  }, [editing]);
+  }, [editable]);
 
-  const [errorMsg, setErrorMsg] = useState(null);
-  async function save() {
-    setSaving(true);
+  const routeReviewers = route.map(s => ({
+    id_user: s.id_reviewer, full_name: s.reviewer_name,
+    title: s.reviewer_title, role: "", department: "",
+  }));
+
+  if (!editable) {
+    return <ReviewerChain
+      reviewers={routeReviewers}
+      selectedIds={route.map(s => s.id_reviewer)}
+      onChange={() => {}}
+      readOnly
+      statuses={route.map(s => s.status)}
+    />;
+  }
+
+  const merged = [...reviewers];
+  for (const r of routeReviewers) {
+    if (!merged.some(m => m.id_user === r.id_user)) merged.push(r);
+  }
+
+  async function handleChange(newIds) {
     try {
-      await api.setApprovalRoute(rpdId, draftIds);
-      setEditing(false);
+      await api.setApprovalRoute(rpdId, newIds);
       await reload();
     } catch (e) {
       setErrorMsg("Не удалось сохранить маршрут: " + (e?.response?.data?.detail || e.message));
+      await reload();
     }
-    setSaving(false);
   }
 
-  if (!editing) {
-    const reviewersForDisplay = route.map(s => ({
-      id_user: s.id_reviewer, full_name: s.reviewer_name,
-      title: s.reviewer_title, role: "", department: "",
-    }));
-    return <div>
-      <ReviewerChain
-        reviewers={reviewersForDisplay}
-        selectedIds={route.map(s => s.id_reviewer)}
-        onChange={() => {}}
-        readOnly
-        statuses={route.map(s => s.status)}
-      />
-      {editable && (
-        <div style={{ marginTop: 8 }}>
-          <Btn small onClick={() => setEditing(true)}>Изменить маршрут</Btn>
-        </div>
-      )}
-    </div>;
-  }
-
-  return <div>
+  return <>
     <ReviewerChain
-      reviewers={reviewers}
-      selectedIds={draftIds}
-      onChange={setDraftIds}
+      reviewers={merged}
+      selectedIds={route.map(s => s.id_reviewer)}
+      onChange={handleChange}
+      statuses={route.map(s => s.status)}
     />
-    <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
-      <Btn small primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
-      <Btn small onClick={() => { setDraftIds(route.map(s => s.id_reviewer)); setEditing(false); }}>Отмена</Btn>
-    </div>
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
-  </div>;
+  </>;
 }
 
 function DeveloperEditor({ rpdId, developers, canEdit, reload }) {

@@ -65,13 +65,13 @@ PERMISSION_CATALOG: list[tuple[str, str]] = [
 ROLE_PERMISSIONS: dict[str, list[str]] = {
     "Преподаватель": [],
     "Зав. кафедрой": ["rpd.create", "rpd.approve"],
-    "Сотрудник УМУ": ["rpd.create"],
-    "Начальник отдела УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit"],
-    "Начальник управления УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit"],
+    "Сотрудник УМУ": ["rpd.create", "reference.manage", "bups.manage", "directions.manage"],
+    "Начальник отдела УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit", "reference.manage", "bups.manage", "directions.manage"],
+    "Начальник управления УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit", "reference.manage", "bups.manage", "directions.manage"],
     "Проректор": ["rpd.approve"],
     "Ректор": ["rpd.approve"],
-    "Техник УМУ": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "rpd.delete_any", "users.create"],
-    "Техник кафедры": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "users.create"],
+    "Техник УМУ": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "rpd.delete_any", "users.create", "reference.manage", "bups.manage", "directions.manage"],
+    "Техник кафедры": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "users.create", "reference.manage", "bups.manage", "directions.manage"],
     "Администратор": ["*"],
 }
 
@@ -107,7 +107,73 @@ async def seed_data():
     await seed_reference()
     await _seed_demo_data()
     await seed_permissions()
+    await ensure_role_permissions()
     await seed_test_samples()
+    await ensure_three_indicators_for_all_competencies()
+
+
+async def ensure_three_indicators_for_all_competencies():
+    async with async_session() as db:
+        comps_res = await db.execute(
+            select(Competency).options(selectinload(Competency.indicators))
+        )
+        added = 0
+        for comp in comps_res.scalars().all():
+            existing_codes = {i.code for i in comp.indicators}
+            placeholders = [
+                (f"ИД-1{comp.code}", "Знает (требуется заполнение)"),
+                (f"ИД-2{comp.code}", "Умеет (требуется заполнение)"),
+                (f"ИД-3{comp.code}", "Владеет (требуется заполнение)"),
+            ]
+            for code, desc in placeholders:
+                if code not in existing_codes:
+                    db.add(CompetencyIndicator(
+                        id_competency=comp.id_competency,
+                        code=code,
+                        description=desc,
+                    ))
+                    added += 1
+        if added:
+            await db.commit()
+
+
+async def ensure_role_permissions():
+    async with async_session() as db:
+        roles_res = await db.execute(select(Role))
+        roles_by_name = {r.name: r for r in roles_res.scalars().all()}
+        perms_res = await db.execute(select(Permission))
+        perms_by_code = {p.code: p for p in perms_res.scalars().all()}
+
+        new_perms_added = False
+        for code, desc in PERMISSION_CATALOG:
+            if code not in perms_by_code:
+                p = Permission(code=code, description=desc)
+                db.add(p)
+                perms_by_code[code] = p
+                new_perms_added = True
+        if new_perms_added:
+            await db.flush()
+
+        existing_res = await db.execute(select(RolePermission.id_role, RolePermission.id_permission))
+        existing_pairs = {(r, p) for r, p in existing_res.all()}
+
+        added = 0
+        for role_name, codes in ROLE_PERMISSIONS.items():
+            role = roles_by_name.get(role_name)
+            if role is None:
+                continue
+            for code in codes:
+                perm = perms_by_code.get(code)
+                if perm is None:
+                    continue
+                key = (role.id_role, perm.id_permission)
+                if key in existing_pairs:
+                    continue
+                db.add(RolePermission(id_role=role.id_role, id_permission=perm.id_permission))
+                existing_pairs.add(key)
+                added += 1
+        if added or new_perms_added:
+            await db.commit()
 
 
 async def _seed_demo_data():
@@ -241,16 +307,19 @@ async def _seed_demo_data():
         db.add_all([comp1, comp2, comp3, comp7])
         await db.flush()
 
-        ci1 = CompetencyIndicator(id_competency=comp1.id_competency, code="ОПК-1.1", description="Применяет методы математического анализа и моделирования")
-        ci2 = CompetencyIndicator(id_competency=comp1.id_competency, code="ОПК-1.2", description="Использует основные законы естественных наук")
+        ci1 = CompetencyIndicator(id_competency=comp1.id_competency, code="ИД-1ОПК-1", description="Знает основные положения и методы математики, естественных и общеинженерных наук")
+        ci2 = CompetencyIndicator(id_competency=comp1.id_competency, code="ИД-2ОПК-1", description="Умеет применять методы математического анализа и моделирования при решении профессиональных задач")
+        ci2c = CompetencyIndicator(id_competency=comp1.id_competency, code="ИД-3ОПК-1", description="Владеет навыками применения методов математического анализа и моделирования к решению инженерных задач")
         ci3 = CompetencyIndicator(id_competency=comp2.id_competency, code="ИД-1ОПК-2", description="Знает принципы работы современных информационных технологий и программных средств, в том числе отечественного производства")
         ci4 = CompetencyIndicator(id_competency=comp2.id_competency, code="ИД-2ОПК-2", description="Умеет выбирать современные информационные технологии и программные средства, в том числе отечественного производства при решении задач профессиональной деятельности")
         ci4b = CompetencyIndicator(id_competency=comp2.id_competency, code="ИД-3ОПК-2", description="Владеет навыками применения современных информационных технологий и программных средств, в том числе отечественного производства, при решении задач профессиональной деятельности")
-        ci5 = CompetencyIndicator(id_competency=comp3.id_competency, code="ПК-1.1", description="Разрабатывает требования к программному обеспечению")
+        ci5 = CompetencyIndicator(id_competency=comp3.id_competency, code="ИД-1ПК-1", description="Знает методы и средства анализа предметной области и формулирования требований к программному обеспечению")
+        ci5b = CompetencyIndicator(id_competency=comp3.id_competency, code="ИД-2ПК-1", description="Умеет разрабатывать требования и проектировать архитектуру программного обеспечения")
+        ci5c = CompetencyIndicator(id_competency=comp3.id_competency, code="ИД-3ПК-1", description="Владеет навыками разработки требований и проектирования программного обеспечения с использованием современных нотаций")
         ci7a = CompetencyIndicator(id_competency=comp7.id_competency, code="ИД-1ОПК-7", description="Знает основные концепции, принципы, теории и факты, связанные с информатикой")
         ci7b = CompetencyIndicator(id_competency=comp7.id_competency, code="ИД-2ОПК-7", description="Умеет применять основные концепции, принципы, теории и факты, связанные с информатикой, в практической деятельности")
         ci7c = CompetencyIndicator(id_competency=comp7.id_competency, code="ИД-3ОПК-7", description="Владеет навыками практического применения основных концепций, принципов, теорий и фактов, связанных с информатикой")
-        db.add_all([ci1, ci2, ci3, ci4, ci4b, ci5, ci7a, ci7b, ci7c])
+        db.add_all([ci1, ci2, ci2c, ci3, ci4, ci4b, ci5, ci5b, ci5c, ci7a, ci7b, ci7c])
         await db.flush()
 
         d_inf = Discipline(name="Информатика")

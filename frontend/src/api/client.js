@@ -81,6 +81,18 @@ export const updateManualLink = (rpdId, data) => api.patch(`/rpd/${rpdId}/manual
 export const getAssessmentTools = () => api.get('/assessment-tools/');
 export const createAssessmentTool = (name) => api.post('/assessment-tools/', { name });
 
+export const getSuggestions = (kind, params) =>
+  api.get(`/suggestions/${kind}`, { params: params || {} });
+
+export const adminListDictionary = (kind, params) =>
+  api.get(`/admin/dictionary/${kind}`, { params: params || {} });
+export const adminCreateDictionary = (kind, payload) =>
+  api.post(`/admin/dictionary/${kind}`, payload);
+export const adminUpdateDictionary = (idEntry, payload) =>
+  api.patch(`/admin/dictionary/${idEntry}`, payload);
+export const adminDeleteDictionary = (idEntry) =>
+  api.delete(`/admin/dictionary/${idEntry}`);
+
 export const fileUrl = (fileId) => `/api/files/${fileId}`;
 
 export const getFosFiles = (rpdId) => api.get(`/rpd/${rpdId}/fos`);

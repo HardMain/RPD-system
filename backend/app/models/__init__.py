@@ -12,6 +12,7 @@ from app.models.rpd import (
     RpdFosFile,
     UploadedDocument, LlmGenerationLog, ApprovalStage, RpdApprovalRoute,
 )
+from app.models.dictionary import DictionaryEntry
 
 __all__ = [
     "Role", "Department", "User", "Notification", "Permission", "RolePermission",
@@ -22,4 +23,5 @@ __all__ = [
     "RpdLiterature", "RpdSoftware", "RpdMaterialTech", "RpdDatabase",
     "RpdFosFile",
     "UploadedDocument", "LlmGenerationLog", "ApprovalStage", "RpdApprovalRoute",
+    "DictionaryEntry",
 ]

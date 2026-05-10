@@ -612,7 +612,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
         <ManualBlock title="Семестры дисциплины">
           <div style={{ position: "relative" }}>
-          <div className="table-scroll">
+          <div className="table-scroll" style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed", minWidth: 580 }}>
               <colgroup>
                 <col style={{ width: 56 }} />
@@ -751,9 +751,9 @@ function ModeButton({ active, onClick, children }) {
 }
 
 function ManualBlock({ title, children }) {
-  return <div style={{ marginBottom: 14, padding: "10px 12px", border: "1px solid " + T.borderLight, borderRadius: 6, background: T.bg }}>
+  return <div style={{ marginBottom: 16 }}>
     <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>{title}</div>
-    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>{children}</div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
   </div>;
 }
 
@@ -847,9 +847,9 @@ const hourInputStyle = {
 };
 
 const semHeadCell = {
-  padding: "4px 6px",
-  borderBottom: "1px solid " + T.borderLight,
-  background: T.surface,
+  padding: "6px 6px",
+  borderBottom: "1px solid " + T.border,
+  background: T.bg,
   fontSize: 11,
   fontWeight: 700,
   color: T.textMuted,

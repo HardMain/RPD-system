@@ -3,7 +3,7 @@ import { T } from "../theme.js";
 import { ChevronDownIcon, ChevronUpIcon } from "./icons.jsx";
 
 export const ExpandableTextarea = forwardRef(function ExpandableTextarea(
-  { value, onChange, onBlur, placeholder, disabled, style, collapsedMaxHeight = 110, wrapperStyle, iconColor },
+  { value, onChange, onBlur, onFocus, placeholder, disabled, style, collapsedMaxHeight = 110, wrapperStyle, iconColor, title },
   externalRef,
 ) {
   const [expanded, setExpanded] = useState(false);
@@ -42,6 +42,8 @@ export const ExpandableTextarea = forwardRef(function ExpandableTextarea(
       value={value}
       onChange={onChange}
       onBlur={onBlur}
+      onFocus={onFocus}
+      title={title}
       placeholder={placeholder}
       disabled={disabled}
       style={{

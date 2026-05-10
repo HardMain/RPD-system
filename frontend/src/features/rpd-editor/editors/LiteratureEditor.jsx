@@ -5,12 +5,19 @@ import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Dropdown } from "../../../components/Dropdown.jsx";
 import { MultiSelectDropdown } from "../../../components/MultiSelectDropdown.jsx";
+import { Combobox } from "../../../components/Combobox.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
-import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { LITERATURE_TYPES, ELS_OPTIONS } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
+
+async function fetchLiteratureSuggestions(mode, sourceType, q) {
+  const params = { q, mode };
+  if (sourceType) params.source_type = sourceType;
+  const r = await api.getSuggestions("literature_title", params);
+  return r.data?.items || [];
+}
 
 export function LiteratureEditor({ kind }) {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
@@ -181,6 +188,7 @@ function PrintedGroup({ g, rows, editable, required = false, onAdd, onDelete, on
               index={i + 1}
               editable={editable}
               deletable={!required || rows.length > 1}
+              sourceType={g.source_type}
               onSave={(patch) => onSave(item, patch)}
             />
           ))}
@@ -202,27 +210,18 @@ function PrintedGroup({ g, rows, editable, required = false, onAdd, onDelete, on
   </div>;
 }
 
-function PrintedRow({ item, index, editable, deletable = true, onSave }) {
-  const [title, setTitle] = useState(item.title || "");
-
+function PrintedRow({ item, index, editable, deletable = true, sourceType, onSave }) {
   const [copies, setCopies] = useState(item.copies_count ?? 0);
-
-  const titleRef = useRef(item.title || "");
   const copiesRef = useRef(item.copies_count ?? 0);
-  useEffect(() => {
-    const next = item.title || "";
-    if (title === titleRef.current) setTitle(next);
-    titleRef.current = next;
-  }, [item.title]);
   useEffect(() => {
     const next = item.copies_count ?? 0;
     if (copies === copiesRef.current) setCopies(next);
     copiesRef.current = next;
   }, [item.copies_count]);
 
-  function commitTitle() {
-    if (title === (item.title || "")) return;
-    onSave({ title });
+  function commitTitle(v) {
+    if (v === (item.title || "")) return;
+    onSave({ title: v });
   }
   function commitCopies() {
     const cur = +copies || 0;
@@ -243,11 +242,12 @@ function PrintedRow({ item, index, editable, deletable = true, onSave }) {
   return <tr {...trashProps}>
     <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
     <td style={{ ...td, padding: 4 }}>
-      <ExpandableTextarea
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        onBlur={commitTitle}
+      <Combobox
+        value={item.title || ""}
+        onCommit={commitTitle}
+        fetchSuggestions={(q) => fetchLiteratureSuggestions("printed", sourceType, q)}
         placeholder="Например: Курс физики (Трофимова Т.И., Академия, 2019, 560 с.)"
+        textarea
         collapsedMaxHeight={70}
         style={inlineTextarea}
       />
@@ -318,29 +318,19 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
 }
 
 function ElectronicRow({ item, editable, onSave }) {
-  const [title, setTitle] = useState(item.title || "");
-
   const [url, setUrl] = useState(((item.url || "").trim() ? item.url : ""));
-
-  const titleRef = useRef(item.title || "");
   const urlRef = useRef((item.url || "").trim() ? item.url : "");
-  useEffect(() => {
-    const next = item.title || "";
-    if (title === titleRef.current) setTitle(next);
-    titleRef.current = next;
-  }, [item.title]);
   useEffect(() => {
     const next = (item.url || "").trim() ? item.url : "";
     if (url === urlRef.current) setUrl(next);
     urlRef.current = next;
   }, [item.url]);
 
-  function commitTitle() {
-    if (title === (item.title || "")) return;
-    onSave({ title });
+  function commitTitle(v) {
+    if (v === (item.title || "")) return;
+    onSave({ title: v });
   }
   function commitUrl() {
-
     const clean = url.trim();
     const next = clean ? clean : " ";
     if (next === (item.url || "")) return;
@@ -384,11 +374,12 @@ function ElectronicRow({ item, editable, onSave }) {
       />
     </td>
     <td style={{ ...td, padding: 4 }}>
-      <ExpandableTextarea
-        value={title}
-        onChange={e => setTitle(e.target.value)}
-        onBlur={commitTitle}
+      <Combobox
+        value={item.title || ""}
+        onCommit={commitTitle}
+        fetchSuggestions={(q) => fetchLiteratureSuggestions("electronic", item.source_type, q)}
         placeholder="Например: Информатика. Базовый курс (Денисова Э.В., 2017)"
+        textarea
         collapsedMaxHeight={70}
         style={inlineTextarea}
       />

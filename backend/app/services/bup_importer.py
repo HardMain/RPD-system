@@ -110,26 +110,35 @@ async def _get_or_create_competency(
     )
     c = res.scalars().first()
     if c:
-        await _ensure_at_least_one_indicator(db, c)
+        await _ensure_three_indicators(db, c)
         return c
     c = Competency(code=code, name="(требуется заполнение)", id_direction=id_direction)
     db.add(c)
     await db.flush()
-    await _ensure_at_least_one_indicator(db, c)
+    await _ensure_three_indicators(db, c)
     return c
 
-async def _ensure_at_least_one_indicator(db: AsyncSession, comp: Competency) -> None:
+async def _ensure_three_indicators(db: AsyncSession, comp: Competency) -> None:
     res = await db.execute(
-        select(CompetencyIndicator).where(CompetencyIndicator.id_competency == comp.id_competency).limit(1)
+        select(CompetencyIndicator).where(CompetencyIndicator.id_competency == comp.id_competency)
     )
-    if res.scalar_one_or_none() is not None:
-        return
-    db.add(CompetencyIndicator(
-        id_competency=comp.id_competency,
-        code=f"{comp.code}.1",
-        description="(требуется заполнение)",
-    ))
-    await db.flush()
+    existing_codes = {i.code for i in res.scalars().all()}
+    placeholders = [
+        (f"ИД-1{comp.code}", "Знает (требуется заполнение)"),
+        (f"ИД-2{comp.code}", "Умеет (требуется заполнение)"),
+        (f"ИД-3{comp.code}", "Владеет (требуется заполнение)"),
+    ]
+    added = False
+    for code, desc in placeholders:
+        if code not in existing_codes:
+            db.add(CompetencyIndicator(
+                id_competency=comp.id_competency,
+                code=code,
+                description=desc,
+            ))
+            added = True
+    if added:
+        await db.flush()
 
 def _semesters_to_jsonb(semesters: list[ParsedSemester]) -> list[dict] | None:
     if not semesters:

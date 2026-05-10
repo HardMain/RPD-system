@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import * as api from "../../../api/client.js";
 import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Dropdown } from "../../../components/Dropdown.jsx";
+import { Combobox } from "../../../components/Combobox.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { DATABASE_TYPES } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
+
+const fetchDatabaseSuggestions = async (q) => {
+  const r = await api.getSuggestions("database_name", { q });
+  return r.data?.items || [];
+};
 
 export function DatabasesEditor() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
@@ -92,17 +98,9 @@ export function DatabasesEditor() {
 }
 
 function DatabaseRow({ item, editable, onSave }) {
-  const [name, setName] = useState(item.name || "");
-  const lastSyncedRef = useRef(item.name || "");
-  useEffect(() => {
-    const next = item.name || "";
-    if (name === lastSyncedRef.current) setName(next);
-    lastSyncedRef.current = next;
-  }, [item.name]);
-
-  function commitName() {
-    if (name === (item.name || "")) return;
-    onSave({ name });
+  function commitName(v) {
+    if (v === (item.name || "")) return;
+    onSave({ name: v });
   }
   function changeType(v) {
     if ((v || null) === (item.db_type || null)) return;
@@ -129,10 +127,10 @@ function DatabaseRow({ item, editable, onSave }) {
       />
     </td>
     <td style={{ ...td, padding: 4 }}>
-      <input
-        value={name}
-        onChange={e => setName(e.target.value)}
-        onBlur={commitName}
+      <Combobox
+        value={item.name || ""}
+        onCommit={commitName}
+        fetchSuggestions={fetchDatabaseSuggestions}
         placeholder="Например, eLIBRARY.RU"
         style={inlineInput}
       />

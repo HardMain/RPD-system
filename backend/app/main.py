@@ -8,6 +8,7 @@ from app.core.database import engine, Base
 from app.routers import (
     auth, rpd, llm, notifications, competencies, upload, export,
     admin, bups, admin_bups, reference, files, admin_directions, fos,
+    suggestions, admin_dictionary,
 )
 from app.seed import seed_data
 
@@ -57,12 +58,30 @@ async def _apply_schema_patches() -> None:
                 f"ALTER TABLE rpd_learning_outcomes ADD COLUMN IF NOT EXISTS {col} {ddl}"
             ))
 
+        await conn.execute(text("ALTER TABLE competency_indicators ALTER COLUMN code TYPE VARCHAR(40)"))
+
+        await conn.execute(text(r"""
+            UPDATE competency_indicators ci
+            SET code = 'ИД-' || split_part(ci.code, '.', 2) || c.code
+            FROM competencies c
+            WHERE ci.id_competency = c.id_competency
+              AND ci.code LIKE c.code || '.%'
+              AND ci.code ~ '^.+\.[0-9]+$'
+        """))
+        await conn.execute(text(
+            "DELETE FROM dictionary_entries WHERE kind IN ('indicator_code', 'indicator_description')"
+        ))
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await _apply_schema_patches()
     await seed_data()
+    from app.core.database import async_session
+    from app.services.dictionary_service import backfill_from_approved
+    async with async_session() as db:
+        await backfill_from_approved(db)
     yield
 
 app = FastAPI(
@@ -92,6 +111,8 @@ app.include_router(admin.router)
 app.include_router(admin_bups.router)
 app.include_router(admin_directions.router)
 app.include_router(reference.router)
+app.include_router(suggestions.router)
+app.include_router(admin_dictionary.router)
 app.include_router(files.router)
 app.include_router(fos.router)
 

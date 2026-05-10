@@ -1292,6 +1292,7 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
     current.comment = data.comment
     stage_name = current.reviewer.full_name if current.reviewer else "Согласующий"
 
+    just_approved = False
     if data.action == "approve":
         current.status = "approved"
         next_step = next((s for s in route if s.step_order > current.step_order), None)
@@ -1308,6 +1309,7 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
             ))
         else:
             rpd.status = "Согласовано"
+            just_approved = True
     else:
         current.status = "rejected"
         rpd.status = "На доработке"
@@ -1323,6 +1325,9 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
     if data.comment:
         msg += f": {data.comment}"
     db.add(Notification(id_user=rpd.id_author, id_rpd=rpd_id, message=msg))
+    if just_approved:
+        from app.services.dictionary_service import harvest_rpd
+        await harvest_rpd(db, rpd_id)
     await db.commit()
     return {"detail": f"РПД {rpd.status}"}
 
