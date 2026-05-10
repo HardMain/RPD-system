@@ -93,6 +93,15 @@ export const adminUpdateDictionary = (idEntry, payload) =>
 export const adminDeleteDictionary = (idEntry) =>
   api.delete(`/admin/dictionary/${idEntry}`);
 
+export const adminListDisciplines = (params) =>
+  api.get('/admin/disciplines/', { params: params || {} });
+export const adminCreateDiscipline = (payload) =>
+  api.post('/admin/disciplines/', payload);
+export const adminUpdateDiscipline = (idDiscipline, payload) =>
+  api.patch(`/admin/disciplines/${idDiscipline}`, payload);
+export const adminDeleteDiscipline = (idDiscipline) =>
+  api.delete(`/admin/disciplines/${idDiscipline}`);
+
 export const fileUrl = (fileId) => `/api/files/${fileId}`;
 
 export const getFosFiles = (rpdId) => api.get(`/rpd/${rpdId}/fos`);

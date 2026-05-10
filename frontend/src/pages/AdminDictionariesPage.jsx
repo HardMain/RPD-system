@@ -11,6 +11,7 @@ import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorMod
 import { LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
 
 const KINDS = [
+  { id: "discipline", label: "Дисциплины" },
   { id: "software_name", label: "ПО" },
   { id: "database_name", label: "БД и ИСС" },
   { id: "equipment", label: "Оборудование" },
@@ -22,6 +23,19 @@ const KINDS = [
   { id: "indicator_description", label: "Индикаторы достижения" },
   { id: "software_purpose", label: "Назначение ПО" },
 ];
+
+function adaptDiscipline(d) {
+  return {
+    id_entry: d.id_discipline,
+    kind: "discipline",
+    value: d.name,
+    source_type: null,
+    mode: null,
+    source: "manual",
+    used_in_bups: d.used_in_bups || 0,
+    used_in_rpds: d.used_in_rpds || 0,
+  };
+}
 
 const PARENT_LABELS = {
   indicator_code: { col: "Компетенция", input: "Код компетенции", placeholder: "напр. ОК-1" },
@@ -82,18 +96,27 @@ export function AdminDictionariesPage() {
 
   const isLiterature = kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(kind);
+  const isDiscipline = kind === "discipline";
   const parentMeta = PARENT_LABELS[kind] || null;
   const useGroupedView = !!parentMeta;
   const showPrefixFilter = FILTERABLE_KINDS.has(kind);
 
-  const reload = () => {
+  const fetchItems = () => isDiscipline
+    ? api.adminListDisciplines().then(r => (r.data || []).map(adaptDiscipline))
+    : api.adminListDictionary(kind, {}).then(r => r.data || []);
+
+  const silentRefresh = () => {
+    fetchItems().then(setItems).catch(() => {});
+  };
+  const reload = silentRefresh;
+  useEffect(() => {
     setLoading(true);
-    api.adminListDictionary(kind, {})
-      .then(r => setItems(r.data || []))
+    setItems([]);
+    fetchItems()
+      .then(setItems)
       .catch(() => setItems([]))
       .finally(() => setLoading(false));
-  };
-  useEffect(() => { reload();  }, [kind]);
+  }, [kind]);
 
   useEffect(() => {
     if (!isIndicatorKind) return;
@@ -181,13 +204,28 @@ export function AdminDictionariesPage() {
 
   async function performDelete(item) {
     if (!item) return;
-    try { await api.adminDeleteDictionary(item.id_entry); reload(); }
+    try {
+      if (item.kind === "discipline") {
+        await api.adminDeleteDiscipline(item.id_entry);
+      } else {
+        await api.adminDeleteDictionary(item.id_entry);
+      }
+      reload();
+    }
     catch (e) { setErrorMsg("Не удалось удалить: " + (e?.response?.data?.detail || e.message)); }
   }
 
   async function handleAdd() {
     setAdding(true);
     try {
+      if (isDiscipline) {
+        const v = newValue.trim();
+        if (!v) throw new Error("Заполните название");
+        await api.adminCreateDiscipline({ name: v });
+        setNewValue("");
+        reload();
+        return;
+      }
       let payload;
       if (kind === "indicator_code") {
         const comp = newCompetency.trim();
@@ -229,7 +267,9 @@ export function AdminDictionariesPage() {
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
       <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Справочники</div>
       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
-        Записи отсюда подсказываются преподавателям при заполнении РПД. Автоматически дополняются после согласования каждой РПД.
+        {isDiscipline
+          ? "Перечень всех дисциплин, доступных для создания РПД вручную. Пополняется автоматически при импорте БУПов; при удалении БУПа дисциплины из справочника не удаляются."
+          : "Записи отсюда подсказываются преподавателям при заполнении РПД. Автоматически дополняются после согласования каждой РПД."}
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
@@ -324,7 +364,7 @@ export function AdminDictionariesPage() {
               value={newValue}
               onChange={e => setNewValue(e.target.value)}
               onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
-              placeholder="Введите значение и нажмите «Добавить»…"
+              placeholder={isDiscipline ? "Название дисциплины и нажмите «Добавить»…" : "Введите значение и нажмите «Добавить»…"}
               style={{ flex: 1, padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none" }}
             />
           )}
@@ -372,15 +412,18 @@ export function AdminDictionariesPage() {
               <thead><tr style={{ background: T.surface }}>
                 {useGroupedView && <th style={{ ...hdr, width: 180 }}>{parentMeta.col}</th>}
                 {isLiterature && <th style={hdr}>Подраздел</th>}
-                <th style={hdr}>Значение</th>
+                <th style={hdr}>{isDiscipline ? "Название дисциплины" : "Значение"}</th>
                 {isLiterature && <th style={hdr}>Тип</th>}
-                <th style={{ ...hdr, width: 160 }}>Источник</th>
+                <th style={{ ...hdr, width: 200 }}>{isDiscipline ? "Использование" : "Источник"}</th>
                 <th style={{ ...hdr, textAlign: "center", width: 80 }} />
               </tr></thead>
               <tbody>
                 {useGroupedView
                   ? grouped.flatMap(g => g.rows.map((it, i) => (
-                    <tr key={it.id_entry} style={{ background: T.surface, borderTop: i === 0 ? "2px solid " + T.borderLight : "none" }}>
+                    <tr key={it.id_entry}
+                        onDoubleClick={() => setEditing(it)}
+                        style={{ background: T.surface, borderTop: i === 0 ? "2px solid " + T.borderLight : "none", cursor: "pointer" }}
+                        title="Двойной клик — редактировать">
                       {i === 0 && (
                         <td rowSpan={g.rows.length}
                           style={{ ...tcell, fontWeight: 700, color: g.parent === "—" ? T.textMuted : T.text, fontStyle: g.parent === "—" ? "italic" : "normal", whiteSpace: "nowrap", verticalAlign: "middle", textAlign: "center", borderRight: "1px solid " + T.borderLight, background: T.surface }}>
@@ -391,20 +434,25 @@ export function AdminDictionariesPage() {
                       <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
                         {it.source === "approved_rpd" ? "Из согласованной РПД" : "Вручную"}
                       </td>
-                      <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }}>
+                      <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }} onDoubleClick={e => e.stopPropagation()}>
                         <RowActions onEdit={() => setEditing(it)} onDelete={() => setPendingDelete(it)} />
                       </td>
                     </tr>
                   )))
                   : filtered.map(it => (
-                    <tr key={it.id_entry} style={{ background: T.surface }}>
+                    <tr key={it.id_entry}
+                        onDoubleClick={() => setEditing(it)}
+                        style={{ background: T.surface, cursor: "pointer" }}
+                        title="Двойной клик — редактировать">
                       {isLiterature && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic" }}>{it.source_type || "—"}</td>}
                       <td style={{ ...tcell, fontWeight: 500 }}>{it.value}</td>
                       {isLiterature && <td style={{ ...tcell, color: it.mode ? T.text : T.textMuted, fontStyle: it.mode ? "normal" : "italic" }}>{it.mode ? MODE_LABELS[it.mode] || it.mode : "—"}</td>}
                       <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
-                        {it.source === "approved_rpd" ? "Из согласованной РПД" : "Вручную"}
+                        {isDiscipline
+                          ? <UsageInfo bups={it.used_in_bups} rpds={it.used_in_rpds} />
+                          : (it.source === "approved_rpd" ? "Из согласованной РПД" : "Вручную")}
                       </td>
-                      <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }}>
+                      <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }} onDoubleClick={e => e.stopPropagation()}>
                         <RowActions onEdit={() => setEditing(it)} onDelete={() => setPendingDelete(it)} />
                       </td>
                     </tr>
@@ -415,8 +463,10 @@ export function AdminDictionariesPage() {
     </div>
 
     {pendingDelete && <ConfirmDeleteModal
-      title="Удалить запись из справочника?"
-      message={`«${pendingDelete.value}» больше не будет предлагаться при заполнении РПД. На уже сохранённые РПД это не повлияет.`}
+      title={pendingDelete.kind === "discipline" ? "Удалить дисциплину из справочника?" : "Удалить запись из справочника?"}
+      message={pendingDelete.kind === "discipline"
+        ? `«${pendingDelete.value}» больше не будет доступна для создания РПД вручную. Удаление возможно только если дисциплина не используется ни в одном БУПе и ни в одной РПД.`
+        : `«${pendingDelete.value}» больше не будет предлагаться при заполнении РПД. На уже сохранённые РПД это не повлияет.`}
       onClose={() => setPendingDelete(null)}
       onConfirm={async () => { const it = pendingDelete; setPendingDelete(null); await performDelete(it); }}
     />}
@@ -429,6 +479,16 @@ export function AdminDictionariesPage() {
     />}
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
+}
+
+function UsageInfo({ bups, rpds }) {
+  if (!bups && !rpds) {
+    return <span style={{ fontStyle: "italic" }}>Не используется</span>;
+  }
+  const parts = [];
+  if (bups) parts.push(`${bups} БУП${bups === 1 ? "" : "ов"}`);
+  if (rpds) parts.push(`${rpds} РПД`);
+  return <span>{parts.join(" · ")}</span>;
 }
 
 function FilterChip({ label, count, active, onClick }) {
@@ -492,6 +552,13 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError }) 
   async function save() {
     setSaving(true);
     try {
+      if (entry.kind === "discipline") {
+        const v = value.trim();
+        if (!v) throw new Error("Заполните название");
+        await api.adminUpdateDiscipline(entry.id_entry, { name: v });
+        onSaved();
+        return;
+      }
       let payload;
       if (entry.kind === "indicator_code") {
         const comp = competency.trim();

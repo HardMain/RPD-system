@@ -16,6 +16,23 @@ const fetchAssessmentToolSuggestions = async (q) => {
   return r.data?.items || [];
 };
 
+const PLACEHOLDER_VERBS = { 1: "Знает", 2: "Умеет", 3: "Владеет" };
+
+function isPlaceholderDescription(desc) {
+  return (desc || "").toLowerCase().includes("требуется заполнение");
+}
+
+function indicatorIndex(code) {
+  const m = (code || "").match(/^ИД-(\d+)/);
+  return m ? parseInt(m[1], 10) : null;
+}
+
+function placeholderHint(indicatorCode) {
+  const idx = indicatorIndex(indicatorCode);
+  const verb = PLACEHOLDER_VERBS[idx];
+  return verb ? `${verb}… (требуется заполнение)` : "(требуется заполнение)";
+}
+
 function compareOutcomeRows(a, b) {
   const ac = (a.competency_code || "").trim();
   const bc = (b.competency_code || "").trim();
@@ -207,6 +224,8 @@ export function OutcomesEditor() {
         {rows.map((r, idx) => {
           const fromBase = !!r.id_indicator;
           const codeEditable = editable && !fromBase;
+          const descIsPlaceholder = isPlaceholderDescription(r.indicator_description);
+          const descEditable = editable && (codeEditable || descIsPlaceholder);
           const trProps = (editable && r.id_outcome)
             ? { "data-trash-row": "", "data-trash-id": String(r.id_outcome) }
             : {};
@@ -228,10 +247,17 @@ export function OutcomesEditor() {
                 onSave={v => saveRow(idx, { outcome_text: v })}
               />
             </td>
-            <td style={{ ...td, padding: codeEditable ? 4 : undefined, ...wrap }}>
-              {codeEditable
-                ? <SnapshotTextarea value={r.indicator_description || ""} onSave={v => saveRow(idx, { indicator_description: v })} placeholder="Описание индикатора достижения компетенции" parent={r.indicator_code || ""} />
-                : (r.indicator_description || "")}
+            <td style={{ ...td, padding: descEditable ? 4 : undefined, ...wrap }}>
+              {descEditable
+                ? <SnapshotTextarea
+                    value={descIsPlaceholder ? "" : (r.indicator_description || "")}
+                    onSave={v => saveRow(idx, { indicator_description: v })}
+                    placeholder={placeholderHint(r.indicator_code)}
+                    parent={r.indicator_code || ""}
+                  />
+                : (descIsPlaceholder
+                    ? <span style={{ color: T.textMuted, fontStyle: "italic" }}>{placeholderHint(r.indicator_code)}</span>
+                    : (r.indicator_description || ""))}
             </td>
             <td style={{ ...td, padding: 4, ...wrap }}>
               <AssessmentToolPicker
@@ -251,7 +277,10 @@ export function OutcomesEditor() {
 
     {editable && (
       <div style={{ marginTop: 8 }}>
-        <CompetencyAdder onAdd={addManualRow} />
+        <CompetencyAdder
+          onAdd={addManualRow}
+          existingIndicatorIds={new Set(rows.map(r => r.id_indicator).filter(Boolean))}
+        />
       </div>
     )}
 
@@ -296,11 +325,12 @@ function SnapshotTextarea({ value, onSave, placeholder, parent }) {
   />;
 }
 
-function CompetencyAdder({ onAdd }) {
+function CompetencyAdder({ onAdd, existingIndicatorIds }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [comps, setComps] = useState([]);
   const wrapRef = useRef(null);
+  const existing = existingIndicatorIds || new Set();
 
   useEffect(() => {
     api.getCompetencies().then(r => setComps(r.data || [])).catch(() => setComps([]));
@@ -359,20 +389,25 @@ function CompetencyAdder({ onAdd }) {
           {filtered.length === 0 && (
             <div style={{ padding: 8, fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>В базе ничего не нашлось.</div>
           )}
-          {filtered.map(it => (
-            <button
+          {filtered.map(it => {
+            const already = existing.has(it.id_indicator);
+            return <button
               key={`${it.competency_code}|${it.id_indicator}`}
               type="button"
-              onClick={async () => { setOpen(false); setQuery(""); await onAdd(it); }}
-              style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", border: "none", borderBottom: "1px solid " + T.borderLight, background: "transparent", cursor: "pointer", fontFamily: F, fontSize: 11, color: T.text, lineHeight: 1.35 }}
-              onMouseEnter={e => e.currentTarget.style.background = T.bg}
+              disabled={already}
+              onClick={already ? undefined : async () => { setOpen(false); setQuery(""); await onAdd(it); }}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "6px 8px", border: "none", borderBottom: "1px solid " + T.borderLight, background: "transparent", cursor: already ? "not-allowed" : "pointer", fontFamily: F, fontSize: 11, color: already ? T.textMuted : T.text, lineHeight: 1.35, opacity: already ? 0.55 : 1 }}
+              onMouseEnter={e => { if (!already) e.currentTarget.style.background = T.bg; }}
               onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-              title={it.indicator_description || ""}
+              title={already ? "Уже добавлено в таблицу" : (it.indicator_description || "")}
             >
-              <div><b>{it.competency_code}</b> · {it.indicator_code}</div>
+              <div>
+                <b>{it.competency_code}</b> · {it.indicator_code}
+                {already && <span style={{ marginLeft: 6, fontSize: 10, color: T.textMuted, fontStyle: "italic" }}>уже добавлено</span>}
+              </div>
               <div style={{ color: T.textMuted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.indicator_description}</div>
-            </button>
-          ))}
+            </button>;
+          })}
         </div>
         <div style={{ padding: 6, borderTop: "1px solid " + T.borderLight, background: T.bg }}>
           <Btn small onClick={async () => { setOpen(false); setQuery(""); await onAdd({}); }}>

@@ -14,11 +14,12 @@ export function AdminDirectionsPage() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const reload = () => {
-    setLoading(true);
-    api.adminListDirections().then(r => setItems(r.data)).catch(() => setItems([])).finally(() => setLoading(false));
+  const fetchAll = (silent) => {
+    if (!silent) setLoading(true);
+    api.adminListDirections().then(r => setItems(r.data)).catch(() => { if (!silent) setItems([]); }).finally(() => { if (!silent) setLoading(false); });
   };
-  useEffect(() => { reload(); }, []);
+  const reload = () => fetchAll(true);
+  useEffect(() => { fetchAll(false); }, []);
 
   async function uploadFor(directionId, file) {
     if (!file) return;

@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select, delete, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -10,9 +10,27 @@ from app.models import (
 
 APPROVED_STATUS = "Согласовано"
 
+PLACEHOLDER_VERBS = {1: "Знает", 2: "Умеет", 3: "Владеет"}
+
 
 def _norm(value: str | None) -> str:
     return (value or "").strip()
+
+
+def _is_placeholder(value: str | None) -> bool:
+    return "требуется заполнение" in (value or "").lower()
+
+
+def _indicator_index(indicator_code: str | None) -> int | None:
+    import re
+    m = re.match(r"^ИД-(\d+)", _norm(indicator_code))
+    return int(m.group(1)) if m else None
+
+
+def _placeholder_for(indicator_code: str | None) -> str:
+    idx = _indicator_index(indicator_code)
+    verb = PLACEHOLDER_VERBS.get(idx) if idx else None
+    return f"{verb}… (требуется заполнение)" if verb else "(требуется заполнение)"
 
 
 async def _existing_keys(db: AsyncSession) -> set[tuple]:
@@ -41,7 +59,7 @@ def _add_if_new(
     v = _norm(value)
     if not v:
         return False
-    if "требуется заполнение" in v.lower():
+    if _is_placeholder(v):
         return False
     st = _norm(source_type) or None
     md = _norm(mode) or None
@@ -55,6 +73,73 @@ def _add_if_new(
     return True
 
 
+async def _upsert_indicator_description(
+    db: AsyncSession,
+    *,
+    value: str,
+    source_type: str | None,
+    source: str,
+) -> bool:
+    v = _norm(value)
+    st = _norm(source_type) or None
+    if not v or st is None:
+        return False
+    is_ph = _is_placeholder(v)
+    res = await db.execute(
+        select(DictionaryEntry)
+        .where(DictionaryEntry.kind == "indicator_description")
+        .where(DictionaryEntry.source_type == st)
+    )
+    existing = list(res.scalars().all())
+    real = [e for e in existing if not _is_placeholder(e.value)]
+    placeholders = [e for e in existing if _is_placeholder(e.value)]
+
+    for e in placeholders[1:]:
+        await db.delete(e)
+    if real:
+        for e in placeholders:
+            await db.delete(e)
+
+    if is_ph:
+        if real or placeholders:
+            return False
+        db.add(DictionaryEntry(
+            kind="indicator_description", value=v, source_type=st, source=source,
+        ))
+        return True
+
+    matching = next((e for e in real if _norm(e.value).lower() == v.lower()), None)
+    if matching is not None:
+        return False
+    if real:
+        return False
+    db.add(DictionaryEntry(
+        kind="indicator_description", value=v, source_type=st, source=source,
+    ))
+    return True
+
+
+async def _sync_indicator_description(
+    db: AsyncSession, indicator: CompetencyIndicator | None, snapshot: str,
+) -> bool:
+    if indicator is None:
+        return False
+    snap = _norm(snapshot)
+    if not snap or _is_placeholder(snap):
+        return False
+    if _norm(indicator.description) == snap:
+        return False
+    indicator.description = snap
+    await db.execute(
+        delete(DictionaryEntry).where(
+            DictionaryEntry.kind == "indicator_description",
+            DictionaryEntry.source_type == indicator.code,
+            func.lower(DictionaryEntry.value).like("%требуется заполнение%"),
+        )
+    )
+    return True
+
+
 async def harvest_rpd(db: AsyncSession, rpd_id: int, *, keys: set[tuple] | None = None) -> int:
     if keys is None:
         keys = await _existing_keys(db)
@@ -64,7 +149,7 @@ async def harvest_rpd(db: AsyncSession, rpd_id: int, *, keys: set[tuple] | None 
             selectinload(Rpd.databases),
             selectinload(Rpd.material_tech),
             selectinload(Rpd.literature),
-            selectinload(Rpd.learning_outcomes),
+            selectinload(Rpd.learning_outcomes).selectinload(RpdLearningOutcome.indicator),
         )
     )
     rpd = res.scalar_one_or_none()
@@ -97,14 +182,73 @@ async def harvest_rpd(db: AsyncSession, rpd_id: int, *, keys: set[tuple] | None 
                        value=o.indicator_code, source="approved_rpd",
                        source_type=comp_code):
             added += 1
-        if _add_if_new(db, keys, kind="indicator_description",
-                       value=o.indicator_description, source="approved_rpd",
-                       source_type=ind_code):
+        if await _sync_indicator_description(db, o.indicator, o.indicator_description or ""):
+            added += 1
+        if await _upsert_indicator_description(
+            db, value=o.indicator_description or "", source_type=ind_code, source="approved_rpd",
+        ):
             added += 1
     return added
 
 
+async def _dedupe_indicator_descriptions(db: AsyncSession) -> int:
+    res = await db.execute(
+        select(DictionaryEntry).where(DictionaryEntry.kind == "indicator_description")
+    )
+    rows = list(res.scalars().all())
+    by_st: dict[str | None, list[DictionaryEntry]] = {}
+    for r in rows:
+        by_st.setdefault((r.source_type or None), []).append(r)
+    removed = 0
+    for st, entries in by_st.items():
+        if len(entries) <= 1:
+            continue
+        real = [e for e in entries if not _is_placeholder(e.value)]
+        placeholders = [e for e in entries if _is_placeholder(e.value)]
+        if real:
+            for e in placeholders:
+                await db.delete(e)
+                removed += 1
+            continue
+        keep = sorted(placeholders, key=lambda e: e.id_entry)[0]
+        for e in placeholders:
+            if e.id_entry != keep.id_entry:
+                await db.delete(e)
+                removed += 1
+    return removed
+
+
+async def _upgrade_placeholder_texts(db: AsyncSession) -> int:
+    upgraded = 0
+    res = await db.execute(
+        select(CompetencyIndicator).where(
+            func.lower(CompetencyIndicator.description).like("%требуется заполнение%")
+        )
+    )
+    for ci in res.scalars().all():
+        target = _placeholder_for(ci.code)
+        if target and _norm(ci.description) != target:
+            ci.description = target
+            upgraded += 1
+
+    res = await db.execute(
+        select(DictionaryEntry).where(
+            DictionaryEntry.kind == "indicator_description",
+            DictionaryEntry.source_type.is_not(None),
+            func.lower(DictionaryEntry.value).like("%требуется заполнение%"),
+        )
+    )
+    for e in res.scalars().all():
+        target = _placeholder_for(e.source_type)
+        if target and _norm(e.value) != target:
+            e.value = target
+            upgraded += 1
+    return upgraded
+
+
 async def backfill_from_approved(db: AsyncSession) -> int:
+    upgraded = await _upgrade_placeholder_texts(db)
+    removed = await _dedupe_indicator_descriptions(db)
     keys = await _existing_keys(db)
     res = await db.execute(select(Rpd.id_rpd).where(Rpd.status == APPROVED_STATUS))
     ids = [row[0] for row in res.all()]
@@ -128,10 +272,10 @@ async def backfill_from_approved(db: AsyncSession) -> int:
                        value=ind_code, source="manual",
                        source_type=_norm(comp_code) or None):
             total += 1
-        if _add_if_new(db, keys, kind="indicator_description",
-                       value=desc, source="manual",
-                       source_type=_norm(ind_code) or None):
+        if await _upsert_indicator_description(
+            db, value=desc, source_type=_norm(ind_code) or None, source="manual",
+        ):
             total += 1
-    if total:
+    if total or removed or upgraded:
         await db.commit()
     return total

@@ -121,9 +121,9 @@ async def ensure_three_indicators_for_all_competencies():
         for comp in comps_res.scalars().all():
             existing_codes = {i.code for i in comp.indicators}
             placeholders = [
-                (f"ИД-1{comp.code}", "Знает (требуется заполнение)"),
-                (f"ИД-2{comp.code}", "Умеет (требуется заполнение)"),
-                (f"ИД-3{comp.code}", "Владеет (требуется заполнение)"),
+                (f"ИД-1{comp.code}", "Знает… (требуется заполнение)"),
+                (f"ИД-2{comp.code}", "Умеет… (требуется заполнение)"),
+                (f"ИД-3{comp.code}", "Владеет… (требуется заполнение)"),
             ]
             for code, desc in placeholders:
                 if code not in existing_codes:

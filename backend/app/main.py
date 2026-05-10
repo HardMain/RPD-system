@@ -8,7 +8,7 @@ from app.core.database import engine, Base
 from app.routers import (
     auth, rpd, llm, notifications, competencies, upload, export,
     admin, bups, admin_bups, reference, files, admin_directions, fos,
-    suggestions, admin_dictionary,
+    suggestions, admin_dictionary, admin_disciplines,
 )
 from app.seed import seed_data
 
@@ -113,6 +113,7 @@ app.include_router(admin_directions.router)
 app.include_router(reference.router)
 app.include_router(suggestions.router)
 app.include_router(admin_dictionary.router)
+app.include_router(admin_disciplines.router)
 app.include_router(files.router)
 app.include_router(fos.router)
 

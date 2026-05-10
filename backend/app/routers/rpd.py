@@ -961,6 +961,14 @@ async def add_manual_outcome(
     rpd = await db.get(Rpd, rpd_id)
     if not rpd:
         raise HTTPException(status_code=404, detail="РПД не найдена")
+    if data.id_indicator is not None:
+        dup_res = await db.execute(
+            select(RpdLearningOutcome.id_outcome)
+            .where(RpdLearningOutcome.id_rpd == rpd_id)
+            .where(RpdLearningOutcome.id_indicator == data.id_indicator)
+        )
+        if dup_res.scalar_one_or_none() is not None:
+            raise HTTPException(status_code=400, detail="Эта компетенция уже добавлена в таблицу")
     lo = RpdLearningOutcome(
         id_rpd=rpd_id,
         id_indicator=data.id_indicator,

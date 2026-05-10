@@ -17,11 +17,12 @@ export function AdminBupsPage() {
   const [pendingDelete, setPendingDelete] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const reload = () => {
-    setLoading(true);
-    api.adminListBups().then(r => setBups(r.data)).catch(() => {}).finally(() => setLoading(false));
+  const fetchAll = (silent) => {
+    if (!silent) setLoading(true);
+    api.adminListBups().then(r => setBups(r.data)).catch(() => {}).finally(() => { if (!silent) setLoading(false); });
   };
-  useEffect(() => { reload(); }, []);
+  const reload = () => fetchAll(true);
+  useEffect(() => { fetchAll(false); }, []);
 
   async function performDelete(b) {
     if (!b) return;
@@ -72,7 +73,7 @@ export function AdminBupsPage() {
     {openBup != null && <BupDetailModal bupId={openBup} onClose={() => setOpenBup(null)} />}
     {pendingDelete && <ConfirmDeleteModal
       title={`Удалить БУП «${pendingDelete.name}»?`}
-      message="БУП и его данные (дисциплины, компетенции и индикаторы, использовавшиеся только в этом плане) будут стёрты из базы. Уже созданные РПД не изменятся — их часы, компетенции и направление сохранены внутри самих РПД."
+      message="БУП будет стёрт из базы. Дисциплины, компетенции и индикаторы из справочников останутся — их можно будет переиспользовать при ручном создании РПД или при импорте новых БУПов. Уже созданные РПД не изменятся: их часы, компетенции и направление сохранены внутри самих РПД."
       onClose={() => setPendingDelete(null)}
       onConfirm={async () => { const b = pendingDelete; setPendingDelete(null); await performDelete(b); }}
     />}
@@ -128,7 +129,7 @@ function ImportBupModal({ onClose, onImported }) {
           БУП импортирован: <b>{result.bup.name}</b>. Распознано дисциплин: {result.parsed_disciplines}.
         </div>
         {result.created_competencies?.length > 0 && <div style={{ marginBottom: 12, fontSize: 13 }}>
-          Созданы новые компетенции (требуется заполнить названия в админке): <b>{result.created_competencies.join(", ")}</b>.
+          Добавлены в справочники компетенции: <b>{result.created_competencies.join(", ")}</b>.
         </div>}
         {result.warnings?.length > 0 && <div style={{ background: T.orangeLight, border: "1px solid " + T.orange, padding: 10, borderRadius: 6, fontSize: 13, marginBottom: 12, color: T.orange }}>
           {result.warnings.map((w, i) => <div key={i}>⚠ {w}</div>)}

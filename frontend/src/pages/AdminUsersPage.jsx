@@ -19,14 +19,15 @@ export function AdminUsersPage({ user }) {
   const [pendingDeactivate, setPendingDeactivate] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
-  const reload = () => {
-    setLoading(true);
+  const fetchAll = (silent) => {
+    if (!silent) setLoading(true);
     Promise.all([api.adminListUsers(), api.adminListRoles(), api.adminListDepartments()])
       .then(([u, r, d]) => { setUsers(u.data || []); setRoles(r.data || []); setDepartments(d.data || []); })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!silent) setLoading(false); });
   };
-  useEffect(() => { reload(); }, []);
+  const reload = () => fetchAll(true);
+  useEffect(() => { fetchAll(false); }, []);
 
   async function performDeactivate(u) {
     if (!u) return;

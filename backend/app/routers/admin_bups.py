@@ -11,9 +11,8 @@ from app.core.auth import get_current_user, user_can
 from app.core.database import get_db
 from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency,
-    Direction, Discipline, Competency, CompetencyIndicator,
-    Department, StoredFile, User,
-    Rpd, RpdBupDiscipline, RpdLearningOutcome,
+    Direction, Competency, DictionaryEntry, StoredFile, User,
+    RpdBupDiscipline,
 )
 from app.routers.bups import _bup_out, _bd_out
 from app.schemas import (
@@ -22,7 +21,7 @@ from app.schemas import (
 )
 from app.services import storage_service
 from app.services.bup_parser import parse_bup_xls
-from app.services.bup_importer import import_parsed_bup, _normalize_competency_code
+from app.services.bup_importer import import_parsed_bup
 
 router = APIRouter(prefix="/api/admin/bups", tags=["admin-bups"])
 
@@ -118,20 +117,12 @@ async def admin_delete_bup(
     _require_admin(user)
     bup = await db.get(
         Bup, bup_id,
-        options=[
-            selectinload(Bup.disciplines)
-                .selectinload(BupDiscipline.competencies)
-                .selectinload(BupDisciplineCompetency.competency),
-        ],
+        options=[selectinload(Bup.disciplines)],
     )
     if not bup:
         raise HTTPException(status_code=404)
 
     bd_ids = [bd.id_bup_discipline for bd in bup.disciplines]
-    discipline_ids = {bd.id_discipline for bd in bup.disciplines}
-    comp_ids_in_bup = {
-        link.id_competency for bd in bup.disciplines for link in bd.competencies
-    }
 
     if bd_ids:
         rbd_res = await db.execute(
@@ -153,35 +144,6 @@ async def admin_delete_bup(
             link.id_bup_discipline = None
         await db.flush()
 
-    if comp_ids_in_bup:
-        other_use_res = await db.execute(
-            select(BupDisciplineCompetency.id_competency)
-            .where(BupDisciplineCompetency.id_competency.in_(comp_ids_in_bup))
-            .where(BupDisciplineCompetency.id_bup_discipline.notin_(bd_ids or [-1]))
-            .distinct()
-        )
-        still_used = {row for row in other_use_res.scalars().all()}
-        comp_ids_to_drop = comp_ids_in_bup - still_used
-    else:
-        comp_ids_to_drop = set()
-
-    if comp_ids_to_drop:
-        from app.routers.rpd import _fill_outcome_snapshot
-        outcomes_to_detach = await db.execute(
-            select(RpdLearningOutcome)
-            .join(CompetencyIndicator, CompetencyIndicator.id_indicator == RpdLearningOutcome.id_indicator)
-            .where(CompetencyIndicator.id_competency.in_(comp_ids_to_drop))
-            .options(
-                selectinload(RpdLearningOutcome.indicator)
-                    .selectinload(CompetencyIndicator.competency),
-            )
-        )
-        for lo in outcomes_to_detach.scalars().all():
-            if lo.indicator is not None and not lo.indicator_code:
-                _fill_outcome_snapshot(lo, lo.indicator)
-            lo.id_indicator = None
-        await db.flush()
-
     src_id = bup.id_source_file
     if src_id:
         bup.id_source_file = None
@@ -198,35 +160,6 @@ async def admin_delete_bup(
                 pass
             await db.delete(sf)
             await db.flush()
-
-    if comp_ids_to_drop:
-        await db.execute(
-            CompetencyIndicator.__table__.delete().where(
-                CompetencyIndicator.id_competency.in_(comp_ids_to_drop)
-            )
-        )
-        await db.execute(
-            Competency.__table__.delete().where(
-                Competency.id_competency.in_(comp_ids_to_drop)
-            )
-        )
-
-    if discipline_ids:
-        for disc_id in discipline_ids:
-            still_in_bd = await db.execute(
-                select(BupDiscipline.id_bup_discipline)
-                .where(BupDiscipline.id_discipline == disc_id).limit(1)
-            )
-            if still_in_bd.scalar_one_or_none() is not None:
-                continue
-            still_in_rpd = await db.execute(
-                select(Rpd.id_rpd).where(Rpd.id_discipline == disc_id).limit(1)
-            )
-            if still_in_rpd.scalar_one_or_none() is not None:
-                continue
-            await db.execute(
-                Discipline.__table__.delete().where(Discipline.id_discipline == disc_id)
-            )
 
     await db.commit()
 
@@ -264,16 +197,27 @@ async def admin_import_bup_xls(
     if year is None:
         year = _year_from_filename(fname)
 
-    existing_codes_res = await db.execute(select(Competency.code))
-    existing_codes = set(existing_codes_res.scalars().all())
+    before_dict_codes_res = await db.execute(
+        select(DictionaryEntry.value).where(DictionaryEntry.kind == "competency_code")
+    )
+    before_dict_codes = set(before_dict_codes_res.scalars().all())
 
     bup = await import_parsed_bup(
         db, parsed, year=year, name_override=name_override, id_source_file=sf.id_file,
     )
     await db.commit()
 
-    after_codes_res = await db.execute(select(Competency.code))
-    new_codes = sorted(set(after_codes_res.scalars().all()) - existing_codes)
+    from app.services.dictionary_service import backfill_from_approved
+    await backfill_from_approved(db)
+
+    bup_codes_res = await db.execute(
+        select(Competency.code).distinct()
+        .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+        .join(BupDiscipline, BupDiscipline.id_bup_discipline == BupDisciplineCompetency.id_bup_discipline)
+        .where(BupDiscipline.id_bup == bup.id_bup)
+    )
+    bup_codes = set(bup_codes_res.scalars().all())
+    new_codes = sorted(bup_codes - before_dict_codes)
 
     detail = await _load_bup_detail(db, bup.id_bup)
     warnings: list[str] = []

@@ -41,6 +41,8 @@ async def list_suggestions(
         stmt = stmt.where(DictionaryEntry.source_type == source_type)
     if kind == "literature_title" and mode in ("printed", "electronic"):
         stmt = stmt.where(DictionaryEntry.mode == mode)
+    if kind == "indicator_description":
+        stmt = stmt.where(~DictionaryEntry.value.ilike("%требуется заполнение%"))
     if q:
         stmt = stmt.where(DictionaryEntry.value.ilike(f"%{q.strip()}%"))
     stmt = (
