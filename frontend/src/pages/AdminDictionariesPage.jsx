@@ -1,28 +1,60 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F } from "../theme.js";
-import { hdr, tcell } from "../styles.js";
+import { hdr, tcell, iconBtn } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { Dropdown } from "../components/Dropdown.jsx";
-import { TrashIcon, PlusIcon, PencilIcon } from "../components/icons.jsx";
+import { TrashIcon, PlusIcon, PencilIcon, UploadIcon } from "../components/icons.jsx";
+import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 import { LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
+import { BupsContent } from "./AdminBupsPage.jsx";
+import { DirectionsContent } from "./AdminDirectionsPage.jsx";
 
-const KINDS = [
-  { id: "discipline", label: "Дисциплины" },
-  { id: "software_name", label: "ПО" },
-  { id: "database_name", label: "БД и ИСС" },
-  { id: "equipment", label: "Оборудование" },
-  { id: "room_type", label: "Виды занятий (МТО)" },
-  { id: "literature_title", label: "Литература" },
-  { id: "assessment_tool", label: "Средства оценки" },
-  { id: "competency_code", label: "Компетенции (коды)" },
-  { id: "indicator_code", label: "Индикаторы (коды)" },
-  { id: "indicator_description", label: "Индикаторы достижения" },
-  { id: "software_purpose", label: "Назначение ПО" },
+const KIND_GROUPS = [
+  {
+    label: "Общие",
+    title: "Общие справочники",
+    kinds: [
+      { id: "discipline", label: "Дисциплины" },
+      { id: "bup", label: "БУПы" },
+      { id: "direction", label: "Направления и ФГОС" },
+      { id: "document", label: "Документы для LLM" },
+    ],
+  },
+  {
+    label: "Раздел 2",
+    title: "Раздел 2 — Планируемые результаты обучения",
+    kinds: [
+      { id: "competency_code", label: "Компетенции (коды)" },
+      { id: "indicator_code", label: "Индикаторы (коды)" },
+      { id: "indicator_description", label: "Индикаторы достижения" },
+      { id: "assessment_tool", label: "Средства оценки" },
+    ],
+  },
+  {
+    label: "Раздел 6",
+    title: "Раздел 6 — Литература, ПО, базы данных",
+    kinds: [
+      { id: "literature_title", label: "Литература" },
+      { id: "software_name", label: "ПО" },
+      { id: "software_purpose", label: "Назначение ПО" },
+      { id: "database_name", label: "БД и ИСС" },
+    ],
+  },
+  {
+    label: "Раздел 7",
+    title: "Раздел 7 — Материально-техническое обеспечение",
+    kinds: [
+      { id: "room_type", label: "Виды занятий (МТО)" },
+      { id: "equipment", label: "Оборудование" },
+    ],
+  },
 ];
+
+const KINDS = KIND_GROUPS.flatMap(g => g.kinds);
 
 function adaptDiscipline(d) {
   return {
@@ -97,6 +129,8 @@ export function AdminDictionariesPage() {
   const isLiterature = kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(kind);
   const isDiscipline = kind === "discipline";
+  const isCustomKind = kind === "bup" || kind === "direction" || kind === "document";
+  const activeGroupIdx = Math.max(0, KIND_GROUPS.findIndex(g => g.kinds.some(k => k.id === kind)));
   const parentMeta = PARENT_LABELS[kind] || null;
   const useGroupedView = !!parentMeta;
   const showPrefixFilter = FILTERABLE_KINDS.has(kind);
@@ -106,10 +140,16 @@ export function AdminDictionariesPage() {
     : api.adminListDictionary(kind, {}).then(r => r.data || []);
 
   const silentRefresh = () => {
+    if (isCustomKind) return;
     fetchItems().then(setItems).catch(() => {});
   };
   const reload = silentRefresh;
   useEffect(() => {
+    if (isCustomKind) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     setItems([]);
     fetchItems()
@@ -171,10 +211,12 @@ export function AdminDictionariesPage() {
     });
   }, [items, search, showPrefixFilter, prefixFilter, kind]);
 
+  const { page, setPage, pageSize, setPageSize, total: pgTotal, totalPages: pgTotalPages, pageItems } = usePagination(filtered, { defaultPageSize: 50, storageKey: `adminDict.${kind}.pageSize` });
+
   const grouped = useMemo(() => {
     if (!useGroupedView) return null;
     const buckets = new Map();
-    for (const it of filtered) {
+    for (const it of pageItems) {
       const key = (it.source_type || "").trim() || "—";
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(it);
@@ -200,7 +242,7 @@ export function AdminDictionariesPage() {
         ? [...buckets.get(k)].sort((a, b) => parseIndicatorCode(a.value).index - parseIndicatorCode(b.value).index)
         : buckets.get(k),
     }));
-  }, [filtered, useGroupedView, kind]);
+  }, [pageItems, useGroupedView, kind]);
 
   async function performDelete(item) {
     if (!item) return;
@@ -263,31 +305,63 @@ export function AdminDictionariesPage() {
       ? !!newCompetency.trim() && !!newValue.trim()
       : !!newValue.trim();
 
+  const kindHint = kind === "bup" ? "Загруженные XLS-БУПы. При импорте дисциплины, компетенции и индикаторы попадают в справочники автоматически."
+    : kind === "direction" ? "Направления подготовки и привязанные к ним файлы ФГОС. Список пополняется при импорте БУПов."
+    : kind === "document" ? "Документы, которые передаются LLM как контекст при генерации разделов РПД. Загруженные здесь файлы используются глобально для всех РПД."
+    : isDiscipline ? "Перечень всех дисциплин, доступных для создания РПД вручную. Пополняется автоматически при импорте БУПов; при удалении БУПа дисциплины из справочника не удаляются."
+    : "Записи отсюда подсказываются преподавателям при заполнении РПД. Автоматически дополняются после согласования каждой РПД.";
+
   return <div style={{ flex: 1, overflow: "auto", padding: 24, background: T.bg }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 12 }}>Справочники</div>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>
-        {isDiscipline
-          ? "Перечень всех дисциплин, доступных для создания РПД вручную. Пополняется автоматически при импорте БУПов; при удалении БУПа дисциплины из справочника не удаляются."
-          : "Записи отсюда подсказываются преподавателям при заполнении РПД. Автоматически дополняются после согласования каждой РПД."}
+      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>{kindHint}</div>
+
+      <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 10, marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <span style={groupLabelStyle}>Раздел</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1 }}>
+            {KIND_GROUPS.map((g, gi) => {
+              const active = gi === activeGroupIdx;
+              return <button key={gi} type="button" title={g.title}
+                onClick={() => { if (!active) setKind(g.kinds[0].id); }}
+                style={{
+                  padding: "5px 12px",
+                  border: "1px solid " + (active ? T.accent : T.border),
+                  borderRadius: 5,
+                  background: active ? T.accent : T.bg,
+                  color: active ? "#fff" : T.text,
+                  fontWeight: active ? 600 : 500,
+                  fontSize: 12, fontFamily: F,
+                  cursor: "pointer",
+                }}>{g.label}</button>;
+            })}
+          </div>
+        </div>
+        <div style={{ height: 1, background: T.borderLight, margin: "0 -10px 8px" }} />
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={groupLabelStyle}>Справочник</span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, flex: 1 }}>
+            {KIND_GROUPS[activeGroupIdx].kinds.map(k => (
+              <button key={k.id} type="button" onClick={() => setKind(k.id)}
+                style={{
+                  padding: "5px 12px",
+                  border: "1px solid " + (kind === k.id ? T.accent : T.border),
+                  borderRadius: 5,
+                  background: kind === k.id ? T.accentLight : T.bg,
+                  color: kind === k.id ? T.accent : T.text,
+                  fontWeight: kind === k.id ? 600 : 500,
+                  fontSize: 12, fontFamily: F,
+                  cursor: "pointer",
+                }}>{k.label}</button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginBottom: 14 }}>
-        {KINDS.map(k => (
-          <button key={k.id} type="button" onClick={() => setKind(k.id)}
-            style={{
-              padding: "6px 12px",
-              border: "1px solid " + (kind === k.id ? T.accent : T.border),
-              borderRadius: 5,
-              background: kind === k.id ? T.accentLight : T.surface,
-              color: kind === k.id ? T.accent : T.text,
-              fontWeight: kind === k.id ? 600 : 500,
-              fontSize: 12, fontFamily: F,
-              cursor: "pointer",
-            }}>{k.label}</button>
-        ))}
-      </div>
+      {kind === "bup" && <BupsContent />}
+      {kind === "direction" && <DirectionsContent />}
+      {kind === "document" && <DocumentsContent />}
 
+      {!isCustomKind && <>
       <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
         <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
           Добавить запись
@@ -439,7 +513,7 @@ export function AdminDictionariesPage() {
                       </td>
                     </tr>
                   )))
-                  : filtered.map(it => (
+                  : pageItems.map(it => (
                     <tr key={it.id_entry}
                         onDoubleClick={() => setEditing(it)}
                         style={{ background: T.surface, cursor: "pointer" }}
@@ -460,6 +534,11 @@ export function AdminDictionariesPage() {
               </tbody>
             </table>}
       </div>
+      {!loading && (
+        <Pagination page={page} totalPages={pgTotalPages} total={pgTotal} pageSize={pageSize}
+          onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
+      </>}
     </div>
 
     {pendingDelete && <ConfirmDeleteModal
@@ -476,6 +555,7 @@ export function AdminDictionariesPage() {
       onClose={() => setEditing(null)}
       onSaved={() => { setEditing(null); reload(); }}
       onError={msg => setErrorMsg(msg)}
+      onDelete={() => { setPendingDelete(editing); setEditing(null); }}
     />}
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
@@ -489,6 +569,104 @@ function UsageInfo({ bups, rpds }) {
   if (bups) parts.push(`${bups} БУП${bups === 1 ? "" : "ов"}`);
   if (rpds) parts.push(`${rpds} РПД`);
   return <span>{parts.join(" · ")}</span>;
+}
+
+function DocumentsContent() {
+  const [docs, setDocs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const fileRef = useRef(null);
+
+  const fetchAll = (silent) => {
+    if (!silent) setLoading(true);
+    api.adminListGlobalDocuments().then(r => setDocs(r.data || [])).catch(() => { if (!silent) setDocs([]); }).finally(() => { if (!silent) setLoading(false); });
+  };
+  const reload = () => fetchAll(true);
+  useEffect(() => { fetchAll(false); }, []);
+
+  async function handleUpload(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true);
+    try {
+      await api.adminUploadGlobalDocument(file);
+      reload();
+    } catch (err) {
+      setErrorMsg("Не удалось загрузить: " + (err?.response?.data?.detail || err.message));
+    }
+    setBusy(false);
+    if (fileRef.current) fileRef.current.value = "";
+  }
+
+  async function performDelete(d) {
+    if (!d) return;
+    try { await api.adminDeleteGlobalDocument(d.id_document); reload(); }
+    catch (err) { setErrorMsg("Не удалось удалить: " + (err?.response?.data?.detail || err.message)); }
+  }
+
+  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(docs, { defaultPageSize: 50, storageKey: "adminDocs.pageSize" });
+
+  return <>
+    <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+        Добавить запись
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ flex: 1, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
+          PDF, DOCX, TXT, XLSX (до 50 МБ). Подмешивается LLM как контекст для генерации разделов.
+        </div>
+        <input ref={fileRef} type="file" accept=".pdf,.docx,.doc,.txt,.xlsx,.xls" style={{ display: "none" }} onChange={handleUpload} />
+        <Btn small primary onClick={() => fileRef.current?.click()} disabled={busy}>
+          <UploadIcon /> {busy ? "Загрузка…" : "Загрузить документ"}
+        </Btn>
+      </div>
+    </div>
+    <div className="table-scroll">
+      {loading
+        ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
+        : docs.length === 0
+          ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
+              Документы для контекста LLM не загружены. PDF, DOCX, TXT, XLSX — до 50 МБ.
+            </div>
+          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+            <thead><tr style={{ background: T.surface }}>
+              <th style={hdr}>Файл</th>
+              <th style={{ ...hdr, width: 100, textAlign: "center" }}>Тип</th>
+              <th style={{ ...hdr, width: 120, textAlign: "right" }}>Размер</th>
+              <th style={{ ...hdr, width: 160 }}>Загружен</th>
+              <th style={{ ...hdr, width: 1 }} />
+            </tr></thead>
+            <tbody>
+              {pageItems.map(d => (
+                <tr key={d.id_document} style={{ background: T.surface }}>
+                  <td style={{ ...tcell, fontWeight: 500 }}>
+                    <a href={api.adminGlobalDocumentDownloadUrl(d.id_document)} target="_blank" rel="noreferrer" style={{ color: T.accent }}>{d.filename}</a>
+                  </td>
+                  <td style={{ ...tcell, textAlign: "center", textTransform: "uppercase", color: T.textMuted, fontSize: 11 }}>{d.file_type}</td>
+                  <td style={{ ...tcell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted }}>{d.file_size ? (d.file_size / 1024).toFixed(0) + " КБ" : "—"}</td>
+                  <td style={{ ...tcell, color: T.textMuted, fontSize: 11 }}>{d.uploaded_at ? new Date(d.uploaded_at).toLocaleString("ru-RU") : "—"}</td>
+                  <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }}>
+                    <button onClick={() => setPendingDelete(d)} title="Удалить файл" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>}
+    </div>
+    {!loading && (
+      <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize}
+        onPageChange={setPage} onPageSizeChange={setPageSize} />
+    )}
+    {pendingDelete && <ConfirmDeleteModal
+      title="Удалить документ?"
+      message={`«${pendingDelete.filename}» больше не будет передаваться LLM при генерации разделов. Файл удалится из хранилища.`}
+      onClose={() => setPendingDelete(null)}
+      onConfirm={async () => { const d = pendingDelete; setPendingDelete(null); await performDelete(d); }}
+    />}
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
+  </>;
 }
 
 function FilterChip({ label, count, active, onClick }) {
@@ -524,7 +702,7 @@ function RowActions({ onEdit, onDelete }) {
   </div>;
 }
 
-function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError }) {
+function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, onDelete }) {
   const isLiterature = entry.kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(entry.kind);
 
@@ -659,9 +837,14 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError }) 
         </div>
       )}
     </div>
-    <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "flex-end", gap: 10 }}>
-      <Btn onClick={onClose}>Отмена</Btn>
-      <Btn primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
+    <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "space-between", gap: 10 }}>
+      <div>
+        {onDelete && <Btn danger onClick={onDelete} disabled={saving}>Удалить</Btn>}
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
+        <Btn onClick={onClose}>Отмена</Btn>
+      </div>
     </div>
   </Modal>;
 }
@@ -669,3 +852,4 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError }) 
 const miniLabel = { fontSize: 11, color: T.textMuted, marginBottom: 3 };
 const miniInput = { width: "100%", padding: "6px 10px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, background: T.surface, fontFamily: F, boxSizing: "border-box" };
 const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box", outline: "none" };
+const groupLabelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", flexShrink: 0, width: 90 };

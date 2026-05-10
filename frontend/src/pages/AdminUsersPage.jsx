@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F } from "../theme.js";
 import { hdr, tcell, iconBtn } from "../styles.js";
@@ -6,6 +6,7 @@ import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
 import { Spinner } from "../components/Spinner.jsx";
+import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { PencilIcon, UserOffIcon, PlusIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
@@ -15,7 +16,8 @@ export function AdminUsersPage({ user }) {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
-  const [showOnlyActive, setShowOnlyActive] = useState(true);
+  const [statusFilter, setStatusFilter] = useState("active");
+  const [search, setSearch] = useState("");
   const [pendingDeactivate, setPendingDeactivate] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -36,25 +38,59 @@ export function AdminUsersPage({ user }) {
   }
   function handleDeactivate(u) { setPendingDeactivate(u); }
 
-  const visible = showOnlyActive ? users.filter(u => u.is_active) : users;
+  const counts = useMemo(() => ({
+    all: users.length,
+    active: users.filter(u => u.is_active).length,
+    inactive: users.filter(u => !u.is_active).length,
+  }), [users]);
 
-  return <div style={{ flex: 1, overflow: "auto", padding: 24, background: T.bg }}>
-    <div style={{ maxWidth: 1200, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ fontSize: 18, fontWeight: 700 }}>Пользователи</div>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: T.textMuted, cursor: "pointer" }}>
-            <input type="checkbox" checked={showOnlyActive} onChange={e => setShowOnlyActive(e.target.checked)} />
-            Только активные
-          </label>
-          <Btn small onClick={() => setEditing({ create: true })}><PlusIcon /> Добавить</Btn>
-        </div>
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return users.filter(u => {
+      if (statusFilter === "active" && !u.is_active) return false;
+      if (statusFilter === "inactive" && u.is_active) return false;
+      if (q) {
+        const matches = (u.full_name || "").toLowerCase().includes(q)
+          || (u.ldap_uid || "").toLowerCase().includes(q)
+          || (u.title || "").toLowerCase().includes(q)
+          || (u.role || "").toLowerCase().includes(q)
+          || (u.department || "").toLowerCase().includes(q)
+          || (u.email || "").toLowerCase().includes(q);
+        if (!matches) return false;
+      }
+      return true;
+    });
+  }, [users, statusFilter, search]);
+
+  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(filtered, { defaultPageSize: 50, storageKey: "adminUsers.pageSize" });
+
+  return <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", flexShrink: 0, background: T.surface, borderBottom: "1px solid " + T.border, flexWrap: "wrap" }}>
+      <Btn small onClick={() => setEditing({ create: true })}><PlusIcon /> Создать пользователя</Btn>
+      <input
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Поиск: ФИО, логин, должность, роль, подразделение"
+        style={{
+          flex: 1, minWidth: 220, maxWidth: 420,
+          padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4,
+          background: T.bg, fontSize: 13, fontFamily: F, color: T.text, outline: "none",
+        }}
+      />
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        <FilterChip label="Все" count={counts.all} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+        <FilterChip label="Активные" count={counts.active} active={statusFilter === "active"} onClick={() => setStatusFilter("active")} />
+        <FilterChip label="Деактивированные" count={counts.inactive} active={statusFilter === "inactive"} onClick={() => setStatusFilter("inactive")} />
       </div>
-
+      <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>
+        {filtered.length} {filtered.length === users.length ? "пользователей" : `из ${users.length}`}
+      </span>
+    </div>
+    <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
       <div className="table-scroll">
         {loading ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
-        : visible.length === 0
-          ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13 }}>Пользователей нет.</div>
+        : filtered.length === 0
+          ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>{users.length === 0 ? "Пользователей нет." : "Ничего не нашлось."}</div>
           : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
             <thead><tr style={{ background: T.surface }}>
               {["ФИО", "Логин", "Должность", "Роль", "Подразделение", "Статус", ""].map(h =>
@@ -62,7 +98,7 @@ export function AdminUsersPage({ user }) {
               )}
             </tr></thead>
             <tbody>
-              {visible.map(u => {
+              {pageItems.map(u => {
                 const isSelf = u.id_user === user.id_user;
                 const canDeactivate = u.is_active && !isSelf;
                 return <tr key={u.id_user}
@@ -91,6 +127,10 @@ export function AdminUsersPage({ user }) {
             </tbody>
           </table>}
       </div>
+      {!loading && (
+        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize}
+          onPageChange={setPage} onPageSizeChange={setPageSize} />
+      )}
     </div>
 
     {editing && <UserEditModal
@@ -211,8 +251,8 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
       {err && <div style={{ background: "#fde6e3", color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13 }}>{err}</div>}
     </div>
     <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "flex-end", gap: 10 }}>
-      <Btn onClick={onClose}>Отмена</Btn>
       <Btn primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
+      <Btn onClick={onClose}>Отмена</Btn>
     </div>
   </Modal>;
 }
@@ -229,6 +269,26 @@ function UserStatusBadge({ active }) {
     color, background: bg,
     whiteSpace: "nowrap",
   }}>{active ? "Активен" : "Деактивирован"}</span>;
+}
+
+function FilterChip({ label, count, active, onClick }) {
+  return <button
+    type="button"
+    onClick={onClick}
+    style={{
+      display: "inline-flex", alignItems: "center", gap: 4,
+      padding: "4px 10px", borderRadius: 12,
+      border: "1px solid " + (active ? T.accent : T.border),
+      background: active ? T.accentLight : T.surface,
+      color: active ? T.accent : T.text,
+      fontSize: 12, fontWeight: active ? 700 : 500,
+      cursor: "pointer", fontFamily: F,
+      whiteSpace: "nowrap",
+    }}
+  >
+    {label}
+    <span style={{ fontSize: 11, opacity: 0.7, fontVariantNumeric: "tabular-nums" }}>({count})</span>
+  </button>;
 }
 
 const labelStyle = { fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 };

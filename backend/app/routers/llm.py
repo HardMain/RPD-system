@@ -41,9 +41,14 @@ async def generate(
     direc = bd.bup.direction if bd and bd.bup else None
 
     extra_context = data.context or ""
-    if rpd.uploaded_documents:
+    docs_to_use = list(rpd.uploaded_documents or [])
+    global_docs_res = await db.execute(
+        select(UploadedDocument).where(UploadedDocument.id_rpd.is_(None))
+    )
+    docs_to_use.extend(global_docs_res.scalars().all())
+    if docs_to_use:
         doc_texts = []
-        for doc in rpd.uploaded_documents[:5]:
+        for doc in docs_to_use[:8]:
             text = await extract_text_from_file(doc.file_path)
             if text:
                 doc_texts.append(f"--- {doc.filename} ---\n{text}")

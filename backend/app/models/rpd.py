@@ -157,7 +157,7 @@ class RpdFosFile(Base):
 class UploadedDocument(Base):
     __tablename__ = "uploaded_documents"
     id_document = Column(Integer, primary_key=True, autoincrement=True)
-    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=True)
     id_user = Column(Integer, ForeignKey("users.id_user"), nullable=False)
     filename = Column(String(300), nullable=False)
     file_path = Column(String(500), nullable=False)

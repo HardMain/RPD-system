@@ -8,7 +8,7 @@ from app.core.database import engine, Base
 from app.routers import (
     auth, rpd, llm, notifications, competencies, upload, export,
     admin, bups, admin_bups, reference, files, admin_directions, fos,
-    suggestions, admin_dictionary, admin_disciplines,
+    suggestions, admin_dictionary, admin_disciplines, admin_documents,
 )
 from app.seed import seed_data
 
@@ -59,6 +59,7 @@ async def _apply_schema_patches() -> None:
             ))
 
         await conn.execute(text("ALTER TABLE competency_indicators ALTER COLUMN code TYPE VARCHAR(40)"))
+        await conn.execute(text("ALTER TABLE uploaded_documents ALTER COLUMN id_rpd DROP NOT NULL"))
 
         await conn.execute(text(r"""
             UPDATE competency_indicators ci
@@ -114,6 +115,7 @@ app.include_router(reference.router)
 app.include_router(suggestions.router)
 app.include_router(admin_dictionary.router)
 app.include_router(admin_disciplines.router)
+app.include_router(admin_documents.router)
 app.include_router(files.router)
 app.include_router(fos.router)
 

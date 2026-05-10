@@ -102,6 +102,18 @@ export const adminUpdateDiscipline = (idDiscipline, payload) =>
 export const adminDeleteDiscipline = (idDiscipline) =>
   api.delete(`/admin/disciplines/${idDiscipline}`);
 
+export const adminListGlobalDocuments = () =>
+  api.get('/admin/documents/');
+export const adminUploadGlobalDocument = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/admin/documents/', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const adminDeleteGlobalDocument = (idDocument) =>
+  api.delete(`/admin/documents/${idDocument}`);
+export const adminGlobalDocumentDownloadUrl = (idDocument) =>
+  `/api/admin/documents/${idDocument}/download`;
+
 export const fileUrl = (fileId) => `/api/files/${fileId}`;
 
 export const getFosFiles = (rpdId) => api.get(`/rpd/${rpdId}/fos`);

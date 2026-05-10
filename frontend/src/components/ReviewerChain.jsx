@@ -16,8 +16,7 @@ export function ReviewerChain({ reviewers, selectedIds, onChange, readOnly = fal
     if (from === to || from < 0 || to < 0) return;
     const next = [...selectedIds];
     const [item] = next.splice(from, 1);
-    const insertAt = from < to ? to - 1 : to;
-    next.splice(insertAt, 0, item);
+    next.splice(to, 0, item);
     onChange(next);
   }
   function performRemove(idx) { onChange(selectedIds.filter((_, i) => i !== idx)); }

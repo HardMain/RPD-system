@@ -8,7 +8,6 @@ export const SEC_KEYS = [
   "6.1", "6.2", "6.3", "6.4",
   "7",
   "8",
-  "docs",
 ];
 
 export const SEC_LABELS = {
@@ -29,16 +28,15 @@ export const SEC_LABELS = {
   "6.4": "6.4 ПО",
   "7":   "7. МТО",
   "8":   "8. ФОС",
-  docs:  "Документы (LLM)",
 };
 
 export const READ_ONLY_KEYS = new Set(["title", "3"]);
 
 export const SUB_KEYS = new Set(["4.1", "4.2"]);
 
-export const SIDEBAR_KEYS = SEC_KEYS.filter(k => k !== "docs");
+export const SIDEBAR_KEYS = [...SEC_KEYS];
 
-export const NON_PDF_KEYS = new Set(["docs"]);
+export const NON_PDF_KEYS = new Set();
 
 export const PARENT_SECTION = {
   "1.1": "1", "1.2": "1", "1.3": "1",

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F } from "../theme.js";
 import { hdr, tcell, iconBtn } from "../styles.js";
@@ -6,16 +6,18 @@ import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
 import { Spinner } from "../components/Spinner.jsx";
+import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { TrashIcon, UploadIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
-export function AdminBupsPage() {
+export function BupsContent() {
   const [bups, setBups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
   const [openBup, setOpenBup] = useState(null);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [search, setSearch] = useState("");
 
   const fetchAll = (silent) => {
     if (!silent) setLoading(true);
@@ -31,46 +33,89 @@ export function AdminBupsPage() {
   }
   function handleDelete(b) { setPendingDelete(b); }
 
-  return <div style={{ flex: 1, overflow: "auto", padding: 24, background: T.bg }}>
-    <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-        <div style={{ fontSize: 18, fontWeight: 700 }}>БУПы (базовые учебные планы)</div>
-        <Btn small onClick={() => setShowImport(true)}><UploadIcon /> Загрузить XLS БУПа</Btn>
-      </div>
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return bups;
+    return bups.filter(b =>
+      (b.name || "").toLowerCase().includes(q)
+      || (b.direction_code || "").toLowerCase().includes(q)
+      || (b.direction_name || "").toLowerCase().includes(q)
+      || (b.faculty || "").toLowerCase().includes(q)
+      || String(b.year || "").includes(q)
+    );
+  }, [bups, search]);
 
-      <div className="table-scroll">
-        {loading ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
-        : bups.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13 }}>
-            БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины.
-          </div>
-        : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
-            <thead><tr style={{ background: T.surface }}>
-              <th style={{ ...hdr, textAlign: "center", width: 80 }}>Год</th>
-              <th style={hdr}>Наименование</th>
-              <th style={hdr}>Направление</th>
-              <th style={hdr}>Факультет</th>
-              <th style={{ ...hdr, width: 1 }} />
-            </tr></thead>
-            <tbody>
-              {bups.map(b => <tr key={b.id_bup}
-                  onDoubleClick={() => setOpenBup(b.id_bup)}
-                  style={{ background: T.surface, cursor: "pointer" }}
-                  title="Двойной клик — открыть детали">
-                <td style={{ ...tcell, textAlign: "center" }}>{b.year ?? "—"}</td>
-                <td style={{ ...tcell, fontWeight: 600 }}>{b.name}</td>
-                <td style={tcell}>{b.direction_code ? `${b.direction_code} ${b.direction_name}` : (b.direction_name || "—")}</td>
-                <td style={tcell}>{b.faculty || "—"}</td>
-                <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }}>
-                  <button onClick={(e) => { e.stopPropagation(); handleDelete(b); }} title="Удалить БУП" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
-                </td>
-              </tr>)}
-            </tbody>
-          </table>}
+  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(filtered, { defaultPageSize: 50, storageKey: "adminBups.pageSize" });
+
+  return <>
+    <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+        Добавить запись
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div style={{ flex: 1, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
+          БУП загружается из XLS-файла. Система разберёт его, заполнит дисциплины, компетенции и индикаторы.
+        </div>
+        <Btn small primary onClick={() => setShowImport(true)}><UploadIcon /> Загрузить XLS БУПа</Btn>
       </div>
     </div>
 
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+      <input
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        placeholder="Поиск по названию, направлению, факультету, году…"
+        style={{
+          flex: 1, minWidth: 220, maxWidth: 420,
+          padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4,
+          fontSize: 13, fontFamily: F, outline: "none",
+        }}
+      />
+      <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>
+        {filtered.length} {filtered.length === bups.length ? "" : `из ${bups.length}`}
+      </span>
+    </div>
+
+    <div className="table-scroll">
+      {loading ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
+      : filtered.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
+          {bups.length === 0 ? "БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины." : "Ничего не нашлось."}
+        </div>
+      : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+          <thead><tr style={{ background: T.surface }}>
+            <th style={{ ...hdr, textAlign: "center", width: 80 }}>Год</th>
+            <th style={hdr}>Наименование</th>
+            <th style={hdr}>Направление</th>
+            <th style={hdr}>Факультет</th>
+            <th style={{ ...hdr, width: 1 }} />
+          </tr></thead>
+          <tbody>
+            {pageItems.map(b => <tr key={b.id_bup}
+                onDoubleClick={() => setOpenBup(b.id_bup)}
+                style={{ background: T.surface, cursor: "pointer" }}
+                title="Двойной клик — открыть детали">
+              <td style={{ ...tcell, textAlign: "center" }}>{b.year ?? "—"}</td>
+              <td style={{ ...tcell, fontWeight: 600 }}>{b.name}</td>
+              <td style={tcell}>{b.direction_code ? `${b.direction_code} ${b.direction_name}` : (b.direction_name || "—")}</td>
+              <td style={tcell}>{b.faculty || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }} onDoubleClick={e => e.stopPropagation()}>
+                <button onClick={(e) => { e.stopPropagation(); handleDelete(b); }} title="Удалить БУП" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
+              </td>
+            </tr>)}
+          </tbody>
+        </table>}
+    </div>
+    {!loading && (
+      <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize}
+        onPageChange={setPage} onPageSizeChange={setPageSize} />
+    )}
+
     {showImport && <ImportBupModal onClose={() => setShowImport(false)} onImported={() => { setShowImport(false); reload(); }} />}
-    {openBup != null && <BupDetailModal bupId={openBup} onClose={() => setOpenBup(null)} />}
+    {openBup != null && <BupDetailModal
+      bupId={openBup}
+      onClose={() => setOpenBup(null)}
+      onDelete={(b) => { setOpenBup(null); setPendingDelete(b); }}
+    />}
     {pendingDelete && <ConfirmDeleteModal
       title={`Удалить БУП «${pendingDelete.name}»?`}
       message="БУП будет стёрт из базы. Дисциплины, компетенции и индикаторы из справочников останутся — их можно будет переиспользовать при ручном создании РПД или при импорте новых БУПов. Уже созданные РПД не изменятся: их часы, компетенции и направление сохранены внутри самих РПД."
@@ -78,7 +123,7 @@ export function AdminBupsPage() {
       onConfirm={async () => { const b = pendingDelete; setPendingDelete(null); await performDelete(b); }}
     />}
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
-  </div>;
+  </>;
 }
 
 function ImportBupModal({ onClose, onImported }) {
@@ -142,7 +187,7 @@ function ImportBupModal({ onClose, onImported }) {
   </Modal>;
 }
 
-function BupDetailModal({ bupId, onClose }) {
+function BupDetailModal({ bupId, onClose, onDelete }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -190,7 +235,10 @@ function BupDetailModal({ bupId, onClose }) {
             </tbody>
           </table>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 14 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
+          <div>
+            {onDelete && <Btn danger onClick={() => onDelete(data)}>Удалить БУП</Btn>}
+          </div>
           <Btn onClick={onClose}>Закрыть</Btn>
         </div>
       </>}

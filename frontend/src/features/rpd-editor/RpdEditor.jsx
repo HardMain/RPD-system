@@ -24,7 +24,6 @@ import { TopicsEditor } from "./editors/TopicsEditor.jsx";
 import { DatabasesEditor } from "./editors/DatabasesEditor.jsx";
 import { MtechEditor } from "./editors/MtechEditor.jsx";
 import { WorkloadTable } from "./editors/WorkloadTable.jsx";
-import { DocsUpload } from "./editors/DocsUpload.jsx";
 import { FosEditor } from "./editors/FosEditor.jsx";
 import { RpdMetaModal } from "./RpdMetaModal.jsx";
 
@@ -997,12 +996,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                 </>}
               </div>
               <HR />
-
-              <div ref={refs.docs} style={{ marginBottom: 32 }}>
-                <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 8 }}>Загруженные документы (контекст для LLM)</div>
-                <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 12 }}>Не попадает в финальный РПД — используется только для автогенерации</div>
-                <DocsUpload />
-              </div>
 
               {rpd.approvals?.length > 0 && <div style={{ marginTop: 32 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>История согласования</div>

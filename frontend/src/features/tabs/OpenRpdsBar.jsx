@@ -12,10 +12,9 @@ function TabChip({ tab, isCurrent, pairNumber, isDragging, onDragStart, onDragEn
     title={isPaired ? `Пара ${pairNumber}: edit ↔ view синхронизируются при сохранении` : "Перетащите вниз, чтобы открыть в отдельной панели"}
     style={{
       display: "flex", alignItems: "center", gap: 4, padding: "4px 10px",
-      borderRadius: "5px 5px 0 0",
+      borderRadius: 5,
       background: isCurrent ? T.surface : T.tabInactive,
       border: "1px solid " + (isCurrent ? T.accent : T.border),
-      borderBottom: isCurrent ? "2px solid " + T.accent : "1px solid transparent",
       cursor: isDragging ? "grabbing" : "grab",
       fontSize: 11, fontWeight: isCurrent ? 700 : 400,
       color: isCurrent ? T.accent : T.text, flexShrink: 0,
@@ -83,19 +82,21 @@ export function OpenRpdsBar({
   const invRatioPct = ((1 - splitRatio) * 100).toFixed(3);
 
   const tabsScrollStyle = {
-    display: "flex", alignItems: "flex-start", gap: 2,
+    display: "flex", flexDirection: "column", alignItems: "flex-start",
     overflowX: "auto", overflowY: "hidden",
     flex: 1, minWidth: 0,
     transform: "rotateX(180deg)",
   };
+  const bottomSpacer = { height: 10, flexShrink: 0, width: 1 };
   const flipBack = { transform: "rotateX(180deg)", display: "flex", gap: 2 };
-  const labelStyle = { fontSize: 11, color: T.textMuted, marginRight: 6, alignSelf: "flex-end", paddingBottom: 4, flexShrink: 0 };
+  const labelStyle = { fontSize: 11, color: T.textMuted, marginRight: 6, alignSelf: "center", flexShrink: 0 };
 
-  return <div style={{ display: "flex", alignItems: "stretch", background: T.bg, borderBottom: "1px solid " + T.border, height: 35 }}>
+  return <div style={{ display: "flex", alignItems: "stretch", background: T.bg, borderBottom: "1px solid " + T.border, height: 45 }}>
     {!panes.right ? (
       <div style={{ flex: 1, display: "flex", alignItems: "stretch", padding: "0 12px", minWidth: 0, boxSizing: "border-box" }}>
         <span style={labelStyle}>Открытые РПД:</span>
         <div style={tabsScrollStyle}>
+          <div style={bottomSpacer} />
           <div style={flipBack}>{leftTabRpds.map(renderTab)}</div>
         </div>
       </div>
@@ -104,6 +105,7 @@ export function OpenRpdsBar({
         <div style={{ width: `calc(${ratioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "0 6px 0 12px", minWidth: 0, boxSizing: "border-box" }}>
           <span style={labelStyle}>Открытые РПД:</span>
           <div style={tabsScrollStyle}>
+            <div style={bottomSpacer} />
             <div style={flipBack}>{leftTabRpds.map(renderTab)}</div>
           </div>
         </div>
@@ -111,9 +113,10 @@ export function OpenRpdsBar({
         <div title="Стык панелей" style={{ width: 2, alignSelf: "stretch", background: T.border, flexShrink: 0 }} />
         <div style={{ width: `calc(${invRatioPct}% - 1px)`, display: "flex", alignItems: "stretch", padding: "0 12px 0 6px", minWidth: 0, boxSizing: "border-box" }}>
           <div style={tabsScrollStyle}>
+            <div style={bottomSpacer} />
             <div style={flipBack}>{rightTabRpds.map(renderTab)}</div>
           </div>
-          <button onClick={onMergePanes} title="Свести все вкладки в одну панель" style={{ marginLeft: 8, alignSelf: "flex-end", marginBottom: 2, border: "1px solid " + T.border, background: T.surface, borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", color: T.text, flexShrink: 0, fontFamily: F }}>↩ Объединить</button>
+          <button onClick={onMergePanes} title="Свести все вкладки в одну панель" style={{ marginLeft: 8, alignSelf: "center", border: "1px solid " + T.border, background: T.surface, borderRadius: 4, padding: "3px 10px", fontSize: 11, cursor: "pointer", color: T.text, flexShrink: 0, fontFamily: F }}>↩ Объединить</button>
         </div>
       </>
     )}

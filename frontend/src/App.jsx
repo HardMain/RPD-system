@@ -14,8 +14,6 @@ import { LoginPage } from "./pages/LoginPage.jsx";
 import { RpdListPage } from "./pages/RpdListPage.jsx";
 import { AdminUsersPage } from "./pages/AdminUsersPage.jsx";
 import { SystemInfoPage } from "./pages/SystemInfoPage.jsx";
-import { AdminBupsPage } from "./pages/AdminBupsPage.jsx";
-import { AdminDirectionsPage } from "./pages/AdminDirectionsPage.jsx";
 import { AdminDictionariesPage } from "./pages/AdminDictionariesPage.jsx";
 
 import { NotifPanel } from "./features/notifications/NotifPanel.jsx";
@@ -268,9 +266,10 @@ export default function App() {
     if (!user) return;
     const allowed = new Set(["my", "system", "edit"]);
     if (api.userCan(user, "users.manage") || api.userCan(user, "users.create")) allowed.add("adminUsers");
-    if (api.userCan(user, "bups.manage")) allowed.add("adminBups");
-    if (api.userCan(user, "directions.manage")) allowed.add("adminDirections");
-    if (api.userCan(user, "reference.manage")) allowed.add("adminDictionaries");
+    const canSources = api.userCan(user, "bups.manage")
+      || api.userCan(user, "directions.manage")
+      || api.userCan(user, "reference.manage");
+    if (canSources) allowed.add("adminSources");
     if (!allowed.has(activeTab)) setActiveTab("my");
   }, [user, activeTab]);
 
@@ -278,16 +277,14 @@ export default function App() {
   if (!user) return <LoginPage onLogin={u => setUser(u)} />;
 
   const role = user.role;
-  const canManageBups = api.userCan(user, "bups.manage");
-  const canManageDirections = api.userCan(user, "directions.manage");
   const canManageUsers = api.userCan(user, "users.manage") || api.userCan(user, "users.create");
-  const canManageDictionaries = api.userCan(user, "reference.manage");
+  const canManageSources = api.userCan(user, "bups.manage")
+    || api.userCan(user, "directions.manage")
+    || api.userCan(user, "reference.manage");
   const navTabs = [
     { id: "my", label: `РПД (${rpds.length})` },
     canManageUsers ? { id: "adminUsers", label: "Пользователи" } : null,
-    canManageBups ? { id: "adminBups", label: "БУПы" } : null,
-    canManageDirections ? { id: "adminDirections", label: "ФГОС" } : null,
-    canManageDictionaries ? { id: "adminDictionaries", label: "Справочники" } : null,
+    canManageSources ? { id: "adminSources", label: "Источники" } : null,
     { id: "system", label: "Система" },
   ].filter(Boolean);
 
@@ -334,9 +331,7 @@ export default function App() {
 
     {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} user={user} />}
     {activeTab === "adminUsers" && <AdminUsersPage user={user} />}
-    {activeTab === "adminBups" && <AdminBupsPage />}
-    {activeTab === "adminDirections" && <AdminDirectionsPage />}
-    {activeTab === "adminDictionaries" && <AdminDictionariesPage />}
+    {activeTab === "adminSources" && <AdminDictionariesPage />}
     {activeTab === "system" && <SystemInfoPage />}
 
     <div ref={splitContainerRef} style={{ display: activeTab === "edit" ? "block" : "none", flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>

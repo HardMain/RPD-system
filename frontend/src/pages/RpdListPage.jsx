@@ -4,6 +4,7 @@ import { hdr, tcell } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon } from "../components/icons.jsx";
 import { STATUSES, StatusBadge } from "../components/StatusBadge.jsx";
+import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { userCan } from "../api/client.js";
 
 const COLS = [
@@ -99,6 +100,8 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
 
   const isFiltered = !!query || statusFilter !== "all";
 
+  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(filteredSorted, { defaultPageSize: 50, storageKey: "rpdList.pageSize" });
+
   return <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", flexShrink: 0, background: T.surface, borderBottom: "1px solid " + T.border, flexWrap: "wrap" }}>
       {canCreate ? <Btn small onClick={onCreate}><PlusIcon /> Создать РПД</Btn> : null}
@@ -179,7 +182,7 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
               {rpds.length === 0 ? "Нет РПД" : "Ничего не найдено по текущим фильтрам"}
             </td></tr>
           )}
-          {filteredSorted.map(r => {
+          {pageItems.map(r => {
             const canEdit = r.status === "Черновик" || r.status === "На доработке";
             const iconBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "5px 7px", borderRadius: 4, border: "1px solid " + T.border, background: T.surface, color: T.text, fontFamily: F };
             const openByDblClick = (e) => {
@@ -223,6 +226,8 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
         </tbody>
       </table>
       </div>
+      <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize}
+        onPageChange={setPage} onPageSizeChange={setPageSize} />
     </div>
   </div>;
 }
