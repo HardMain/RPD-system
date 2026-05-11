@@ -40,11 +40,11 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
   const showToggle = overflows && generating !== skey;
 
   return <div>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
       <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
       {editable && (
         <Btn small primary onClick={() => autoFill(skey)} disabled={!!generating}>
-          {generating === skey ? "Генерация..." : "Автозаполнить"}
+          {generating === skey ? "Генерация..." : "Сгенерировать"}
         </Btn>
       )}
     </div>

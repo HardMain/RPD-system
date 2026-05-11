@@ -7,7 +7,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.models import (
     User, Rpd, Discipline, Direction, Bup, BupDiscipline, LlmGenerationLog,
-    UploadedDocument, RpdBupDiscipline,
+    UploadedDocument, RpdBupDiscipline, LlmPrompt,
 )
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
 from app.services.llm_service import generate_section, extract_text_from_file
@@ -55,6 +55,10 @@ async def generate(
         if doc_texts:
             extra_context += "\n\n" + "\n\n".join(doc_texts)
 
+    prompt_row = (await db.execute(
+        select(LlmPrompt).where(LlmPrompt.section_key == data.section)
+    )).scalar_one_or_none()
+
     gen = await generate_section(
         section=data.section,
         discipline=disc.name,
@@ -66,6 +70,8 @@ async def generate(
         lab_hours=(bd.lab_hours if bd else 0) or 0,
         self_study_hours=(bd.self_study_hours if bd else 0) or 0,
         extra_context=extra_context,
+        user_prompt_template_override=prompt_row.user_prompt_template if prompt_row else None,
+        system_prompt_override=prompt_row.system_prompt if prompt_row else None,
     )
 
     log = LlmGenerationLog(

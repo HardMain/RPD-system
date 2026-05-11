@@ -20,7 +20,7 @@ async function fetchLiteratureSuggestions(mode, sourceType, q) {
 }
 
 export function LiteratureEditor({ kind }) {
-  const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
+  const { rpd, rpdId, isEdit, canEdit, reload, autoFill, generating } = useRpdEditor();
   const editable = isEdit && canEdit;
   const isElectronic = kind === "electronic";
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -86,6 +86,8 @@ export function LiteratureEditor({ kind }) {
     <PrintedTable
       items={items}
       editable={editable}
+      autoFill={autoFill}
+      generating={generating}
       onAdd={addRow}
       onDelete={delRow}
       onSave={saveField}
@@ -98,29 +100,29 @@ const ADDITIONAL_MAIN_TYPE = "Учебные и научные издания (�
 const PRINTED_SECTIONS = [
   {
     title: "1. Основная литература",
-    groups: [{ source_type: "Учебные и научные издания" }],
+    groups: [{ source_type: "Учебные и научные издания", genKey: "literature_printed_main" }],
   },
   {
     title: "2. Дополнительная литература",
     groups: [
-      { subtitle: "2.1. Учебные и научные издания", source_type: ADDITIONAL_MAIN_TYPE },
-      { subtitle: "2.2. Периодические издания", source_type: "Периодические издания" },
-      { subtitle: "2.3. Нормативно-технические издания", source_type: "Нормативно-технические издания" },
+      { subtitle: "2.1. Учебные и научные издания", source_type: ADDITIONAL_MAIN_TYPE, genKey: "literature_printed_additional" },
+      { subtitle: "2.2. Периодические издания", source_type: "Периодические издания", genKey: "literature_periodicals" },
+      { subtitle: "2.3. Нормативно-технические издания", source_type: "Нормативно-технические издания", genKey: "literature_normative" },
     ],
   },
   {
     title: "3. Методические указания для студентов по освоению дисциплины",
-    groups: [{ source_type: "Методические указания для студентов по освоению дисциплины" }],
+    groups: [{ source_type: "Методические указания для студентов по освоению дисциплины", genKey: "literature_methodical_students" }],
   },
   {
     title: "4. Учебно-методическое обеспечение самостоятельной работы студента",
-    groups: [{ source_type: "Учебно-методическое обеспечение самостоятельной работы студента" }],
+    groups: [{ source_type: "Учебно-методическое обеспечение самостоятельной работы студента", genKey: "literature_methodical_self_study" }],
   },
 ];
 
 const PRINTED_TYPES = PRINTED_SECTIONS.flatMap(s => s.groups.map(g => g.source_type));
 
-function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
+function PrintedTable({ items, editable, autoFill, generating, onAdd, onDelete, onSave }) {
 
   const grouped = Object.fromEntries(PRINTED_TYPES.map(t => [t, []]));
   for (const it of items) {
@@ -135,6 +137,8 @@ function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
       g={g}
       rows={rows}
       editable={editable}
+      autoFill={autoFill}
+      generating={generating}
       required={g.source_type === "Учебные и научные издания"}
       onAdd={onAdd}
       onDelete={onDelete}
@@ -143,27 +147,53 @@ function PrintedTable({ items, editable, onAdd, onDelete, onSave }) {
   }
 
   return <div>
-    {PRINTED_SECTIONS.map(section => (
-      <div key={section.title} style={{ marginBottom: 22 }}>
-
+    {PRINTED_SECTIONS.map(section => {
+      const isSingleGroup = section.groups.length === 1;
+      let titleSlot = (
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid " + T.borderLight }}>
           {section.title}
         </div>
+      );
+      if (isSingleGroup) {
+        const g = section.groups[0];
+        const rows = grouped[g.source_type];
+        const required = g.source_type === "Учебные и научные издания";
+        const showTable = rows.length > 0 || required;
+        const showBtn = editable && showTable && !!g.genKey;
+        titleSlot = (
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid " + T.borderLight }}>
+            <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{section.title}</div>
+            {showBtn && <Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
+              {generating === g.genKey ? "Генерация..." : "Сгенерировать"}
+            </Btn>}
+          </div>
+        );
+      }
+      return <div key={section.title} style={{ marginBottom: 22 }}>
+        {titleSlot}
         {section.groups.map(renderGroup)}
-      </div>
-    ))}
+      </div>;
+    })}
   </div>;
 }
 
-function PrintedGroup({ g, rows, editable, required = false, onAdd, onDelete, onSave }) {
+function PrintedGroup({ g, rows, editable, required = false, autoFill, generating, onAdd, onDelete, onSave }) {
   const tbodyRef = useRef(null);
   function delById(id) {
     const item = rows.find(it => String(it.id_literature) === String(id));
     if (item) onDelete(item);
   }
   const showTable = rows.length > 0 || required;
+  const showBtn = editable && showTable && !!g.genKey;
   return <div style={{ marginBottom: 16 }}>
-    {g.subtitle && <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6 }}>{g.subtitle}</div>}
+    {g.subtitle && (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>{g.subtitle}</div>
+        {showBtn && <Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
+          {generating === g.genKey ? "Генерация..." : "Сгенерировать"}
+        </Btn>}
+      </div>
+    )}
     {showTable ? (
       <div style={{ position: "relative" }}>
       <div className="table-scroll">

@@ -139,8 +139,10 @@ async def generate_section(
     lab_hours: int = 0,
     self_study_hours: int = 0,
     extra_context: str = "",
+    user_prompt_template_override: str | None = None,
+    system_prompt_override: str | None = None,
 ) -> dict:
-    prompt_template = SECTION_PROMPTS.get(section)
+    prompt_template = user_prompt_template_override or SECTION_PROMPTS.get(section)
     if not prompt_template:
         return {"generated_text": "", "model": "none", "tokens_used": 0, "generation_time_ms": 0}
 
@@ -154,6 +156,7 @@ async def generate_section(
         prompt += f"\n\nДополнительный контекст из загруженных материалов:\n{extra_context[:4000]}"
 
     prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+    system_message = system_prompt_override if system_prompt_override is not None else SYSTEM_PROMPT
 
     start = time.time()
     try:
@@ -163,7 +166,7 @@ async def generate_section(
         response = await client.chat.completions.create(
             model=settings.LLM_MODEL,
             messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_message},
                 {"role": "user", "content": prompt},
             ],
             temperature=0.7,

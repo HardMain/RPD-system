@@ -9,7 +9,6 @@ class UserOut(BaseModel):
     id_user: int
     full_name: str
     title: str | None = None
-    employee_type: str | None = None
     email: str | None = None
     role: str
     department: str

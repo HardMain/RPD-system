@@ -12,7 +12,7 @@ from app.models import (
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
     RpdDeveloper, Notification,
     Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
-    Permission, RolePermission, RpdApprovalRoute,
+    Permission, RolePermission, RpdApprovalRoute, LlmPrompt,
 )
 from app.services.bup_parser import parse_bup_xls
 from app.services.bup_importer import import_parsed_bup
@@ -103,6 +103,272 @@ async def seed_permissions():
         await db.commit()
         print("✅ Permissions seeded")
 
+DEFAULT_LLM_PROMPTS: list[dict] = [
+    {
+        "section_key": "goals",
+        "section_label": "1.1 Цели и задачи дисциплины",
+        "is_structural": False,
+        "order_index": 1,
+        "description": "Свободный текст: цель (1 абзац) + список задач.",
+        "user_prompt_template": (
+            "Сформулируй раздел «Цели и задачи дисциплины» для РПД.\n"
+            "Включи: цель изучения дисциплины (1 абзац) и задачи (список из 5-7 пунктов).\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}\nПрофиль: {profile}"
+        ),
+    },
+    {
+        "section_key": "objects",
+        "section_label": "1.2 Изучаемые объекты дисциплины",
+        "is_structural": False,
+        "order_index": 2,
+        "description": "Свободный текст: перечень изучаемых понятий и областей.",
+        "user_prompt_template": (
+            "Сформулируй раздел «Изучаемые объекты дисциплины» для РПД.\n"
+            "Перечисли основные понятия, объекты и области, изучаемые в рамках дисциплины.\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "requirements",
+        "section_label": "1.3 Входные требования",
+        "is_structural": False,
+        "order_index": 3,
+        "description": "Свободный текст: пререквизиты — какие дисциплины и компетенции нужны.",
+        "user_prompt_template": (
+            "Сформулируй раздел «Входные требования» (пререквизиты) для РПД.\n"
+            "Укажи, какие дисциплины должны быть изучены до начала данного курса и какие компетенции необходимы.\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "learning_outcomes",
+        "section_label": "2. Планируемые результаты обучения",
+        "is_structural": True,
+        "order_index": 4,
+        "description": "JSON: результаты обучения, привязанные к индикаторам компетенций.",
+        "user_prompt_template": (
+            "Сгенерируй результаты обучения по дисциплине, привязанные к компетенциям.\n"
+            "Для каждого индикатора сформулируй конкретный результат обучения и средство оценки.\n"
+            "Формат ответа — JSON массив: [{{\"indicator_code\": \"ИД-1ОК-1\", \"outcome_text\": \"...\", \"assessment_tool\": \"...\"}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "content",
+        "section_label": "4. Содержание дисциплины",
+        "is_structural": True,
+        "order_index": 5,
+        "description": "JSON: 8-12 разделов с темами и часами по видам работ. Сумма часов должна совпадать с планом БУПа.",
+        "user_prompt_template": (
+            "Сгенерируй содержание дисциплины: список из 8-12 разделов (тем) с кратким описанием каждого.\n"
+            "Для каждого раздела укажи:\n- Название раздела\n- Краткое содержание (1-2 предложения)\n"
+            "- Рекомендуемые часы: лекции, практики, лабораторные, СРС\n\n"
+            "Формат ответа — JSON массив:\n"
+            "[{{\"title\": \"...\", \"brief_content\": \"...\", \"lecture_hours\": N, \"practice_hours\": N, \"lab_hours\": N, \"self_study_hours\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}\n"
+            "Всего часов: {total_hours}, лекции: {lecture_hours}, практики: {practice_hours}, "
+            "лабораторные: {lab_hours}, СРС: {self_study_hours}"
+        ),
+    },
+    {
+        "section_key": "topics_practice",
+        "section_label": "4.1 Тематика практических занятий",
+        "is_structural": True,
+        "order_index": 6,
+        "description": "JSON: список тем практических, по 2-4 часа на тему.",
+        "user_prompt_template": (
+            "Сгенерируй тематики примерных практических занятий по дисциплине.\n"
+            "Каждая тема должна занимать 2-4 часа. Сумма часов всех тем должна быть равна часам практик из БУПа.\n"
+            "Формат ответа — JSON массив: [{{\"title\": \"...\", \"hours\": N, \"description\": \"...\"}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}\nЧасы практик: {practice_hours}"
+        ),
+    },
+    {
+        "section_key": "topics_lab",
+        "section_label": "4.2 Тематика лабораторных работ",
+        "is_structural": True,
+        "order_index": 7,
+        "description": "JSON: список тем лабораторных, по 2-4 часа на работу.",
+        "user_prompt_template": (
+            "Сгенерируй тематики примерных лабораторных работ по дисциплине.\n"
+            "Каждая работа должна занимать 2-4 часа. Сумма часов всех работ должна быть равна часам лабораторных из БУПа.\n"
+            "Формат ответа — JSON массив: [{{\"title\": \"...\", \"hours\": N, \"description\": \"...\"}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}\nЧасы лабораторных: {lab_hours}"
+        ),
+    },
+    {
+        "section_key": "educational_tech",
+        "section_label": "5.1 Образовательные технологии",
+        "is_structural": False,
+        "order_index": 8,
+        "description": "Свободный текст: используемые технологии и методы обучения.",
+        "user_prompt_template": (
+            "Сформулируй раздел «Образовательные технологии» для РПД.\n"
+            "Опиши используемые технологии и методы обучения: лекции, лабораторные, проектная работа и т.д.\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}\n"
+            "Часы: лекции {lecture_hours}, практики {practice_hours}, лабораторные {lab_hours}, СРС {self_study_hours}"
+        ),
+    },
+    {
+        "section_key": "methodical_recommendations",
+        "section_label": "5.2 Методические указания",
+        "is_structural": False,
+        "order_index": 9,
+        "description": "Свободный текст: рекомендации обучающимся по освоению дисциплины.",
+        "user_prompt_template": (
+            "Сформулируй раздел «Методические рекомендации для обучающихся» для РПД.\n"
+            "Включи рекомендации по подготовке к лекциям, лабораторным, самостоятельной работе.\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "literature_printed_main",
+        "section_label": "6.1.1 Основная литература (печатная)",
+        "is_structural": True,
+        "order_index": 10,
+        "description": "JSON: только реально существующие учебники, без выдуманных ISBN.",
+        "user_prompt_template": (
+            "Предложи 3-5 источников основной печатной литературы для дисциплины.\n"
+            "Включай ТОЛЬКО реально существующие книги. Если не уверен в существовании — пропусти.\n"
+            "Формат — JSON массив: [{{\"title\": \"полное библиографическое описание\", \"copies_count\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "literature_printed_additional",
+        "section_label": "6.1.2.1 Дополнительная литература — учебные/научные",
+        "is_structural": True,
+        "order_index": 11,
+        "description": "JSON: дополнительные учебные и научные издания. Только реальные.",
+        "user_prompt_template": (
+            "Предложи 2-4 дополнительных учебных и научных издания по дисциплине.\n"
+            "ТОЛЬКО реально существующие книги. При сомнении — пропусти.\n"
+            "Формат — JSON массив: [{{\"title\": \"полное библиографическое описание\", \"copies_count\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "literature_periodicals",
+        "section_label": "6.1.2.2 Периодические издания",
+        "is_structural": True,
+        "order_index": 12,
+        "description": "JSON: реальные научные журналы по теме дисциплины.",
+        "user_prompt_template": (
+            "Предложи 2-4 периодических научных издания (журналы) по дисциплине.\n"
+            "ТОЛЬКО реально существующие журналы. При сомнении — пропусти.\n"
+            "Формат — JSON массив: [{{\"title\": \"название журнала, ISSN, периодичность\", \"copies_count\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "literature_normative",
+        "section_label": "6.1.2.3 Нормативно-технические издания",
+        "is_structural": True,
+        "order_index": 13,
+        "description": "JSON: ГОСТы, СНиПы, нормативные документы. Только реально действующие.",
+        "user_prompt_template": (
+            "Предложи 1-3 нормативно-технических документа (ГОСТ, СНиП, ОСТ и т.п.) по дисциплине, если они применимы.\n"
+            "ТОЛЬКО реально существующие документы. При сомнении — пропусти.\n"
+            "Формат — JSON массив: [{{\"title\": \"номер и наименование документа\", \"copies_count\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "literature_methodical_students",
+        "section_label": "6.1.3 Методические указания для студентов",
+        "is_structural": True,
+        "order_index": 14,
+        "description": "JSON: методические указания, разработанные кафедрой. Чаще всего пусто.",
+        "user_prompt_template": (
+            "Предложи 1-2 методических указания для студентов по освоению дисциплины.\n"
+            "Если у дисциплины обычно нет таких изданий — верни пустой массив [].\n"
+            "Формат — JSON массив: [{{\"title\": \"...\", \"copies_count\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "literature_methodical_self_study",
+        "section_label": "6.1.4 УМО самостоятельной работы",
+        "is_structural": True,
+        "order_index": 15,
+        "description": "JSON: пособия для самостоятельной работы. Часто пусто.",
+        "user_prompt_template": (
+            "Предложи 1-2 пособия для самостоятельной работы студентов.\n"
+            "Если у дисциплины обычно нет таких изданий — верни пустой массив [].\n"
+            "Формат — JSON массив: [{{\"title\": \"...\", \"copies_count\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "literature_electronic",
+        "section_label": "6.2 Электронная учебно-методическая литература",
+        "is_structural": True,
+        "order_index": 16,
+        "description": "JSON: электронные ресурсы из ЭБС. URL должен быть на реальной площадке (eLibrary, Лань, Юрайт и т.п.).",
+        "user_prompt_template": (
+            "Предложи 3-5 электронных источников по дисциплине из ЭБС (eLibrary, Лань, Юрайт, IPRBooks и т.п.).\n"
+            "ТОЛЬКО реально существующие издания. URL должен указывать на действительный ресурс.\n"
+            "Формат — JSON массив: [{{\"source_type\": \"вид литературы ЭБС\", \"title\": \"...\", \"url\": \"https://...\", \"availability\": [\"сеть Интернет\"]}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "databases",
+        "section_label": "6.3 БД и информационно-справочные системы",
+        "is_structural": True,
+        "order_index": 17,
+        "description": "JSON: профессиональные БД и ИСС (eLibrary, КонсультантПлюс, Scopus и т.п.).",
+        "user_prompt_template": (
+            "Предложи 3-5 современных профессиональных баз данных и информационных справочных систем, полезных при изучении дисциплины.\n"
+            "Включай только реально существующие БД (eLibrary, КиберЛенинка, Scopus, Web of Science, КонсультантПлюс и т.п.).\n"
+            "Формат — JSON массив: [{{\"name\": \"...\", \"db_type\": \"...\", \"url\": \"https://...\"}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "software",
+        "section_label": "6.4 Программное обеспечение",
+        "is_structural": True,
+        "order_index": 18,
+        "description": "JSON: ПО для проведения занятий. Только реально существующее.",
+        "user_prompt_template": (
+            "Предложи 3-6 программных продуктов для проведения занятий по дисциплине.\n"
+            "Только реально существующее ПО. Указывай тип лицензии: «коммерческая», «свободная», «учебная».\n"
+            "Формат — JSON массив: [{{\"name\": \"...\", \"license_type\": \"...\", \"purpose\": \"...\"}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}"
+        ),
+    },
+    {
+        "section_key": "material_tech",
+        "section_label": "7. Материально-техническое обеспечение",
+        "is_structural": True,
+        "order_index": 19,
+        "description": "JSON: помещения и оборудование, сгруппированные по типам.",
+        "user_prompt_template": (
+            "Предложи материально-техническое обеспечение дисциплины, сгруппированное по типам помещений (аудитория для лекций, компьютерный класс, лаборатория).\n"
+            "Формат — JSON массив: [{{\"room_type\": \"...\", \"equipment\": \"...\", \"quantity\": N}}]\n\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}\n"
+            "Часы: лекции {lecture_hours}, практики {practice_hours}, лабораторные {lab_hours}"
+        ),
+    },
+]
+
+
+async def seed_llm_prompts():
+    async with async_session() as db:
+        existing = await db.execute(select(LlmPrompt.section_key))
+        existing_keys = {row[0] for row in existing.all()}
+        added = 0
+        for spec in DEFAULT_LLM_PROMPTS:
+            if spec["section_key"] in existing_keys:
+                continue
+            db.add(LlmPrompt(**spec))
+            added += 1
+        if added:
+            await db.commit()
+            print(f"✅ LLM prompts seeded ({added} new)")
+
+
 async def seed_data():
     await seed_reference()
     await _seed_demo_data()
@@ -110,6 +376,7 @@ async def seed_data():
     await ensure_role_permissions()
     await seed_test_samples()
     await ensure_three_indicators_for_all_competencies()
+    await seed_llm_prompts()
 
 
 async def ensure_three_indicators_for_all_competencies():
@@ -213,68 +480,62 @@ async def _seed_demo_data():
         pwd = hash_password("password")
         teacher = User(
             id_role=r_teacher.id_role, id_department=dept.id_department,
-            ldap_uid="ivanov", full_name="Иванов Иван Иванович",
-            title="Доцент", employee_type="teacher",
+            login="ivanov", full_name="Иванов Иван Иванович",
+            title="Доцент",
             email="ivanov@pstu.ru", password_hash=pwd,
         )
         teacher2 = User(
             id_role=r_teacher.id_role, id_department=dept.id_department,
-            ldap_uid="kozlova", full_name="Козлова Мария Сергеевна",
-            title="Старший преподаватель", employee_type="teacher",
+            login="kozlova", full_name="Козлова Мария Сергеевна",
+            title="Старший преподаватель",
             email="kozlova@pstu.ru", password_hash=pwd,
         )
         head = User(
             id_role=r_head.id_role, id_department=dept.id_department,
-            ldap_uid="petrov", full_name="Петров Пётр Петрович",
-            title="Заведующий кафедрой, профессор", employee_type="head",
+            login="petrov", full_name="Петров Пётр Петрович",
+            title="Заведующий кафедрой, профессор",
             email="petrov@pstu.ru", password_hash=pwd,
         )
         admin_user = User(
             id_role=r_admin.id_role, id_department=dept.id_department,
-            ldap_uid="admin", full_name="Сидоров Алексей Михайлович",
-            title="Системный администратор", employee_type="admin",
+            login="admin", full_name="Сидоров Алексей Михайлович",
+            title="Системный администратор",
             email="admin@pstu.ru", password_hash=pwd,
         )
         umu_chief = User(
             id_role=r_umu_chief.id_role, id_department=dept_umu.id_department,
-            ldap_uid="solovieva", full_name="Соловьёва Ольга Викторовна",
+            login="solovieva", full_name="Соловьёва Ольга Викторовна",
             title="Начальник учебно-методического отдела",
-            employee_type="umu_chief",
             email="solovieva@pstu.ru", password_hash=pwd,
         )
         umu_dir = User(
             id_role=r_umu_dir.id_role, id_department=dept_umu.id_department,
-            ldap_uid="kuznetsov", full_name="Кузнецов Дмитрий Александрович",
+            login="kuznetsov", full_name="Кузнецов Дмитрий Александрович",
             title="Начальник учебно-методического управления",
-            employee_type="umu_dir",
             email="kuznetsov@pstu.ru", password_hash=pwd,
         )
         vice_rector = User(
             id_role=r_vice_rector.id_role, id_department=dept_rectorate.id_department,
-            ldap_uid="orlov", full_name="Орлов Сергей Андреевич",
+            login="orlov", full_name="Орлов Сергей Андреевич",
             title="Проректор по учебной работе",
-            employee_type="vice_rector",
             email="orlov@pstu.ru", password_hash=pwd,
         )
         rector = User(
             id_role=r_rector.id_role, id_department=dept_rectorate.id_department,
-            ldap_uid="rector", full_name="Беляев Анатолий Николаевич",
+            login="rector", full_name="Беляев Анатолий Николаевич",
             title="Ректор",
-            employee_type="rector",
             email="rector@pstu.ru", password_hash=pwd,
         )
         tech_umu = User(
             id_role=r_tech_umu.id_role, id_department=dept_umu.id_department,
-            ldap_uid="tech_umu", full_name="Васильева Анна Игоревна",
+            login="tech_umu", full_name="Васильева Анна Игоревна",
             title="Техник учебно-методического управления",
-            employee_type="tech_umu",
             email="tech_umu@pstu.ru", password_hash=pwd,
         )
         tech_dept = User(
             id_role=r_tech_dept.id_role, id_department=dept.id_department,
-            ldap_uid="tech_dept", full_name="Морозов Илья Викторович",
+            login="tech_dept", full_name="Морозов Илья Викторович",
             title="Техник кафедры ИТАС",
-            employee_type="tech_dept",
             email="tech_dept@pstu.ru", password_hash=pwd,
         )
         db.add_all([teacher, teacher2, head, admin_user, umu_chief, umu_dir, vice_rector, rector, tech_umu, tech_dept])
@@ -765,7 +1026,7 @@ async def seed_test_samples():
         if marker.scalars().first():
             return
 
-        teacher_res = await db.execute(select(User).where(User.ldap_uid == "ivanov"))
+        teacher_res = await db.execute(select(User).where(User.login == "ivanov"))
         teacher = teacher_res.scalar_one_or_none()
         if teacher is None:
             return
@@ -921,7 +1182,7 @@ async def seed_test_samples():
         db.add(link_multi)
         new_rpds.append(rpd_manual_multi)
 
-        head_res = await db.execute(select(User).where(User.ldap_uid == "petrov"))
+        head_res = await db.execute(select(User).where(User.login == "petrov"))
         head_user = head_res.scalar_one_or_none()
         head_uid = head_user.id_user if head_user else None
 

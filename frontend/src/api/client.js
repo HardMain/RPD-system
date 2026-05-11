@@ -102,6 +102,10 @@ export const adminUpdateDiscipline = (idDiscipline, payload) =>
 export const adminDeleteDiscipline = (idDiscipline) =>
   api.delete(`/admin/disciplines/${idDiscipline}`);
 
+export const adminListLlmPrompts = () => api.get('/admin/llm-prompts/');
+export const adminUpdateLlmPrompt = (idPrompt, data) =>
+  api.patch(`/admin/llm-prompts/${idPrompt}`, data);
+
 export const adminListGlobalDocuments = () =>
   api.get('/admin/documents/');
 export const adminUploadGlobalDocument = (file) => {
@@ -135,6 +139,9 @@ export const adminUpdateUser = (userId, data) => api.patch(`/admin/users/${userI
 export const adminDeactivateUser = (userId) => api.delete(`/admin/users/${userId}`);
 export const adminListRoles = () => api.get('/admin/roles');
 export const adminListDepartments = () => api.get('/admin/departments');
+export const adminCreateDepartment = (data) => api.post('/admin/departments', data);
+export const adminUpdateDepartment = (deptId, data) => api.patch(`/admin/departments/${deptId}`, data);
+export const adminDeleteDepartment = (deptId) => api.delete(`/admin/departments/${deptId}`);
 export const searchUsers = (q) => api.get('/admin/users/search', { params: { q } });
 
 export const adminListDirections = () => api.get('/admin/directions/');

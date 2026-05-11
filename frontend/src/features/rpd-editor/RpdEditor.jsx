@@ -654,6 +654,13 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     } catch { } setGenerating(null);
   }
 
+  async function autoFillAll() {
+    const keys = ["goals", "objects", "requirements", "educational_tech", "methodical_recommendations"];
+    for (const k of keys) {
+      await autoFill(k);
+    }
+  }
+
   async function saveFieldFromValue(fieldKey, value) {
     if (value === _expectedValue(fieldKey, rpd)) return;
     const patch = _payloadForField(fieldKey, value);
@@ -728,6 +735,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const practiceHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.practice_hours || 0), 0);
   const hasLabTopics = labHoursTotal > 0 && (rpd.topics || []).some(t => t.topic_type === "lab" && (t.title || "").trim());
   const hasPracticeTopics = practiceHoursTotal > 0 && (rpd.topics || []).some(t => t.topic_type === "practice" && (t.title || "").trim());
+  const electronicLiteratureCount = (rpd.literature || []).filter(l => !!l.url).length;
 
   const requiredCompletion = (() => {
     const checks = [
@@ -772,10 +780,12 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           hasLabTopics={hasLabTopics}
           hasPracticeTopics={hasPracticeTopics}
           isCollapsed={isCollapsed}
+          generating={generating}
           onToggleMode={onToggleMode}
           onOpenPair={onOpenPair}
           onGoTo={goTo}
           onOpenMeta={() => setShowMeta(true)}
+          onAutoFillAll={autoFillAll}
           onExpand={() => setSidebarW(lastExpandedSidebarW.current || 220)}
         />
 
@@ -899,7 +909,12 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               <HR />
 
               <div ref={refs["2"]} style={{ marginBottom: 32 }}>
-                <SectionHeading title="2. Планируемые результаты обучения по дисциплине" collapsed={isCollapsed("2")} onToggle={() => toggleCollapse("2")} />
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: isCollapsed("2") ? 0 : 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <SectionHeading title="2. Планируемые результаты обучения по дисциплине" collapsed={isCollapsed("2")} onToggle={() => toggleCollapse("2")} marginBottom={0} />
+                  </div>
+                  {!isCollapsed("2") && isEdit && canEdit && <Btn small primary onClick={() => autoFill("learning_outcomes")} disabled={!!generating}>{generating === "learning_outcomes" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                </div>
                 {!isCollapsed("2") && <OutcomesEditor />}
               </div>
               <HR />
@@ -929,12 +944,18 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <HR />
 
                   <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных практических занятий</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>Тематика примерных практических занятий</div>
+                      {isEdit && canEdit && practiceHoursTotal > 0 && <Btn small primary onClick={() => autoFill("topics_practice")} disabled={!!generating}>{generating === "topics_practice" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                    </div>
                     <TopicsEditor kind="practice" />
                   </div>
                   <HR />
                   <div ref={refs["4.2"]} style={{ marginBottom: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Тематика примерных лабораторных работ</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>Тематика примерных лабораторных работ</div>
+                      {isEdit && canEdit && labHoursTotal > 0 && <Btn small primary onClick={() => autoFill("topics_lab")} disabled={!!generating}>{generating === "topics_lab" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                    </div>
                     <TopicsEditor kind="lab" />
                   </div>
                 </div>}
@@ -964,18 +985,27 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   </div>
                   <HR />
                   <div ref={refs["6.2"]} style={{ marginBottom: 32 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.2. Электронная учебно-методическая литература</div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700 }}>6.2. Электронная учебно-методическая литература</div>
+                      {isEdit && canEdit && electronicLiteratureCount > 0 && <Btn small primary onClick={() => autoFill("literature_electronic")} disabled={!!generating}>{generating === "literature_electronic" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                    </div>
                     <LiteratureEditor kind="electronic" />
                   </div>
                   <HR />
 
                   <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.3. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.3. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
+                      {isEdit && canEdit && <Btn small primary onClick={() => autoFill("databases")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "databases" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                    </div>
                     <DatabasesEditor />
                   </div>
                   <HR />
                   <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
-                    <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>6.4. Лицензионное и свободно распространяемое программное обеспечение, используемое при осуществлении образовательного процесса по дисциплине</div>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+                      <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.4. Лицензионное и свободно распространяемое программное обеспечение, используемое при осуществлении образовательного процесса по дисциплине</div>
+                      {isEdit && canEdit && <Btn small primary onClick={() => autoFill("software")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "software" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                    </div>
                     <SoftwareEditor />
                   </div>
                 </>}
@@ -983,7 +1013,12 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               <HR />
 
               <div ref={refs["7"]} style={{ marginBottom: 32 }}>
-                <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса по дисциплине" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} />
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: isCollapsed("7") ? 0 : 16 }}>
+                  <div style={{ flex: 1 }}>
+                    <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса по дисциплине" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} marginBottom={0} />
+                  </div>
+                  {!isCollapsed("7") && isEdit && canEdit && <Btn small primary onClick={() => autoFill("material_tech")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "material_tech" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                </div>
                 {!isCollapsed("7") && <MtechEditor />}
               </div>
               <HR />

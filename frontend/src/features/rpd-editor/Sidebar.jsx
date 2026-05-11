@@ -1,5 +1,5 @@
 import { T, F } from "../../theme.js";
-import { EyeIcon, PencilIcon, SplitIcon } from "../../components/icons.jsx";
+import { EyeIcon, PencilIcon, SplitIcon, SparkleIcon } from "../../components/icons.jsx";
 import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from "./constants.js";
 
 export const SIDEBAR_COLLAPSED_W = 38;
@@ -9,7 +9,8 @@ export function Sidebar({
   validationErrors, activeSec,
   hasLabTopics, hasPracticeTopics,
   isCollapsed,
-  onToggleMode, onOpenPair, onGoTo, onOpenMeta,
+  generating,
+  onToggleMode, onOpenPair, onGoTo, onOpenMeta, onAutoFillAll,
   onExpand,
 }) {
 
@@ -113,6 +114,25 @@ export function Sidebar({
         {hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
       </button>;
     })}</div>
+
+    {onAutoFillAll && isEdit && canEdit && <div style={{ padding: 10, borderTop: "1px solid " + T.border, flexShrink: 0 }}>
+      <button
+        onClick={onAutoFillAll}
+        disabled={!!generating}
+        title="Последовательно сгенерировать содержание всех поддерживаемых разделов через LLM"
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          width: "100%", padding: "7px 12px",
+          border: "1px solid transparent",
+          borderRadius: 5,
+          background: generating ? T.borderLight : T.accent,
+          color: generating ? T.textMuted : "#fff",
+          fontSize: 12, fontWeight: 600, fontFamily: F,
+          cursor: generating ? "default" : "pointer",
+          whiteSpace: "nowrap",
+        }}
+      ><SparkleIcon /> {generating ? "Генерация..." : "Сгенерировать всё"}</button>
+    </div>}
   </div>;
 }
 

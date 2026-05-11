@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, SmallInteger
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, SmallInteger, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -178,6 +178,19 @@ class LlmGenerationLog(Base):
     generation_time_ms = Column(Integer)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     rpd = relationship("Rpd", back_populates="llm_logs")
+
+
+class LlmPrompt(Base):
+    __tablename__ = "llm_prompts"
+    id_prompt = Column(Integer, primary_key=True, autoincrement=True)
+    section_key = Column(String(80), unique=True, nullable=False)
+    section_label = Column(String(200), nullable=False)
+    is_structural = Column(Boolean, default=False, nullable=False)
+    system_prompt = Column(Text)
+    user_prompt_template = Column(Text, nullable=False)
+    description = Column(Text)
+    order_index = Column(Integer, default=0, nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class ApprovalStage(Base):
     __tablename__ = "approval_stages"

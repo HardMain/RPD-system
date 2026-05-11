@@ -12,6 +12,7 @@ import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorMod
 import { LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
 import { BupsContent } from "./AdminBupsPage.jsx";
 import { DirectionsContent } from "./AdminDirectionsPage.jsx";
+import { DepartmentsContent } from "./AdminDepartmentsPage.jsx";
 
 const KIND_GROUPS = [
   {
@@ -19,9 +20,9 @@ const KIND_GROUPS = [
     title: "Общие справочники",
     kinds: [
       { id: "discipline", label: "Дисциплины" },
+      { id: "department", label: "Подразделения" },
       { id: "bup", label: "БУПы" },
       { id: "direction", label: "Направления и ФГОС" },
-      { id: "document", label: "Документы для LLM" },
     ],
   },
   {
@@ -50,6 +51,14 @@ const KIND_GROUPS = [
     kinds: [
       { id: "room_type", label: "Виды занятий (МТО)" },
       { id: "equipment", label: "Оборудование" },
+    ],
+  },
+  {
+    label: "LLM",
+    title: "LLM — промпты и контекст",
+    kinds: [
+      { id: "llm_prompt", label: "Промпты по разделам" },
+      { id: "document", label: "Документы для LLM" },
     ],
   },
 ];
@@ -129,7 +138,7 @@ export function AdminDictionariesPage() {
   const isLiterature = kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(kind);
   const isDiscipline = kind === "discipline";
-  const isCustomKind = kind === "bup" || kind === "direction" || kind === "document";
+  const isCustomKind = kind === "bup" || kind === "direction" || kind === "document" || kind === "department" || kind === "llm_prompt";
   const activeGroupIdx = Math.max(0, KIND_GROUPS.findIndex(g => g.kinds.some(k => k.id === kind)));
   const parentMeta = PARENT_LABELS[kind] || null;
   const useGroupedView = !!parentMeta;
@@ -308,6 +317,8 @@ export function AdminDictionariesPage() {
   const kindHint = kind === "bup" ? "Загруженные XLS-БУПы. При импорте дисциплины, компетенции и индикаторы попадают в справочники автоматически."
     : kind === "direction" ? "Направления подготовки и привязанные к ним файлы ФГОС. Список пополняется при импорте БУПов."
     : kind === "document" ? "Документы, которые передаются LLM как контекст при генерации разделов РПД. Загруженные здесь файлы используются глобально для всех РПД."
+    : kind === "department" ? "Кафедры, отделы и управления, к которым привязаны пользователи системы."
+    : kind === "llm_prompt" ? "Шаблоны промптов, по которым LLM генерирует содержание разделов РПД. В шаблоне доступны плейсхолдеры: {discipline}, {direction}, {profile}, {total_hours}, {lecture_hours}, {practice_hours}, {lab_hours}, {self_study_hours}. Если system_prompt пуст — используется общий системный промпт."
     : isDiscipline ? "Перечень всех дисциплин, доступных для создания РПД вручную. Пополняется автоматически при импорте БУПов; при удалении БУПа дисциплины из справочника не удаляются."
     : "Записи отсюда подсказываются преподавателям при заполнении РПД. Автоматически дополняются после согласования каждой РПД.";
 
@@ -360,6 +371,8 @@ export function AdminDictionariesPage() {
       {kind === "bup" && <BupsContent />}
       {kind === "direction" && <DirectionsContent />}
       {kind === "document" && <DocumentsContent />}
+      {kind === "department" && <DepartmentsContent />}
+      {kind === "llm_prompt" && <LlmPromptsContent />}
 
       {!isCustomKind && <>
       <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
@@ -669,6 +682,145 @@ function DocumentsContent() {
   </>;
 }
 
+function LlmPromptsContent() {
+  const [prompts, setPrompts] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState(null);
+  const [savedTick, setSavedTick] = useState(0);
+
+  const fetchAll = (silent) => {
+    if (!silent) setLoading(true);
+    api.adminListLlmPrompts().then(r => setPrompts(r.data || []))
+      .catch(() => { if (!silent) setPrompts([]); })
+      .finally(() => { if (!silent) setLoading(false); });
+  };
+  useEffect(() => { fetchAll(false); }, []);
+
+  async function saveField(idPrompt, field, value) {
+    try {
+      await api.adminUpdateLlmPrompt(idPrompt, { [field]: value });
+      setSavedTick(t => t + 1);
+      fetchAll(true);
+    } catch (err) {
+      setErrorMsg("Не удалось сохранить: " + (err?.response?.data?.detail || err.message));
+    }
+  }
+
+  if (loading) {
+    return <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>;
+  }
+  if (prompts.length === 0) {
+    return <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
+      Промпты ещё не созданы. Пересоздайте БД — seed добавит базовые шаблоны.
+    </div>;
+  }
+
+  return <>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {prompts.map(p => <PromptCard key={p.id_prompt} prompt={p} onSave={saveField} />)}
+    </div>
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
+  </>;
+}
+
+function PromptCard({ prompt, onSave }) {
+  const [systemPrompt, setSystemPrompt] = useState(prompt.system_prompt || "");
+  const [userPromptTemplate, setUserPromptTemplate] = useState(prompt.user_prompt_template || "");
+  const [description, setDescription] = useState(prompt.description || "");
+  const [collapsed, setCollapsed] = useState(true);
+
+  useEffect(() => { setSystemPrompt(prompt.system_prompt || ""); }, [prompt.system_prompt]);
+  useEffect(() => { setUserPromptTemplate(prompt.user_prompt_template || ""); }, [prompt.user_prompt_template]);
+  useEffect(() => { setDescription(prompt.description || ""); }, [prompt.description]);
+
+  function commitSystem() {
+    if (systemPrompt === (prompt.system_prompt || "")) return;
+    onSave(prompt.id_prompt, "system_prompt", systemPrompt || null);
+  }
+  function commitUserTemplate() {
+    if (userPromptTemplate === (prompt.user_prompt_template || "")) return;
+    onSave(prompt.id_prompt, "user_prompt_template", userPromptTemplate);
+  }
+  function commitDescription() {
+    if (description === (prompt.description || "")) return;
+    onSave(prompt.id_prompt, "description", description || null);
+  }
+
+  const updatedAt = prompt.updated_at ? new Date(prompt.updated_at).toLocaleString("ru-RU") : null;
+
+  return <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
+    <button type="button" onClick={() => setCollapsed(c => !c)}
+      style={{
+        display: "flex", alignItems: "center", gap: 10, width: "100%",
+        padding: "10px 14px", background: "transparent", border: "none",
+        borderBottom: collapsed ? "none" : "1px solid " + T.borderLight,
+        cursor: "pointer", textAlign: "left", fontFamily: F,
+      }}>
+      <span style={{ color: T.textMuted, fontSize: 11, fontWeight: 700, fontVariantNumeric: "tabular-nums", minWidth: 22 }}>{prompt.order_index || ""}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, color: T.text, flex: 1 }}>{prompt.section_label}</span>
+      <span style={{
+        fontSize: 10, fontWeight: 700, letterSpacing: ".4px", textTransform: "uppercase",
+        padding: "2px 8px", borderRadius: 10,
+        background: prompt.is_structural ? T.accentLight : T.bg,
+        color: prompt.is_structural ? T.accent : T.textMuted,
+      }}>{prompt.is_structural ? "JSON" : "Текст"}</span>
+      <span style={{ fontSize: 11, color: T.textMuted, fontFamily: "monospace" }}>{prompt.section_key}</span>
+      <span style={{ color: T.textMuted, fontSize: 14 }}>{collapsed ? "▸" : "▾"}</span>
+    </button>
+    {!collapsed && <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div>
+        <label style={miniLabel}>Описание / подсказка для админа</label>
+        <textarea
+          value={description}
+          onChange={e => setDescription(e.target.value)}
+          onBlur={commitDescription}
+          placeholder="Кратко: что именно генерируется, какой формат ожидается"
+          rows={2}
+          style={textareaStyle}
+        />
+      </div>
+      <div>
+        <label style={miniLabel}>System prompt <span style={{ color: T.textMuted, fontWeight: 400 }}>(оставьте пустым — будет использован общий системный промпт)</span></label>
+        <textarea
+          value={systemPrompt}
+          onChange={e => setSystemPrompt(e.target.value)}
+          onBlur={commitSystem}
+          placeholder="Опционально: переопределить системный промпт для этого раздела"
+          rows={3}
+          style={textareaStyle}
+        />
+      </div>
+      <div>
+        <label style={miniLabel}>User prompt template <span style={{ color: T.red, fontWeight: 700 }}>*</span></label>
+        <textarea
+          value={userPromptTemplate}
+          onChange={e => setUserPromptTemplate(e.target.value)}
+          onBlur={commitUserTemplate}
+          placeholder="Шаблон промпта. Плейсхолдеры: {discipline}, {direction}, {profile}, {total_hours}, {lecture_hours}, {practice_hours}, {lab_hours}, {self_study_hours}"
+          rows={8}
+          style={{ ...textareaStyle, fontFamily: "monospace", fontSize: 12 }}
+        />
+      </div>
+      {updatedAt && <div style={{ fontSize: 10, color: T.textMuted, textAlign: "right", fontStyle: "italic" }}>
+        Обновлено: {updatedAt}
+      </div>}
+    </div>}
+  </div>;
+}
+
+const textareaStyle = {
+  width: "100%",
+  padding: "8px 10px",
+  border: "1px solid " + T.border,
+  borderRadius: 4,
+  fontSize: 13, fontFamily: F,
+  lineHeight: 1.5,
+  resize: "vertical",
+  outline: "none",
+  boxSizing: "border-box",
+  background: T.surface,
+};
+
 function FilterChip({ label, count, active, onClick }) {
   return <button
     type="button"
@@ -692,11 +844,11 @@ function FilterChip({ label, count, active, onClick }) {
 function RowActions({ onEdit, onDelete }) {
   return <div style={{ display: "inline-flex", gap: 4 }}>
     <button onClick={onEdit} title="Редактировать"
-      style={{ border: "none", background: "none", cursor: "pointer", padding: 4, display: "inline-flex", color: T.textMuted }}>
+      style={{ ...iconBtn, cursor: "pointer", color: T.textMuted }}>
       <PencilIcon />
     </button>
     <button onClick={onDelete} title="Удалить запись"
-      style={{ border: "none", background: "none", cursor: "pointer", padding: 4, display: "inline-flex" }}>
+      style={{ ...iconBtn, cursor: "pointer" }}>
       <TrashIcon />
     </button>
   </div>;

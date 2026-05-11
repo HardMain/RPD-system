@@ -26,7 +26,7 @@ from app.schemas.rpd import (
     FosFileOut, FosFileSelect,
 )
 from app.schemas.notification import NotificationOut
-from app.schemas.admin import UserCreate, UserDetailOut, RoleOut, DepartmentOut
+from app.schemas.admin import UserCreate, UserDetailOut, RoleOut, DepartmentIn, DepartmentOut
 
 TokenResponse.model_rebuild()
 RpdDetailOut.model_rebuild()
@@ -54,5 +54,5 @@ __all__ = [
     "BupDisciplineRefOut",
     "FosFileOut", "FosFileSelect",
     "NotificationOut",
-    "UserCreate", "UserDetailOut", "RoleOut", "DepartmentOut",
+    "UserCreate", "UserDetailOut", "RoleOut", "DepartmentIn", "DepartmentOut",
 ]

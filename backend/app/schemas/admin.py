@@ -3,10 +3,9 @@ from pydantic import BaseModel
 from datetime import datetime
 
 class UserCreate(BaseModel):
-    ldap_uid: str
+    login: str
     full_name: str
     title: str | None = None
-    employee_type: str | None = None
     email: str | None = None
     id_role: int
     id_department: int
@@ -14,10 +13,9 @@ class UserCreate(BaseModel):
 
 class UserDetailOut(BaseModel):
     id_user: int
-    ldap_uid: str
+    login: str
     full_name: str
     title: str | None = None
-    employee_type: str | None = None
     email: str | None = None
     is_active: bool
     role: str
@@ -36,10 +34,16 @@ class RoleOut(BaseModel):
     class Config:
         from_attributes = True
 
+class DepartmentIn(BaseModel):
+    name: str
+    faculty: str | None = None
+
 class DepartmentOut(BaseModel):
     id_department: int
     name: str
     faculty: str | None = None
+    users_count: int = 0
+    bup_disciplines_count: int = 0
 
     class Config:
         from_attributes = True

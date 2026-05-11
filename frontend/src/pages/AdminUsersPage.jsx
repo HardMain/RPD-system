@@ -51,7 +51,7 @@ export function AdminUsersPage({ user }) {
       if (statusFilter === "inactive" && u.is_active) return false;
       if (q) {
         const matches = (u.full_name || "").toLowerCase().includes(q)
-          || (u.ldap_uid || "").toLowerCase().includes(q)
+          || (u.login || "").toLowerCase().includes(q)
           || (u.title || "").toLowerCase().includes(q)
           || (u.role || "").toLowerCase().includes(q)
           || (u.department || "").toLowerCase().includes(q)
@@ -106,7 +106,7 @@ export function AdminUsersPage({ user }) {
                     style={{ background: T.surface, cursor: "pointer", opacity: u.is_active ? 1 : 0.55 }}
                     title="Двойной клик — редактировать">
                   <td style={{ ...tcell, fontWeight: 600 }}>{u.full_name}</td>
-                  <td style={tcell}>{u.ldap_uid}</td>
+                  <td style={tcell}>{u.login}</td>
                   <td style={{ ...tcell, color: u.title ? T.text : T.textMuted }}>{u.title || "—"}</td>
                   <td style={tcell}>{u.role}</td>
                   <td style={tcell}>{u.department}</td>
@@ -154,10 +154,9 @@ export function AdminUsersPage({ user }) {
 function UserEditModal({ data, roles, departments, onClose, onSaved }) {
   const isCreate = !!data.create;
   const [form, setForm] = useState({
-    ldap_uid: isCreate ? "" : data.ldap_uid,
+    login: isCreate ? "" : data.login,
     full_name: isCreate ? "" : data.full_name,
     title: isCreate ? "" : (data.title || ""),
-    employee_type: isCreate ? "" : (data.employee_type || ""),
     email: isCreate ? "" : (data.email || ""),
     id_role: isCreate ? (roles[0]?.id_role || 0) : data.id_role,
     id_department: isCreate ? (departments[0]?.id_department || 0) : data.id_department,
@@ -171,7 +170,7 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
 
   async function save() {
     if (!form.full_name.trim()) { setErr("ФИО обязательно"); return; }
-    if (isCreate && !form.ldap_uid.trim()) { setErr("Логин обязателен"); return; }
+    if (isCreate && !form.login.trim()) { setErr("Логин обязателен"); return; }
     if (!form.id_role) { setErr("Выберите роль"); return; }
     if (!form.id_department) { setErr("Выберите подразделение"); return; }
     setErr("");
@@ -179,10 +178,9 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
     try {
       if (isCreate) {
         await api.adminCreateUser({
-          ldap_uid: form.ldap_uid.trim(),
+          login: form.login.trim(),
           full_name: form.full_name.trim(),
           title: form.title.trim() || null,
-          employee_type: form.employee_type.trim() || null,
           email: form.email.trim() || null,
           id_role: +form.id_role,
           id_department: +form.id_department,
@@ -192,9 +190,8 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
         const payload = {
           full_name: form.full_name.trim(),
           title: form.title.trim() || null,
-          employee_type: form.employee_type.trim() || null,
           email: form.email.trim() || null,
-          ldap_uid: form.ldap_uid.trim(),
+          login: form.login.trim(),
           id_role: +form.id_role,
           id_department: +form.id_department,
           is_active: !!form.is_active,
@@ -215,9 +212,8 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
     </div>
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
       <Input label="ФИО" value={form.full_name} onChange={e => set("full_name", e.target.value)} />
-      <Input label="Логин (ldap_uid)" value={form.ldap_uid} onChange={e => set("ldap_uid", e.target.value)} disabled={!isCreate} />
+      <Input label="Логин" value={form.login} onChange={e => set("login", e.target.value)} disabled={!isCreate} />
       <Input label="Должность" value={form.title} onChange={e => set("title", e.target.value)} placeholder="Доцент / Профессор / Заведующий..." />
-      <Input label="Тип сотрудника (slug)" value={form.employee_type} onChange={e => set("employee_type", e.target.value)} placeholder="teacher / head / umu_chief..." />
       <Input label="Email" value={form.email} onChange={e => set("email", e.target.value)} />
 
       <div>

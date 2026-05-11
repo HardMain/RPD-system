@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
     result = await db.execute(
         select(User)
-        .where(User.ldap_uid == form.username)
+        .where(User.login == form.username)
         .options(
             selectinload(User.role).selectinload(Role.permissions).selectinload(RolePermission.permission),
             selectinload(User.department),
@@ -34,7 +34,6 @@ async def login(form: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = 
             id_user=user.id_user,
             full_name=user.full_name,
             title=user.title,
-            employee_type=user.employee_type,
             email=user.email,
             role=user.role.name if user.role else "",
             department=user.department.name if user.department else "",
@@ -48,7 +47,6 @@ async def me(user: User = Depends(get_current_user)):
         id_user=user.id_user,
         full_name=user.full_name,
         title=user.title,
-        employee_type=user.employee_type,
         email=user.email,
         role=user.role.name if user.role else "",
         department=user.department.name if user.department else "",
