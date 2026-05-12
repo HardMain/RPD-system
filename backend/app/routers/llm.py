@@ -1,18 +1,34 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.models import (
     User, Rpd, Discipline, Direction, Bup, BupDiscipline, LlmGenerationLog,
-    UploadedDocument, RpdBupDiscipline, LlmPrompt,
+    UploadedDocument, UploadedDocumentSection, RpdBupDiscipline, LlmPrompt,
+    RpdLearningOutcome, CompetencyIndicator,
 )
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
 from app.services.llm_service import generate_section, extract_text_from_file
+from app.services.structured_generation import (
+    parse_json_array,
+    apply_content_sections,
+    apply_topics,
+    apply_literature,
+    apply_software,
+    apply_databases,
+    apply_material_tech,
+    apply_learning_outcomes,
+    _PRINTED_SOURCE_TYPES,
+)
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
+
+_LITERATURE_SECTION_KEYS = set(_PRINTED_SOURCE_TYPES.keys()) | {"literature_electronic"}
+_TOPIC_SECTION_KEYS = {"topics_practice": "practice", "topics_lab": "lab"}
+
 
 @router.post("/{rpd_id}/generate", response_model=LlmGenerateResponse)
 async def generate(
@@ -41,23 +57,98 @@ async def generate(
     direc = bd.bup.direction if bd and bd.bup else None
 
     extra_context = data.context or ""
-    docs_to_use = list(rpd.uploaded_documents or [])
-    global_docs_res = await db.execute(
-        select(UploadedDocument).where(UploadedDocument.id_rpd.is_(None))
+
+    if data.section == "learning_outcomes":
+        lo_res = await db.execute(
+            select(RpdLearningOutcome)
+            .where(RpdLearningOutcome.id_rpd == rpd_id)
+            .options(selectinload(RpdLearningOutcome.indicator))
+        )
+        lo_list = lo_res.scalars().all()
+        if lo_list:
+            lines = ["Индикаторы компетенций дисциплины (нужно заполнить для каждого):"]
+            for lo in lo_list:
+                ind = lo.indicator
+                code = lo.indicator_code or (ind.code if ind else None)
+                comp_code = lo.competency_code or ""
+                desc = (ind.description if ind else None) or ""
+                if code:
+                    lines.append(f"  {code} ({comp_code}): {desc}")
+            extra_context = "\n".join(lines) + "\n\n" + extra_context
+
+    sections_res = await db.execute(
+        select(UploadedDocumentSection, UploadedDocument)
+        .join(UploadedDocument, UploadedDocument.id_document == UploadedDocumentSection.id_document)
+        .where(UploadedDocumentSection.section_key == data.section)
+        .where(or_(UploadedDocument.id_rpd == rpd_id, UploadedDocument.id_rpd.is_(None)))
+        .order_by(UploadedDocumentSection.created_at.desc())
+        .limit(5)
     )
-    docs_to_use.extend(global_docs_res.scalars().all())
-    if docs_to_use:
-        doc_texts = []
-        for doc in docs_to_use[:8]:
-            text = await extract_text_from_file(doc.file_path)
-            if text:
-                doc_texts.append(f"--- {doc.filename} ---\n{text}")
-        if doc_texts:
-            extra_context += "\n\n" + "\n\n".join(doc_texts)
+    section_rows = sections_res.all()
+
+    if section_rows:
+        examples = []
+        for chunk, doc in section_rows:
+            examples.append(f"--- Пример этого же раздела из «{doc.filename}» ---\n{chunk.content}")
+        extra_context += "\n\n" + "\n\n".join(examples)
+    else:
+        docs_to_use = list(rpd.uploaded_documents or [])
+        global_docs_res = await db.execute(
+            select(UploadedDocument).where(UploadedDocument.id_rpd.is_(None))
+        )
+        docs_to_use.extend(global_docs_res.scalars().all())
+        if docs_to_use:
+            doc_texts = []
+            for doc in docs_to_use[:5]:
+                text = await extract_text_from_file(doc.file_path)
+                if text:
+                    doc_texts.append(f"--- {doc.filename} ---\n{text}")
+            if doc_texts:
+                extra_context += "\n\n" + "\n\n".join(doc_texts)
 
     prompt_row = (await db.execute(
         select(LlmPrompt).where(LlmPrompt.section_key == data.section)
     )).scalar_one_or_none()
+
+    semesters_plan: dict[int, dict] = {}
+    semesters_plan_text = ""
+    if data.section == "content":
+        sem_data = (bd.semesters_data or []) if bd else []
+        if len(sem_data) > 1:
+            lines = [
+                f"Дисциплина охватывает {len(sem_data)} семестра(-ов). "
+                "Создавай разделы для каждого семестра отдельно согласно плану:"
+            ]
+            for s in sem_data:
+                num = s.get("number", "?")
+                lec = s.get("lecture", 0) or 0
+                prac = s.get("practice", 0) or 0
+                lab = s.get("lab", 0) or 0
+                srs = s.get("srs", 0) or 0
+                lines.append(
+                    f"  - Семестр {num}: лекции {lec} ч, практики {prac} ч, "
+                    f"лабораторные {lab} ч, СРС {srs} ч"
+                )
+                if isinstance(num, int):
+                    semesters_plan[num] = {"lecture": lec, "practice": prac, "lab": lab, "srs": srs}
+            lines.append(
+                'В JSON для каждого раздела добавь поле "semester": N (номер семестра из списка выше).'
+            )
+            semesters_plan_text = "\n".join(lines)
+        elif sem_data:
+            num = sem_data[0].get("number")
+            if isinstance(num, int):
+                s = sem_data[0]
+                semesters_plan[num] = {
+                    "lecture": s.get("lecture", 0) or 0,
+                    "practice": s.get("practice", 0) or 0,
+                    "lab": s.get("lab", 0) or 0,
+                    "srs": s.get("srs", 0) or 0,
+                }
+                semesters_plan_text = (
+                    f'Все разделы относятся к семестру {num}. '
+                    f'В JSON для каждого раздела добавь поле "semester": {num}.'
+                )
 
     gen = await generate_section(
         section=data.section,
@@ -70,6 +161,7 @@ async def generate(
         lab_hours=(bd.lab_hours if bd else 0) or 0,
         self_study_hours=(bd.self_study_hours if bd else 0) or 0,
         extra_context=extra_context,
+        semesters_plan=semesters_plan_text,
         user_prompt_template_override=prompt_row.user_prompt_template if prompt_row else None,
         system_prompt_override=prompt_row.system_prompt if prompt_row else None,
     )
@@ -85,12 +177,46 @@ async def generate(
     db.add(log)
     await db.commit()
 
+    structural_created = 0
+    if gen["model"] != "fallback":
+        items = parse_json_array(gen["generated_text"])
+        if items:
+            if data.section == "content":
+                structural_created = await apply_content_sections(
+                    db, rpd, items,
+                    semester_plan=semesters_plan,
+                    total_lecture=(bd.lecture_hours if bd else 0) or 0,
+                    total_practice=(bd.practice_hours if bd else 0) or 0,
+                    total_lab=(bd.lab_hours if bd else 0) or 0,
+                    total_srs=(bd.self_study_hours if bd else 0) or 0,
+                )
+            elif data.section in _TOPIC_SECTION_KEYS:
+                structural_created = await apply_topics(
+                    db, rpd_id, items, _TOPIC_SECTION_KEYS[data.section]
+                )
+            elif data.section in _LITERATURE_SECTION_KEYS:
+                structural_created = await apply_literature(db, rpd_id, items, data.section)
+            elif data.section == "software":
+                structural_created = await apply_software(db, rpd_id, items)
+            elif data.section == "databases":
+                structural_created = await apply_databases(db, rpd_id, items)
+            elif data.section == "material_tech":
+                structural_created = await apply_material_tech(db, rpd_id, items)
+            elif data.section == "learning_outcomes":
+                structural_created = await apply_learning_outcomes(db, rpd_id, items)
+                if structural_created:
+                    from datetime import datetime, timezone
+                    rpd.updated_at = datetime.now(timezone.utc)
+                    await db.commit()
+
     return LlmGenerateResponse(
         section=data.section,
         generated_text=gen["generated_text"],
         model=gen["model"],
         tokens_used=gen["tokens_used"],
+        structural_created=structural_created,
     )
+
 
 @router.get("/{rpd_id}/logs")
 async def get_generation_logs(

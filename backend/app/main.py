@@ -82,8 +82,15 @@ async def lifespan(app: FastAPI):
     await seed_data()
     from app.core.database import async_session
     from app.services.dictionary_service import backfill_from_approved
+    from app.services.document_sections import backfill_unprocessed_documents
     async with async_session() as db:
         await backfill_from_approved(db)
+        try:
+            processed = await backfill_unprocessed_documents(db)
+            if processed:
+                print(f"✅ Documents sectioned at startup ({processed} files)")
+        except Exception as e:
+            print(f"⚠️ Document section backfill failed: {e}")
     yield
 
 app = FastAPI(

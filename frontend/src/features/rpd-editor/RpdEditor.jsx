@@ -647,9 +647,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       const text = res.data.generated_text;
       const fieldMap = { goals: "goals", objects: "objects", requirements: "requirements", educational_tech: "educational_tech", methodical_recommendations: "methodical_recommendations" };
       if (fieldMap[key]) {
-
         setEditTexts(p => ({ ...p, [fieldMap[key]]: text }));
         setTimeout(() => saveFieldFromValue(fieldMap[key], text), 0);
+      } else {
+        await load(true);
+        if (onAfterSave) onAfterSave();
       }
     } catch { } setGenerating(null);
   }

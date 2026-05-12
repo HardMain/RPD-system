@@ -294,6 +294,7 @@ class LlmGenerateResponse(BaseModel):
     generated_text: str
     model: str
     tokens_used: int | None = None
+    structural_created: int = 0
 
 class RpdListOut(BaseModel):
     id_rpd: int

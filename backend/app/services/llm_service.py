@@ -1,3 +1,4 @@
+import re
 import time
 import hashlib
 from openai import AsyncOpenAI
@@ -7,7 +8,39 @@ client = AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_UR
 
 SYSTEM_PROMPT = """Ты — эксперт по составлению рабочих программ дисциплин (РПД) для российских вузов.
 Генерируй текст на русском языке в академическом стиле, соответствующий требованиям ФГОС ВО.
-Текст должен быть конкретным, содержательным и соответствовать указанной дисциплине и направлению подготовки."""
+Текст должен быть конкретным, содержательным и соответствовать указанной дисциплине и направлению подготовки.
+
+Правила оформления вывода:
+- Не пиши заголовок раздела (например, «1.1 Цели и задачи», «### 1.1...») — он уже есть в РПД.
+- Не используй markdown-разметку: ни «#», ни «**», ни обратных кавычек.
+- Не добавляй итоговый абзац-резюме («Таким образом, ...», «В заключение, ...»).
+- Если в дополнительных материалах есть пример этого же раздела для другой дисциплины — строго копируй его структуру: те же подзаголовки, тот же тип списка (маркированный/нумерованный/вложенный), та же средняя длина. Подставляй только содержание, релевантное новой дисциплине.
+- Если примера в материалах нет — используй стандартную для РПД структуру."""
+
+
+_MD_HEADER_RE = re.compile(r"^\s*#{1,6}\s+.+$", re.MULTILINE)
+_BOLD_LINE_RE = re.compile(r"^\s*\*{2,3}[^*\n]{1,120}\*{2,3}\s*$", re.MULTILINE)
+
+
+def _clean_llm_output(text: str) -> str:
+    if not text:
+        return text
+    text = text.strip()
+    while True:
+        first_line, sep, rest = text.partition("\n")
+        first = first_line.strip()
+        if not first:
+            text = rest.lstrip()
+            continue
+        if _MD_HEADER_RE.match(first) or _BOLD_LINE_RE.match(first):
+            text = rest.lstrip()
+            continue
+        if re.match(r"^\d+(\.\d+)*\.?\s+[А-ЯЁA-Z][^.]{2,80}$", first):
+            text = rest.lstrip()
+            continue
+        break
+    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    return text.strip()
 
 SECTION_PROMPTS = {
     "goals": (
@@ -106,13 +139,13 @@ async def extract_text_from_file(file_path: str) -> str:
     try:
         if ext == ".txt":
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read()[:5000]
+                return f.read()[:8000]
 
         elif ext == ".docx":
             from docx import Document
             doc = Document(file_path)
             text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-            return text[:5000]
+            return text[:8000]
 
         elif ext == ".pdf":
             import subprocess
@@ -121,7 +154,7 @@ async def extract_text_from_file(file_path: str) -> str:
                 capture_output=True, text=True, timeout=30,
             )
             if result.returncode == 0:
-                return result.stdout[:5000]
+                return result.stdout[:8000]
             return ""
         else:
             return ""
@@ -139,6 +172,7 @@ async def generate_section(
     lab_hours: int = 0,
     self_study_hours: int = 0,
     extra_context: str = "",
+    semesters_plan: str = "",
     user_prompt_template_override: str | None = None,
     system_prompt_override: str | None = None,
 ) -> dict:
@@ -146,14 +180,17 @@ async def generate_section(
     if not prompt_template:
         return {"generated_text": "", "model": "none", "tokens_used": 0, "generation_time_ms": 0}
 
-    prompt = prompt_template.format(
-        discipline=discipline, direction=direction, profile=profile or "",
-        total_hours=total_hours, lecture_hours=lecture_hours,
-        practice_hours=practice_hours, lab_hours=lab_hours,
-        self_study_hours=self_study_hours,
-    )
+    from collections import defaultdict
+    fmt_vars = defaultdict(str, {
+        "discipline": discipline, "direction": direction, "profile": profile or "",
+        "total_hours": total_hours, "lecture_hours": lecture_hours,
+        "practice_hours": practice_hours, "lab_hours": lab_hours,
+        "self_study_hours": self_study_hours,
+        "semesters_plan": semesters_plan,
+    })
+    prompt = prompt_template.format_map(fmt_vars)
     if extra_context:
-        prompt += f"\n\nДополнительный контекст из загруженных материалов:\n{extra_context[:4000]}"
+        prompt += f"\n\nДополнительный контекст из загруженных материалов:\n{extra_context[:12000]}"
 
     prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
     system_message = system_prompt_override if system_prompt_override is not None else SYSTEM_PROMPT
@@ -172,7 +209,7 @@ async def generate_section(
             temperature=0.7,
             max_tokens=2000,
         )
-        text = response.choices[0].message.content
+        text = _clean_llm_output(response.choices[0].message.content)
         tokens = response.usage.total_tokens if response.usage else 0
         model = settings.LLM_MODEL
     except Exception:

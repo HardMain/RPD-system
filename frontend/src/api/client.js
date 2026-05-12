@@ -117,6 +117,10 @@ export const adminDeleteGlobalDocument = (idDocument) =>
   api.delete(`/admin/documents/${idDocument}`);
 export const adminGlobalDocumentDownloadUrl = (idDocument) =>
   `/api/admin/documents/${idDocument}/download`;
+export const adminListDocumentSections = (idDocument) =>
+  api.get(`/admin/documents/${idDocument}/sections`);
+export const adminReparseDocument = (idDocument) =>
+  api.post(`/admin/documents/${idDocument}/reparse`);
 
 export const fileUrl = (fileId) => `/api/files/${fileId}`;
 

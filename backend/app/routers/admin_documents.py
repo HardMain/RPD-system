@@ -10,8 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.auth import get_current_user, user_can
 from app.core.config import settings
 from app.core.database import get_db
-from app.models import User, UploadedDocument
+from app.models import User, UploadedDocument, UploadedDocumentSection, LlmPrompt
 from app.schemas import UploadedDocumentOut
+from app.services.document_sections import extract_and_save_sections
 
 router = APIRouter(prefix="/api/admin/documents", tags=["admin-documents"])
 
@@ -76,6 +77,10 @@ async def upload_global_document(
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
+    try:
+        await extract_and_save_sections(db, doc.id_document, doc.file_path)
+    except Exception:
+        pass
     return doc
 
 
@@ -97,6 +102,52 @@ async def download_global_document(
     if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=404, detail="Файл не найден на диске")
     return FileResponse(doc.file_path, filename=doc.filename)
+
+
+@router.get("/{doc_id}/sections")
+async def list_document_sections(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _ensure_perm(user)
+    doc = await db.get(UploadedDocument, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404)
+    res = await db.execute(
+        select(UploadedDocumentSection, LlmPrompt.section_label, LlmPrompt.order_index)
+        .outerjoin(LlmPrompt, LlmPrompt.section_key == UploadedDocumentSection.section_key)
+        .where(UploadedDocumentSection.id_document == doc_id)
+        .order_by(LlmPrompt.order_index.nullslast(), UploadedDocumentSection.section_key)
+    )
+    rows = res.all()
+    return [
+        {
+            "section_key": chunk.section_key,
+            "section_label": label or chunk.section_key,
+            "content": chunk.content,
+            "char_count": len(chunk.content) if chunk.content else 0,
+            "extraction_method": chunk.extraction_method,
+            "created_at": chunk.created_at.isoformat() if chunk.created_at else None,
+        }
+        for chunk, label, _ in rows
+    ]
+
+
+@router.post("/{doc_id}/reparse", status_code=200)
+async def reparse_document(
+    doc_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _ensure_perm(user)
+    doc = await db.get(UploadedDocument, doc_id)
+    if not doc:
+        raise HTTPException(status_code=404)
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=404, detail="Файл не найден на диске")
+    count = await extract_and_save_sections(db, doc.id_document, doc.file_path)
+    return {"sections_extracted": count}
 
 
 @router.delete("/{doc_id}", status_code=204)

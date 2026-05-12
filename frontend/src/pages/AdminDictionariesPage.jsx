@@ -590,6 +590,10 @@ function DocumentsContent() {
   const [busy, setBusy] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
+  const [expanded, setExpanded] = useState(() => new Set());
+  const [sectionsCache, setSectionsCache] = useState({});
+  const [loadingSections, setLoadingSections] = useState(() => new Set());
+  const [reparsingId, setReparsingId] = useState(null);
   const fileRef = useRef(null);
 
   const fetchAll = (silent) => {
@@ -598,6 +602,44 @@ function DocumentsContent() {
   };
   const reload = () => fetchAll(true);
   useEffect(() => { fetchAll(false); }, []);
+
+  async function loadSections(docId) {
+    setLoadingSections(prev => { const n = new Set(prev); n.add(docId); return n; });
+    try {
+      const r = await api.adminListDocumentSections(docId);
+      setSectionsCache(prev => ({ ...prev, [docId]: r.data || [] }));
+    } catch {
+      setSectionsCache(prev => ({ ...prev, [docId]: [] }));
+    } finally {
+      setLoadingSections(prev => { const n = new Set(prev); n.delete(docId); return n; });
+    }
+  }
+
+  function toggleExpand(docId) {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(docId)) {
+        next.delete(docId);
+      } else {
+        next.add(docId);
+        if (sectionsCache[docId] === undefined) loadSections(docId);
+      }
+      return next;
+    });
+  }
+
+  async function reparse(docId) {
+    setReparsingId(docId);
+    try {
+      await api.adminReparseDocument(docId);
+      delete sectionsCache[docId];
+      setSectionsCache({ ...sectionsCache });
+      if (expanded.has(docId)) await loadSections(docId);
+    } catch (err) {
+      setErrorMsg("Не удалось переразобрать: " + (err?.response?.data?.detail || err.message));
+    }
+    setReparsingId(null);
+  }
 
   async function handleUpload(e) {
     const file = e.target.files?.[0];
@@ -645,6 +687,7 @@ function DocumentsContent() {
             </div>
           : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
             <thead><tr style={{ background: T.surface }}>
+              <th style={{ ...hdr, width: 30 }} />
               <th style={hdr}>Файл</th>
               <th style={{ ...hdr, width: 100, textAlign: "center" }}>Тип</th>
               <th style={{ ...hdr, width: 120, textAlign: "right" }}>Размер</th>
@@ -652,19 +695,41 @@ function DocumentsContent() {
               <th style={{ ...hdr, width: 1 }} />
             </tr></thead>
             <tbody>
-              {pageItems.map(d => (
-                <tr key={d.id_document} style={{ background: T.surface }}>
-                  <td style={{ ...tcell, fontWeight: 500 }}>
-                    <a href={api.adminGlobalDocumentDownloadUrl(d.id_document)} target="_blank" rel="noreferrer" style={{ color: T.accent }}>{d.filename}</a>
-                  </td>
-                  <td style={{ ...tcell, textAlign: "center", textTransform: "uppercase", color: T.textMuted, fontSize: 11 }}>{d.file_type}</td>
-                  <td style={{ ...tcell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted }}>{d.file_size ? (d.file_size / 1024).toFixed(0) + " КБ" : "—"}</td>
-                  <td style={{ ...tcell, color: T.textMuted, fontSize: 11 }}>{d.uploaded_at ? new Date(d.uploaded_at).toLocaleString("ru-RU") : "—"}</td>
-                  <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }}>
-                    <button onClick={() => setPendingDelete(d)} title="Удалить файл" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
-                  </td>
-                </tr>
-              ))}
+              {pageItems.map(d => {
+                const isExpanded = expanded.has(d.id_document);
+                const isLoadingSec = loadingSections.has(d.id_document);
+                const sections = sectionsCache[d.id_document];
+                return <>
+                  <tr key={d.id_document} style={{ background: T.surface }}>
+                    <td style={{ ...tcell, textAlign: "center", padding: "10px 4px" }}>
+                      <button onClick={() => toggleExpand(d.id_document)} title={isExpanded ? "Свернуть" : "Показать секции"}
+                        style={{ ...iconBtn, cursor: "pointer", color: T.textMuted, fontSize: 14 }}>
+                        {isExpanded ? "▾" : "▸"}
+                      </button>
+                    </td>
+                    <td style={{ ...tcell, fontWeight: 500 }}>
+                      <a href={api.adminGlobalDocumentDownloadUrl(d.id_document)} target="_blank" rel="noreferrer" style={{ color: T.accent }}>{d.filename}</a>
+                    </td>
+                    <td style={{ ...tcell, textAlign: "center", textTransform: "uppercase", color: T.textMuted, fontSize: 11 }}>{d.file_type}</td>
+                    <td style={{ ...tcell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted }}>{d.file_size ? (d.file_size / 1024).toFixed(0) + " КБ" : "—"}</td>
+                    <td style={{ ...tcell, color: T.textMuted, fontSize: 11 }}>{d.uploaded_at ? new Date(d.uploaded_at).toLocaleString("ru-RU") : "—"}</td>
+                    <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }}>
+                      <button onClick={() => setPendingDelete(d)} title="Удалить файл" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
+                    </td>
+                  </tr>
+                  {isExpanded && <tr key={`${d.id_document}-sec`}>
+                    <td colSpan={6} style={{ padding: 0, background: T.bg, borderBottom: "1px solid " + T.borderLight }}>
+                      <DocumentSectionsView
+                        docId={d.id_document}
+                        loading={isLoadingSec}
+                        sections={sections}
+                        reparsing={reparsingId === d.id_document}
+                        onReparse={() => reparse(d.id_document)}
+                      />
+                    </td>
+                  </tr>}
+                </>;
+              })}
             </tbody>
           </table>}
     </div>
@@ -680,6 +745,65 @@ function DocumentsContent() {
     />}
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </>;
+}
+
+function DocumentSectionsView({ docId, loading, sections, reparsing, onReparse }) {
+  const [expandedKeys, setExpandedKeys] = useState(() => new Set());
+
+  function toggle(key) {
+    setExpandedKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  if (loading) {
+    return <div style={{ padding: 20, display: "flex", justifyContent: "center" }}><Spinner size={20} /></div>;
+  }
+
+  return <div style={{ padding: "12px 16px" }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px" }}>
+        {sections && sections.length > 0
+          ? `Извлечено секций: ${sections.length}`
+          : "Секции не извлечены — эвристика не распознала заголовки"}
+      </div>
+      <Btn small onClick={onReparse} disabled={reparsing}>
+        {reparsing ? "Разбираем…" : "↻ Переразобрать"}
+      </Btn>
+    </div>
+    {sections && sections.length > 0 ? (
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {sections.map(s => {
+          const isExp = expandedKeys.has(s.section_key);
+          const preview = (s.content || "").slice(0, 240);
+          const needsToggle = (s.content || "").length > 240;
+          return <div key={s.section_key} style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 4, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderBottom: isExp ? "1px solid " + T.borderLight : "none" }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: T.text, flex: 1 }}>{s.section_label}</span>
+              <span style={{ fontSize: 10, fontFamily: "monospace", color: T.textMuted }}>{s.section_key}</span>
+              <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 8, background: T.bg, color: T.textMuted, fontVariantNumeric: "tabular-nums" }}>{s.char_count} симв.</span>
+              <span style={{ fontSize: 10, padding: "2px 6px", borderRadius: 8, background: T.accentLight, color: T.accent, textTransform: "uppercase", letterSpacing: ".3px" }}>{s.extraction_method}</span>
+              {needsToggle && (
+                <button onClick={() => toggle(s.section_key)} title={isExp ? "Свернуть" : "Развернуть"}
+                  style={{ ...iconBtn, cursor: "pointer", color: T.textMuted, fontSize: 12, padding: "2px 6px" }}>
+                  {isExp ? "▾" : "▸"}
+                </button>
+              )}
+            </div>
+            <div style={{ padding: "8px 10px", fontSize: 12, color: T.text, lineHeight: 1.5, whiteSpace: "pre-wrap", fontFamily: F, background: T.bg }}>
+              {isExp ? s.content : (preview + (needsToggle ? "…" : ""))}
+            </div>
+          </div>;
+        })}
+      </div>
+    ) : (
+      <div style={{ padding: "12px 16px", color: T.textMuted, fontSize: 12, fontStyle: "italic", background: T.surface, border: "1px dashed " + T.border, borderRadius: 4 }}>
+        Файл загружен, но эвристический парсер не нашёл в нём знакомых заголовков разделов РПД (например «1.1 Цели и задачи», «Содержание дисциплины», «Литература»). При генерации этот файл будет передан LLM целиком (legacy-режим).
+      </div>
+    )}
+  </div>;
 }
 
 function LlmPromptsContent() {

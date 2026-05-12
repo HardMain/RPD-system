@@ -10,7 +10,8 @@ from app.models.rpd import (
     Rpd, RpdDeveloper, RpdSection, RpdTopic, RpdLearningOutcome,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase,
     RpdFosFile,
-    UploadedDocument, LlmGenerationLog, LlmPrompt, ApprovalStage, RpdApprovalRoute,
+    UploadedDocument, UploadedDocumentSection,
+    LlmGenerationLog, LlmPrompt, ApprovalStage, RpdApprovalRoute,
 )
 from app.models.dictionary import DictionaryEntry
 
@@ -22,6 +23,7 @@ __all__ = [
     "Rpd", "RpdDeveloper", "RpdSection", "RpdTopic", "RpdLearningOutcome",
     "RpdLiterature", "RpdSoftware", "RpdMaterialTech", "RpdDatabase",
     "RpdFosFile",
-    "UploadedDocument", "LlmGenerationLog", "LlmPrompt", "ApprovalStage", "RpdApprovalRoute",
+    "UploadedDocument", "UploadedDocumentSection",
+    "LlmGenerationLog", "LlmPrompt", "ApprovalStage", "RpdApprovalRoute",
     "DictionaryEntry",
 ]

@@ -79,6 +79,17 @@ export function OutcomesEditor() {
     reloadRows();
   }, [reloadRows]);
 
+  const reloadRowsRef = useRef(reloadRows);
+  useEffect(() => { reloadRowsRef.current = reloadRows; }, [reloadRows]);
+  const prevUpdatedAt = useRef(rpd?.updated_at);
+  useEffect(() => {
+    if (!loaded) return;
+    const curr = rpd?.updated_at;
+    if (curr === prevUpdatedAt.current) return;
+    prevUpdatedAt.current = curr;
+    reloadRowsRef.current();
+  }, [rpd?.updated_at, loaded]);
+
   const autoAddedRef = useRef(false);
   useEffect(() => {
     if (autoAddedRef.current) return;

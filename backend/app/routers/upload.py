@@ -12,6 +12,7 @@ from app.core.auth import get_current_user
 from app.core.config import settings
 from app.models.user import User, UploadedDocument, Rpd
 from app.schemas import UploadedDocumentOut
+from app.services.document_sections import extract_and_save_sections
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
@@ -61,6 +62,10 @@ async def upload_document(
     db.add(doc)
     await db.commit()
     await db.refresh(doc)
+    try:
+        await extract_and_save_sections(db, doc.id_document, doc.file_path)
+    except Exception:
+        pass
     return doc
 
 @router.get("/{rpd_id}", response_model=list[UploadedDocumentOut])

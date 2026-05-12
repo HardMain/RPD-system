@@ -167,6 +167,17 @@ class UploadedDocument(Base):
     rpd = relationship("Rpd", back_populates="uploaded_documents")
     uploader = relationship("User")
 
+class UploadedDocumentSection(Base):
+    __tablename__ = "uploaded_document_sections"
+    id_section_chunk = Column(Integer, primary_key=True, autoincrement=True)
+    id_document = Column(Integer, ForeignKey("uploaded_documents.id_document", ondelete="CASCADE"), nullable=False)
+    section_key = Column(String(80), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    extraction_method = Column(String(20), nullable=False, default="heuristic")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    document = relationship("UploadedDocument", backref="section_chunks")
+
+
 class LlmGenerationLog(Base):
     __tablename__ = "llm_generation_log"
     id_log = Column(Integer, primary_key=True, autoincrement=True)
