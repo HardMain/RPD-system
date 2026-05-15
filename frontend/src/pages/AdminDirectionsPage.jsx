@@ -6,6 +6,14 @@ import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
+import { useSort, SortTh } from "../components/sortable.jsx";
+
+const DIR_ACCESSORS = {
+  code: d => d.code || "",
+  name: d => d.name || "",
+  programs: d => (d.programs || []).map(p => p.profile).join(", "),
+  fgos: d => d.fgos_file_name || "",
+};
 import { TrashIcon, UploadIcon, PencilIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
@@ -50,7 +58,7 @@ export function DirectionsContent() {
       if (q) {
         const matches = (d.code || "").toLowerCase().includes(q)
           || (d.name || "").toLowerCase().includes(q)
-          || (d.profile || "").toLowerCase().includes(q);
+          || (d.programs || []).some(p => (p.profile || "").toLowerCase().includes(q));
         if (!matches) return false;
       }
       if (fgosFilter === "with") return !!d.fgos_file_id;
@@ -65,7 +73,10 @@ export function DirectionsContent() {
     without: items.filter(d => !d.fgos_file_id).length,
   }), [items]);
 
-  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(filtered, { defaultPageSize: 50, storageKey: "adminDirections.pageSize" });
+  const { sort, toggleSort, sortItems } = useSort("code", "asc");
+  const sorted = useMemo(() => sortItems(filtered, DIR_ACCESSORS), [filtered, sort]);
+
+  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sorted, { defaultPageSize: 50, storageKey: "adminDirections.pageSize" });
 
   return <>
     <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
@@ -103,12 +114,12 @@ export function DirectionsContent() {
         ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
         : filtered.length === 0
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>{items.length === 0 ? "Направлений нет — они подтянутся при импорте БУПов." : "Ничего не нашлось."}</div>
-          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
             <thead><tr style={{ background: T.surface }}>
-              <th style={hdr}>Код</th>
-              <th style={hdr}>Наименование</th>
-              <th style={hdr}>Профиль</th>
-              <th style={hdr}>Файл ФГОС</th>
+              <SortTh sortKey="code" sort={sort} onSort={toggleSort} style={{ width: 130 }}>Код</SortTh>
+              <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Наименование</SortTh>
+              <SortTh sortKey="programs" sort={sort} onSort={toggleSort} style={{ width: 300 }}>Профили</SortTh>
+              <SortTh sortKey="fgos" sort={sort} onSort={toggleSort} style={{ width: 220 }}>Файл ФГОС</SortTh>
               <th style={{ ...hdr, textAlign: "center", width: 80 }} />
             </tr></thead>
             <tbody>
@@ -120,7 +131,15 @@ export function DirectionsContent() {
                     title="Двойной клик — редактировать">
                   <td style={{ ...tcell, fontWeight: 600 }}>{d.code}</td>
                   <td style={tcell}>{d.name}</td>
-                  <td style={{ ...tcell, color: d.profile ? T.text : T.textMuted }}>{d.profile || "—"}</td>
+                  <td style={tcell}>
+                    {(d.programs && d.programs.length)
+                      ? <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                          {d.programs.map(p => (
+                            <span key={p.id_program} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: T.bg, color: T.text, border: "1px solid " + T.borderLight }}>{p.profile}</span>
+                          ))}
+                        </div>
+                      : <span style={{ color: T.textMuted, fontStyle: "italic" }}>нет профилей</span>}
+                  </td>
                   <td style={tcell}>
                     {d.fgos_file_id
                       ? <a href={api.fileUrl(d.fgos_file_id)} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ color: T.accent, fontWeight: 600 }}>{d.fgos_file_name}</a>
@@ -153,6 +172,8 @@ export function DirectionsContent() {
       onClose={() => setEditing(null)}
       onUpload={async (file) => { await uploadFor(editing.id_direction, file); setEditing(null); }}
       onDetach={() => { setPendingDelete(editing); setEditing(null); }}
+      onSaved={() => { setEditing(null); reload(); }}
+      onChanged={reload}
       onError={setErrorMsg}
     />}
     {pendingDelete && <ConfirmDeleteModal
@@ -166,8 +187,14 @@ export function DirectionsContent() {
   </>;
 }
 
-function DirectionEditModal({ direction, busy, onClose, onUpload, onDetach, onError }) {
+function DirectionEditModal({ direction, busy, onClose, onUpload, onDetach, onSaved, onChanged, onError }) {
   const fileRef = useRef(null);
+  const [code, setCode] = useState(direction.code || "");
+  const [name, setName] = useState(direction.name || "");
+  const [programs, setPrograms] = useState(direction.programs || []);
+  const [newProgram, setNewProgram] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
 
   function handlePick(e) {
     const file = e.target.files?.[0];
@@ -179,14 +206,98 @@ function DirectionEditModal({ direction, busy, onClose, onUpload, onDetach, onEr
     onUpload(file);
   }
 
-  return <Modal width={520} onClose={onClose}>
+  async function save() {
+    if (!code.trim()) { setErr("Код обязателен"); return; }
+    if (!name.trim()) { setErr("Название обязательно"); return; }
+    setErr("");
+    setSaving(true);
+    try {
+      await api.adminUpdateDirection(direction.id_direction, {
+        code: code.trim(), name: name.trim(),
+      });
+      onSaved();
+    } catch (e) {
+      const msg = "Не удалось сохранить: " + (e?.response?.data?.detail || e.message);
+      setErr(msg);
+      onError && onError(msg);
+    }
+    setSaving(false);
+  }
+
+  async function addProgram() {
+    const v = newProgram.trim();
+    if (!v) return;
+    try {
+      const r = await api.adminAddDirectionProgram(direction.id_direction, { profile: v });
+      setPrograms(r.data.programs || []);
+      setNewProgram("");
+      setErr("");
+      onChanged && onChanged();
+    } catch (e) {
+      setErr("Не удалось добавить профиль: " + (e?.response?.data?.detail || e.message));
+    }
+  }
+
+  async function renameProgram(programId, value) {
+    const v = value.trim();
+    if (!v) return;
+    try {
+      const r = await api.adminUpdateDirectionProgram(programId, { profile: v });
+      setPrograms(r.data.programs || []);
+      setErr("");
+      onChanged && onChanged();
+    } catch (e) {
+      setErr("Не удалось переименовать профиль: " + (e?.response?.data?.detail || e.message));
+    }
+  }
+
+  async function deleteProgram(programId) {
+    try {
+      const r = await api.adminDeleteDirectionProgram(programId);
+      setPrograms(r.data.programs || []);
+      setErr("");
+      onChanged && onChanged();
+    } catch (e) {
+      setErr("Не удалось удалить профиль: " + (e?.response?.data?.detail || e.message));
+    }
+  }
+
+  return <Modal width={560} onClose={onClose}>
     <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, fontSize: 16, fontWeight: 700 }}>
-      Направление и файл ФГОС
+      Направление подготовки
     </div>
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-      <ReadOnlyField label="Код" value={direction.code} />
-      <ReadOnlyField label="Наименование" value={direction.name} />
-      <ReadOnlyField label="Профиль" value={direction.profile || "—"} />
+      <div>
+        <div style={miniLabel}>Код <span style={{ color: T.red }}>*</span></div>
+        <input value={code} onChange={e => setCode(e.target.value)} placeholder="09.03.04" style={dirField} />
+      </div>
+      <div>
+        <div style={miniLabel}>Наименование <span style={{ color: T.red }}>*</span></div>
+        <input value={name} onChange={e => setName(e.target.value)} placeholder="Программная инженерия" style={dirField} />
+      </div>
+      <div>
+        <div style={miniLabel}>Профили (образовательные программы)</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {programs.length === 0 && (
+            <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
+              Профилей пока нет — добавьте ниже или они подтянутся из БУПов.
+            </div>
+          )}
+          {programs.map(p => (
+            <ProgramRow key={p.id_program} program={p} onRename={renameProgram} onDelete={deleteProgram} />
+          ))}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              value={newProgram}
+              onChange={e => setNewProgram(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") addProgram(); }}
+              placeholder="Новый профиль…"
+              style={{ ...dirField, flex: 1 }}
+            />
+            <Btn small primary onClick={addProgram} disabled={!newProgram.trim()}>Добавить</Btn>
+          </div>
+        </div>
+      </div>
       <div>
         <div style={miniLabel}>Файл ФГОС</div>
         <div style={{ padding: "10px 12px", border: "1px solid " + T.borderLight, borderRadius: 4, background: T.bg }}>
@@ -200,24 +311,21 @@ function DirectionEditModal({ direction, busy, onClose, onUpload, onDetach, onEr
       <input ref={fileRef} type="file" accept="application/pdf" style={{ display: "none" }} onChange={handlePick} />
       <div style={{ display: "flex", gap: 8 }}>
         <Btn small onClick={() => fileRef.current?.click()} disabled={busy}>
-          <UploadIcon /> {direction.fgos_file_id ? "Заменить файл" : "Загрузить файл"}
+          <UploadIcon /> {direction.fgos_file_id ? "Заменить файл ФГОС" : "Загрузить файл ФГОС"}
         </Btn>
       </div>
+      {err && <div style={{ background: "#fde6e3", color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13 }}>{err}</div>}
     </div>
     <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "space-between", gap: 10 }}>
       <Btn danger onClick={onDetach} disabled={!direction.fgos_file_id || busy}>
         Открепить ФГОС
       </Btn>
-      <Btn onClick={onClose}>Закрыть</Btn>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Btn primary onClick={save} disabled={saving || busy}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
+        <Btn onClick={onClose}>Закрыть</Btn>
+      </div>
     </div>
   </Modal>;
-}
-
-function ReadOnlyField({ label, value }) {
-  return <div>
-    <div style={miniLabel}>{label}</div>
-    <div style={{ padding: "8px 12px", border: "1px solid " + T.borderLight, borderRadius: 4, background: T.bg, fontSize: 13, color: T.text }}>{value}</div>
-  </div>;
 }
 
 function FilterChip({ label, count, active, onClick }) {
@@ -241,3 +349,19 @@ function FilterChip({ label, count, active, onClick }) {
 }
 
 const miniLabel = { fontSize: 11, color: T.textMuted, marginBottom: 4 };
+const dirField = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, boxSizing: "border-box", outline: "none" };
+
+function ProgramRow({ program, onRename, onDelete }) {
+  const [v, setV] = useState(program.profile || "");
+  useEffect(() => { setV(program.profile || ""); }, [program.profile]);
+  return <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+    <input
+      value={v}
+      onChange={e => setV(e.target.value)}
+      onBlur={() => { const t = v.trim(); if (t && t !== (program.profile || "")) onRename(program.id_program, t); }}
+      onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+      style={{ ...dirField, flex: 1 }}
+    />
+    <button onClick={() => onDelete(program.id_program)} title="Удалить профиль" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
+  </div>;
+}

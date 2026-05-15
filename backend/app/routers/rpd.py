@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, func
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -27,7 +27,7 @@ from app.schemas import (
     OutcomeUpsert, OutcomeRowOut, BupDisciplineRefOut, FosFileOut,
     ManualLinkUpdate, ManualOutcomeCreate,
 )
-from app.models import Bup
+from app.models import Bup, DirectionProgram
 
 router = APIRouter(prefix="/api/rpd", tags=["rpd"])
 
@@ -248,6 +248,59 @@ async def list_disciplines(
         ))
     return out
 
+@router.get("/direction-suggestions")
+async def direction_suggestions(db: AsyncSession = Depends(get_db)):
+    prog_res = await db.execute(
+        select(DirectionProgram.id_direction, DirectionProgram.profile)
+        .order_by(func.lower(DirectionProgram.profile))
+    )
+    by_dir: dict[int, list[str]] = {}
+    seen_per_dir: dict[int, set[str]] = {}
+    profiles: list[str] = []
+    seen_p: set[str] = set()
+    for did, prof in prog_res.all():
+        p = (prof or "").strip()
+        if not p:
+            continue
+        seen_per_dir.setdefault(did, set())
+        if p.lower() not in seen_per_dir[did]:
+            seen_per_dir[did].add(p.lower())
+            by_dir.setdefault(did, []).append(p)
+        if p.lower() not in seen_p:
+            seen_p.add(p.lower())
+            profiles.append(p)
+
+    dir_res = await db.execute(
+        select(Direction.id_direction, Direction.code, Direction.name)
+        .order_by(func.lower(Direction.name))
+    )
+    directions: list[dict] = []
+    seen_dir: set[str] = set()
+    for did, code, name in dir_res.all():
+        c = (code or "").strip()
+        n = (name or "").strip()
+        if not c or c == "—":
+            continue
+        key = (c + "|" + n).lower()
+        if key in seen_dir:
+            continue
+        seen_dir.add(key)
+        directions.append({
+            "code": c, "name": n,
+            "label": f"{c} — {n}" if n else c,
+            "profiles": by_dir.get(did, []),
+        })
+
+    bup_res = await db.execute(select(Bup.profile).where(Bup.profile.is_not(None)))
+    for (v,) in bup_res.all():
+        p = (v or "").strip()
+        if p and p.lower() not in seen_p:
+            seen_p.add(p.lower())
+            profiles.append(p)
+    profiles.sort(key=str.lower)
+
+    return {"directions": directions, "profiles": profiles}
+
 @router.get("/", response_model=list[RpdListOut])
 async def list_rpds(
     status: str | None = None,
@@ -336,7 +389,7 @@ def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> No
     link.bup_profile = bup.profile if bup else None
     link.direction_code = direc.code if direc else None
     link.direction_name = direc.name if direc else None
-    link.direction_profile = direc.profile if direc else None
+    link.direction_profile = (bup.profile if bup else None) or (direc.profile if direc else None)
     link.fgos_file_id = fgos.id_file if fgos else None
     link.fgos_file_name = fgos.original_name if fgos else None
     link.code = bd.code
@@ -904,7 +957,10 @@ async def delete_outcome(outcome_id: int, db: AsyncSession = Depends(get_db), us
     result = await db.execute(select(RpdLearningOutcome).where(RpdLearningOutcome.id_outcome == outcome_id))
     lo = result.scalar_one_or_none()
     if lo:
+        rpd_row = await db.get(Rpd, lo.id_rpd)
         await db.delete(lo)
+        if rpd_row:
+            rpd_row.updated_at = datetime.now(timezone.utc)
         await db.commit()
 
 @router.patch("/{rpd_id}/manual-link", response_model=RpdDetailOut)
@@ -990,6 +1046,7 @@ async def add_manual_outcome(
         ind = ind_res.scalar_one_or_none()
         if ind is not None:
             _fill_outcome_snapshot(lo, ind)
+    rpd.updated_at = datetime.now(timezone.utc)
     await db.commit()
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
@@ -1016,6 +1073,9 @@ async def patch_outcome_snapshot(
             if isinstance(v, str):
                 v = v.strip() or None
             setattr(lo, field, v)
+    rpd_row = await db.get(Rpd, lo.id_rpd)
+    if rpd_row:
+        rpd_row.updated_at = datetime.now(timezone.utc)
     await db.commit()
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
@@ -1198,6 +1258,9 @@ async def upsert_outcome(
     ind = lo.indicator
     if ind is not None:
         _fill_outcome_snapshot(lo, ind)
+    rpd_row = await db.get(Rpd, rpd_id)
+    if rpd_row:
+        rpd_row.updated_at = datetime.now(timezone.utc)
     await db.commit()
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,

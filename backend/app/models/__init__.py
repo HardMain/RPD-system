@@ -1,6 +1,6 @@
 from app.models.user import Role, Department, User, Notification, Permission, RolePermission
 from app.models.curriculum import (
-    Direction, Discipline, Competency, CompetencyIndicator, AssessmentTool,
+    Direction, DirectionProgram, Discipline, Competency, CompetencyIndicator, AssessmentTool,
 )
 from app.models.storage import StoredFile
 from app.models.bup import (
@@ -17,7 +17,7 @@ from app.models.dictionary import DictionaryEntry
 
 __all__ = [
     "Role", "Department", "User", "Notification", "Permission", "RolePermission",
-    "Direction", "Discipline", "Competency", "CompetencyIndicator", "AssessmentTool",
+    "Direction", "DirectionProgram", "Discipline", "Competency", "CompetencyIndicator", "AssessmentTool",
     "StoredFile",
     "Bup", "BupDiscipline", "BupDisciplineCompetency", "RpdBupDiscipline",
     "Rpd", "RpdDeveloper", "RpdSection", "RpdTopic", "RpdLearningOutcome",

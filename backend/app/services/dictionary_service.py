@@ -261,7 +261,7 @@ async def backfill_from_approved(db: AsyncSession) -> int:
             total += 1
     comp_res = await db.execute(select(Competency.code))
     for (code,) in comp_res.all():
-        if _add_if_new(db, keys, kind="competency_code", value=code, source="manual"):
+        if _add_if_new(db, keys, kind="competency_code", value=code, source="bup"):
             total += 1
     ind_res = await db.execute(
         select(CompetencyIndicator.code, CompetencyIndicator.description, Competency.code)
@@ -269,11 +269,11 @@ async def backfill_from_approved(db: AsyncSession) -> int:
     )
     for ind_code, desc, comp_code in ind_res.all():
         if _add_if_new(db, keys, kind="indicator_code",
-                       value=ind_code, source="manual",
+                       value=ind_code, source="bup",
                        source_type=_norm(comp_code) or None):
             total += 1
         if await _upsert_indicator_description(
-            db, value=desc, source_type=_norm(ind_code) or None, source="manual",
+            db, value=desc, source_type=_norm(ind_code) or None, source="bup",
         ):
             total += 1
     if total or removed or upgraded:

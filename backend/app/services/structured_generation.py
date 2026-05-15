@@ -335,62 +335,42 @@ async def apply_material_tech(db: AsyncSession, rpd_id: int, items: list[dict]) 
 
 
 async def apply_learning_outcomes(db: AsyncSession, rpd_id: int, items: list[dict]) -> int:
-    res = await db.execute(
-        select(RpdLearningOutcome)
-        .where(RpdLearningOutcome.id_rpd == rpd_id)
-        .options(selectinload(RpdLearningOutcome.indicator))
-    )
-    outcomes = res.scalars().all()
+    candidate_codes = [
+        (it, it["indicator_code"].strip())
+        for it in items
+        if (it.get("indicator_code") or "").strip()
+    ]
+    if not candidate_codes:
+        return 0
 
-    by_code: dict[str, RpdLearningOutcome] = {}
-    for lo in outcomes:
-        code = lo.indicator_code or (lo.indicator.code if lo.indicator else None)
-        if code:
-            by_code[code] = lo
+    resolved: list[tuple[dict, CompetencyIndicator]] = []
+    for item, code in candidate_codes:
+        ind_res = await db.execute(
+            select(CompetencyIndicator)
+            .where(CompetencyIndicator.code == code)
+            .options(selectinload(CompetencyIndicator.competency))
+        )
+        indicator = ind_res.scalars().first()
+        if indicator is not None:
+            resolved.append((item, indicator))
 
-    updated = 0
-    for item in items:
-        code = (item.get("indicator_code") or "").strip()
-        if not code:
-            continue
-        new_text = (item.get("outcome_text") or "").strip()
-        new_tool = (item.get("assessment_tool") or "").strip()
-        lo = by_code.get(code)
-        if lo:
-            if new_text:
-                lo.outcome_text = new_text
-            if new_tool:
-                lo.assessment_tool = new_tool
-            if new_text or new_tool:
-                updated += 1
-        else:
-            ind_res = await db.execute(
-                select(CompetencyIndicator)
-                .where(CompetencyIndicator.code == code)
-                .options(selectinload(CompetencyIndicator.competency))
-            )
-            indicator = ind_res.scalars().first()
-            comp_code = (item.get("competency_code") or "").strip()
-            comp_name = (item.get("competency_name") or "").strip()
-            ind_desc = (item.get("indicator_description") or "").strip()
-            if indicator:
-                comp_code = comp_code or indicator.competency.code
-                comp_name = comp_name or indicator.competency.name
-                ind_desc = ind_desc or indicator.description
-            new_lo = RpdLearningOutcome(
-                id_rpd=rpd_id,
-                id_indicator=indicator.id_indicator if indicator else None,
-                indicator_code=code,
-                indicator_description=ind_desc or None,
-                competency_code=comp_code or None,
-                competency_name=comp_name or None,
-                outcome_text=new_text or None,
-                assessment_tool=new_tool or None,
-            )
-            db.add(new_lo)
-            by_code[code] = new_lo
-            updated += 1
+    if not resolved:
+        return 0
 
-    if updated:
-        await db.commit()
-    return updated
+    await db.execute(delete(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id))
+    await db.flush()
+
+    for item, indicator in resolved:
+        db.add(RpdLearningOutcome(
+            id_rpd=rpd_id,
+            id_indicator=indicator.id_indicator,
+            indicator_code=indicator.code,
+            indicator_description=indicator.description or None,
+            competency_code=indicator.competency.code,
+            competency_name=indicator.competency.name,
+            outcome_text=(item.get("outcome_text") or "").strip() or None,
+            assessment_tool=(item.get("assessment_tool") or "").strip() or None,
+        ))
+
+    await db.commit()
+    return len(resolved)

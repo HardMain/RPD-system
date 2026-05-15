@@ -651,6 +651,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         setTimeout(() => saveFieldFromValue(fieldMap[key], text), 0);
       } else {
         await load(true);
+        if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
+        setSavedTick(t => t + 1);
+        savedTimeoutRef.current = setTimeout(() => setSavedTick(0), 1500);
         if (onAfterSave) onAfterSave();
       }
     } catch { } setGenerating(null);

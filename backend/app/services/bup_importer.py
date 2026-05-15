@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency,
-    Direction, Discipline, Competency, CompetencyIndicator, Department,
+    Direction, DirectionProgram, Discipline, Competency, CompetencyIndicator, Department,
 )
 from app.services.bup_parser import ParsedBup, ParsedDiscipline, ParsedSemester
 
@@ -42,6 +42,26 @@ async def _get_or_create_direction(
     db.add(d)
     await db.flush()
     return d
+
+async def _get_or_create_program(
+    db: AsyncSession, direction: Direction, profile: str | None
+) -> DirectionProgram | None:
+    p = (profile or "").strip()
+    if not p:
+        return None
+    res = await db.execute(
+        select(DirectionProgram).where(
+            DirectionProgram.id_direction == direction.id_direction,
+            DirectionProgram.profile == p,
+        )
+    )
+    prog = res.scalars().first()
+    if prog:
+        return prog
+    prog = DirectionProgram(id_direction=direction.id_direction, profile=p)
+    db.add(prog)
+    await db.flush()
+    return prog
 
 def _normalize_discipline_name(raw: str) -> str:
     if not raw:
@@ -178,6 +198,7 @@ async def import_parsed_bup(
     direction = await _get_or_create_direction(
         db, parsed.direction_code, parsed.direction_name, parsed.profile,
     )
+    await _get_or_create_program(db, direction, parsed.profile)
     name = name_override or _build_bup_name(parsed, year)
 
     res = await db.execute(

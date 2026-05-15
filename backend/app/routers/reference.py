@@ -30,7 +30,7 @@ async def create_assessment_tool(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    if not user_can(user, "reference.manage"):
+    if not user_can(user, "sources.manage"):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
     name = data.name.strip()
     if not name:

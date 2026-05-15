@@ -15,6 +15,18 @@ class Direction(Base):
     competencies = relationship("Competency", back_populates="direction")
     bups = relationship("Bup", back_populates="direction", cascade="all, delete-orphan")
     fgos_file = relationship("StoredFile", foreign_keys=[id_fgos_file])
+    programs = relationship(
+        "DirectionProgram", back_populates="direction",
+        cascade="all, delete-orphan", order_by="DirectionProgram.profile",
+    )
+
+class DirectionProgram(Base):
+    __tablename__ = "direction_programs"
+    id_program = Column(Integer, primary_key=True, autoincrement=True)
+    id_direction = Column(Integer, ForeignKey("directions.id_direction"), nullable=False)
+    profile = Column(String(200), nullable=False)
+
+    direction = relationship("Direction", back_populates="programs")
 
 class Discipline(Base):
     __tablename__ = "disciplines"

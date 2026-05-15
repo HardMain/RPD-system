@@ -8,6 +8,7 @@ import { Spinner } from "../components/Spinner.jsx";
 import { Dropdown } from "../components/Dropdown.jsx";
 import { TrashIcon, PlusIcon, PencilIcon, UploadIcon } from "../components/icons.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
+import { useSort, SortTh } from "../components/sortable.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 import { LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
 import { BupsContent } from "./AdminBupsPage.jsx";
@@ -19,38 +20,46 @@ const KIND_GROUPS = [
     label: "Общие",
     title: "Общие справочники",
     kinds: [
-      { id: "discipline", label: "Дисциплины" },
-      { id: "department", label: "Подразделения" },
+      { id: "discipline", label: "Дисциплины", valueLabel: "Название" },
       { id: "bup", label: "БУПы" },
-      { id: "direction", label: "Направления и ФГОС" },
+      { id: "direction", label: "Направления" },
+    ],
+  },
+  {
+    label: "Пользователи",
+    title: "Справочники пользователей",
+    kinds: [
+      { id: "faculty", label: "Факультеты", valueLabel: "Факультет" },
+      { id: "employee_title", label: "Должности", valueLabel: "Должность" },
+      { id: "department", label: "Подразделения" },
     ],
   },
   {
     label: "Раздел 2",
     title: "Раздел 2 — Планируемые результаты обучения",
     kinds: [
-      { id: "competency_code", label: "Компетенции (коды)" },
+      { id: "competency_code", label: "Компетенции (коды)", valueLabel: "Код" },
       { id: "indicator_code", label: "Индикаторы (коды)" },
-      { id: "indicator_description", label: "Индикаторы достижения" },
-      { id: "assessment_tool", label: "Средства оценки" },
+      { id: "indicator_description", label: "Индикаторы достижения", valueLabel: "Описание" },
+      { id: "assessment_tool", label: "Средства оценки", valueLabel: "Средство оценки" },
     ],
   },
   {
     label: "Раздел 6",
     title: "Раздел 6 — Литература, ПО, базы данных",
     kinds: [
-      { id: "literature_title", label: "Литература" },
-      { id: "software_name", label: "ПО" },
-      { id: "software_purpose", label: "Назначение ПО" },
-      { id: "database_name", label: "БД и ИСС" },
+      { id: "literature_title", label: "Литература", valueLabel: "Источник" },
+      { id: "software_name", label: "ПО", valueLabel: "Программное обеспечение" },
+      { id: "software_purpose", label: "Назначение ПО", valueLabel: "Назначение" },
+      { id: "database_name", label: "БД и ИСС", valueLabel: "База данных / ИСС" },
     ],
   },
   {
     label: "Раздел 7",
     title: "Раздел 7 — Материально-техническое обеспечение",
     kinds: [
-      { id: "room_type", label: "Виды занятий (МТО)" },
-      { id: "equipment", label: "Оборудование" },
+      { id: "room_type", label: "Виды занятий (МТО)", valueLabel: "Вид занятий" },
+      { id: "equipment", label: "Оборудование", valueLabel: "Оборудование" },
     ],
   },
   {
@@ -116,6 +125,31 @@ const MODE_OPTIONS = [
 ];
 const LIT_TYPE_OPTIONS = LITERATURE_TYPES.map(t => ({ value: t, label: t }));
 
+const SOURCE_LABELS = {
+  manual: "Вручную",
+  bup: "Из БУПа",
+  approved_rpd: "Из согласованной РПД",
+  seed: "Предзагружено",
+};
+function sourceLabel(s) {
+  return SOURCE_LABELS[s] || "Вручную";
+}
+
+const DICT_ACCESSORS = {
+  value: it => it.value || "",
+  sourceType: it => it.source_type || "",
+  mode: it => it.mode || "",
+  source: it => sourceLabel(it.source),
+  usage: it => (it.used_in_bups || 0) + (it.used_in_rpds || 0),
+};
+
+const DOC_ACCESSORS = {
+  filename: d => d.filename || "",
+  type: d => d.file_type || "",
+  size: d => d.file_size || 0,
+  uploaded: d => d.uploaded_at || "",
+};
+
 export function AdminDictionariesPage() {
   const [kind, setKind] = useState(KINDS[0].id);
   const [items, setItems] = useState([]);
@@ -127,7 +161,7 @@ export function AdminDictionariesPage() {
 
   const [newValue, setNewValue] = useState("");
   const [newSourceType, setNewSourceType] = useState("");
-  const [newMode, setNewMode] = useState("printed");
+  const [newMode, setNewMode] = useState("");
   const [newCompetency, setNewCompetency] = useState("");
   const [newIndex, setNewIndex] = useState("1");
   const [adding, setAdding] = useState(false);
@@ -181,7 +215,7 @@ export function AdminDictionariesPage() {
     setSearch("");
     setNewValue("");
     setNewSourceType("");
-    setNewMode("printed");
+    setNewMode("");
     setNewCompetency("");
     setNewIndex("1");
     setPrefixFilter("all");
@@ -220,12 +254,16 @@ export function AdminDictionariesPage() {
     });
   }, [items, search, showPrefixFilter, prefixFilter, kind]);
 
-  const { page, setPage, pageSize, setPageSize, total: pgTotal, totalPages: pgTotalPages, pageItems } = usePagination(filtered, { defaultPageSize: 50, storageKey: `adminDict.${kind}.pageSize` });
+  const { sort, toggleSort, sortItems } = useSort("value", "asc");
+  const sortedRows = useMemo(
+    () => sortItems(filtered, DICT_ACCESSORS),
+    [filtered, sort]
+  );
 
-  const grouped = useMemo(() => {
+  const allGroups = useMemo(() => {
     if (!useGroupedView) return null;
     const buckets = new Map();
-    for (const it of pageItems) {
+    for (const it of filtered) {
       const key = (it.source_type || "").trim() || "—";
       if (!buckets.has(key)) buckets.set(key, []);
       buckets.get(key).push(it);
@@ -247,11 +285,14 @@ export function AdminDictionariesPage() {
     });
     return order.map(k => ({
       parent: k,
-      rows: kind === "indicator_code"
-        ? [...buckets.get(k)].sort((a, b) => parseIndicatorCode(a.value).index - parseIndicatorCode(b.value).index)
-        : buckets.get(k),
+      rows: [...buckets.get(k)].sort(
+        (a, b) => parseIndicatorCode(a.value).index - parseIndicatorCode(b.value).index
+      ),
     }));
-  }, [pageItems, useGroupedView, kind]);
+  }, [filtered, useGroupedView, kind]);
+
+  const paginationSource = useGroupedView ? allGroups : sortedRows;
+  const { page, setPage, pageSize, setPageSize, total: pgTotal, totalPages: pgTotalPages, pageItems } = usePagination(paginationSource, { defaultPageSize: 50, storageKey: `adminDict.${kind}.pageSize` });
 
   async function performDelete(item) {
     if (!item) return;
@@ -292,7 +333,9 @@ export function AdminDictionariesPage() {
       } else if (isLiterature) {
         const v = newValue.trim();
         if (!v) throw new Error("Заполните значение");
-        payload = { value: v, source_type: newSourceType || null, mode: newMode || null };
+        if (!newSourceType) throw new Error("Выберите подраздел");
+        if (!newMode) throw new Error("Выберите тип");
+        payload = { value: v, source_type: newSourceType, mode: newMode };
       } else {
         const v = newValue.trim();
         if (!v) throw new Error("Заполните значение");
@@ -312,17 +355,19 @@ export function AdminDictionariesPage() {
     ? !!newCompetency.trim()
     : kind === "indicator_description"
       ? !!newCompetency.trim() && !!newValue.trim()
-      : !!newValue.trim();
+      : isLiterature
+        ? !!newValue.trim() && !!newSourceType && !!newMode
+        : !!newValue.trim();
 
   const kindHint = kind === "bup" ? "Загруженные XLS-БУПы. При импорте дисциплины, компетенции и индикаторы попадают в справочники автоматически."
-    : kind === "direction" ? "Направления подготовки и привязанные к ним файлы ФГОС. Список пополняется при импорте БУПов."
+    : kind === "direction" ? "Направления подготовки: код, название, профиль и файл ФГОС. Базовые федеральные коды засидированы, остальное подтягивается при импорте БУПов. Отсюда же берутся подсказки кода/названия/профиля при создании РПД вручную."
     : kind === "document" ? "Документы, которые передаются LLM как контекст при генерации разделов РПД. Загруженные здесь файлы используются глобально для всех РПД."
     : kind === "department" ? "Кафедры, отделы и управления, к которым привязаны пользователи системы."
     : kind === "llm_prompt" ? "Шаблоны промптов, по которым LLM генерирует содержание разделов РПД. В шаблоне доступны плейсхолдеры: {discipline}, {direction}, {profile}, {total_hours}, {lecture_hours}, {practice_hours}, {lab_hours}, {self_study_hours}. Если system_prompt пуст — используется общий системный промпт."
     : isDiscipline ? "Перечень всех дисциплин, доступных для создания РПД вручную. Пополняется автоматически при импорте БУПов; при удалении БУПа дисциплины из справочника не удаляются."
     : "Записи отсюда подсказываются преподавателям при заполнении РПД. Автоматически дополняются после согласования каждой РПД.";
 
-  return <div style={{ flex: 1, overflow: "auto", padding: 24, background: T.bg }}>
+  return <div style={{ flex: 1, overflow: "auto", scrollbarGutter: "stable", padding: 24, background: T.bg }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
       <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>{kindHint}</div>
 
@@ -383,15 +428,15 @@ export function AdminDictionariesPage() {
         {isLiterature && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
             <div style={{ flex: "1 1 320px", minWidth: 240 }}>
-              <div style={miniLabel}>Подраздел</div>
+              <div style={miniLabel}>Подраздел <span style={{ color: T.red }}>*</span></div>
               <Dropdown value={newSourceType} options={LIT_TYPE_OPTIONS}
                 onChange={setNewSourceType}
-                placeholder="Любой подраздел" clearLabel="Любой подраздел" />
+                placeholder="— не указано —" clearLabel="— не указано —" />
             </div>
             <div style={{ flex: "0 0 200px" }}>
-              <div style={miniLabel}>Тип</div>
+              <div style={miniLabel}>Тип <span style={{ color: T.red }}>*</span></div>
               <Dropdown value={newMode} options={MODE_OPTIONS}
-                onChange={setNewMode} placeholder="—" />
+                onChange={setNewMode} placeholder="— не указано —" clearLabel="— не указано —" />
             </div>
           </div>
         )}
@@ -399,7 +444,7 @@ export function AdminDictionariesPage() {
         {isIndicatorKind && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
             <div style={{ flex: "1 1 240px", minWidth: 220 }}>
-              <div style={miniLabel}>Компетенция</div>
+              <div style={miniLabel}>Компетенция <span style={{ color: T.red }}>*</span></div>
               {competencyOptions.length === 0
                 ? <div style={{ ...miniInput, color: T.textMuted, fontStyle: "italic" }}>
                     Сначала добавьте компетенции во вкладке «Компетенции (коды)».
@@ -408,8 +453,8 @@ export function AdminDictionariesPage() {
                     value={newCompetency}
                     options={competencyOptions.map(c => ({ value: c, label: c }))}
                     onChange={setNewCompetency}
-                    placeholder="Выберите компетенцию"
-                    clearLabel="—"
+                    placeholder="— не указано —"
+                    clearLabel="— не указано —"
                   />}
             </div>
             <div style={{ flex: "0 0 200px" }}>
@@ -434,31 +479,38 @@ export function AdminDictionariesPage() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
-          {kind === "indicator_code" ? (
-            <div style={{ flex: 1, color: T.textMuted, fontSize: 12, alignSelf: "center", fontStyle: "italic" }}>
-              Код индикатора собирается автоматически из выбранной компетенции и индекса.
+        {kind === "indicator_code" ? (
+          <div style={{ color: T.textMuted, fontSize: 12, fontStyle: "italic", padding: "6px 0" }}>
+            Код индикатора собирается автоматически из выбранной компетенции и индекса.
+          </div>
+        ) : (
+          <div>
+            <div style={miniLabel}>
+              {KINDS.find(k => k.id === kind)?.valueLabel || "Значение"} <span style={{ color: T.red }}>*</span>
             </div>
-          ) : kind === "indicator_description" ? (
-            <textarea
-              value={newValue}
-              onChange={e => setNewValue(e.target.value)}
-              placeholder={'Например: "Знает методы…"'}
-              style={{ flex: 1, padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none", minHeight: 60, resize: "vertical" }}
-            />
-          ) : (
-            <input
-              value={newValue}
-              onChange={e => setNewValue(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
-              placeholder={isDiscipline ? "Название дисциплины и нажмите «Добавить»…" : "Введите значение и нажмите «Добавить»…"}
-              style={{ flex: 1, padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none" }}
-            />
-          )}
-          <Btn small primary onClick={handleAdd} disabled={adding || !canAdd}>
-            <PlusIcon /> Добавить
-          </Btn>
-        </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+              {kind === "indicator_description" ? (
+                <textarea
+                  value={newValue}
+                  onChange={e => setNewValue(e.target.value)}
+                  placeholder={'Например: "Знает методы…"'}
+                  style={{ flex: 1, padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none", minHeight: 60, resize: "vertical" }}
+                />
+              ) : (
+                <input
+                  value={newValue}
+                  onChange={e => setNewValue(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+                  placeholder="Введите значение…"
+                  style={{ flex: 1, padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none" }}
+                />
+              )}
+              <Btn small primary onClick={handleAdd} disabled={adding || !canAdd}>
+                <PlusIcon /> Добавить
+              </Btn>
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
@@ -495,18 +547,24 @@ export function AdminDictionariesPage() {
             ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
                 {items.length === 0 ? "Записей пока нет — добавьте первую сверху." : "Ничего не нашлось."}
               </div>
-            : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+            : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
               <thead><tr style={{ background: T.surface }}>
-                {useGroupedView && <th style={{ ...hdr, width: 180 }}>{parentMeta.col}</th>}
-                {isLiterature && <th style={hdr}>Подраздел</th>}
-                <th style={hdr}>{isDiscipline ? "Название дисциплины" : "Значение"}</th>
-                {isLiterature && <th style={hdr}>Тип</th>}
-                <th style={{ ...hdr, width: 200 }}>{isDiscipline ? "Использование" : "Источник"}</th>
-                <th style={{ ...hdr, textAlign: "center", width: 80 }} />
+                {useGroupedView ? <>
+                  <th style={{ ...hdr, width: 180 }}>{parentMeta.col}</th>
+                  <th style={hdr}>Значение</th>
+                  <th style={{ ...hdr, width: 200 }}>Источник</th>
+                  <th style={{ ...hdr, textAlign: "center", width: 80 }} />
+                </> : <>
+                  {isLiterature && <SortTh sortKey="sourceType" sort={sort} onSort={toggleSort} style={{ width: 240 }}>Подраздел</SortTh>}
+                  <SortTh sortKey="value" sort={sort} onSort={toggleSort}>{isDiscipline ? "Название дисциплины" : "Значение"}</SortTh>
+                  {isLiterature && <SortTh sortKey="mode" sort={sort} onSort={toggleSort} style={{ width: 130 }}>Тип</SortTh>}
+                  <SortTh sortKey={isDiscipline ? "usage" : "source"} sort={sort} onSort={toggleSort} style={{ width: 200 }}>{isDiscipline ? "Использование" : "Источник"}</SortTh>
+                  <th style={{ ...hdr, textAlign: "center", width: 80 }} />
+                </>}
               </tr></thead>
               <tbody>
                 {useGroupedView
-                  ? grouped.flatMap(g => g.rows.map((it, i) => (
+                  ? pageItems.flatMap(g => g.rows.map((it, i) => (
                     <tr key={it.id_entry}
                         onDoubleClick={() => setEditing(it)}
                         style={{ background: T.surface, borderTop: i === 0 ? "2px solid " + T.borderLight : "none", cursor: "pointer" }}
@@ -519,7 +577,7 @@ export function AdminDictionariesPage() {
                       )}
                       <td style={{ ...tcell, fontWeight: 500 }}>{it.value}</td>
                       <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
-                        {it.source === "approved_rpd" ? "Из согласованной РПД" : "Вручную"}
+                        {sourceLabel(it.source)}
                       </td>
                       <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }} onDoubleClick={e => e.stopPropagation()}>
                         <RowActions onEdit={() => setEditing(it)} onDelete={() => setPendingDelete(it)} />
@@ -537,7 +595,7 @@ export function AdminDictionariesPage() {
                       <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
                         {isDiscipline
                           ? <UsageInfo bups={it.used_in_bups} rpds={it.used_in_rpds} />
-                          : (it.source === "approved_rpd" ? "Из согласованной РПД" : "Вручную")}
+                          : sourceLabel(it.source)}
                       </td>
                       <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }} onDoubleClick={e => e.stopPropagation()}>
                         <RowActions onEdit={() => setEditing(it)} onDelete={() => setPendingDelete(it)} />
@@ -661,7 +719,10 @@ function DocumentsContent() {
     catch (err) { setErrorMsg("Не удалось удалить: " + (err?.response?.data?.detail || err.message)); }
   }
 
-  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(docs, { defaultPageSize: 50, storageKey: "adminDocs.pageSize" });
+  const { sort, toggleSort, sortItems } = useSort("uploaded", "desc");
+  const sortedDocs = useMemo(() => sortItems(docs, DOC_ACCESSORS), [docs, sort]);
+
+  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sortedDocs, { defaultPageSize: 50, storageKey: "adminDocs.pageSize" });
 
   return <>
     <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
@@ -685,14 +746,14 @@ function DocumentsContent() {
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
               Документы для контекста LLM не загружены. PDF, DOCX, TXT, XLSX — до 50 МБ.
             </div>
-          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
             <thead><tr style={{ background: T.surface }}>
               <th style={{ ...hdr, width: 30 }} />
-              <th style={hdr}>Файл</th>
-              <th style={{ ...hdr, width: 100, textAlign: "center" }}>Тип</th>
-              <th style={{ ...hdr, width: 120, textAlign: "right" }}>Размер</th>
-              <th style={{ ...hdr, width: 160 }}>Загружен</th>
-              <th style={{ ...hdr, width: 1 }} />
+              <SortTh sortKey="filename" sort={sort} onSort={toggleSort}>Файл</SortTh>
+              <SortTh sortKey="type" sort={sort} onSort={toggleSort} align="center" style={{ width: 100 }}>Тип</SortTh>
+              <SortTh sortKey="size" sort={sort} onSort={toggleSort} align="right" style={{ width: 120 }}>Размер</SortTh>
+              <SortTh sortKey="uploaded" sort={sort} onSort={toggleSort} style={{ width: 160 }}>Загружен</SortTh>
+              <th style={{ ...hdr, width: 56 }} />
             </tr></thead>
             <tbody>
               {pageItems.map(d => {
@@ -708,7 +769,12 @@ function DocumentsContent() {
                       </button>
                     </td>
                     <td style={{ ...tcell, fontWeight: 500 }}>
-                      <a href={api.adminGlobalDocumentDownloadUrl(d.id_document)} target="_blank" rel="noreferrer" style={{ color: T.accent }}>{d.filename}</a>
+                      <button onClick={() => {
+                        const token = localStorage.getItem("token");
+                        fetch(api.adminGlobalDocumentDownloadUrl(d.id_document), { headers: { Authorization: `Bearer ${token}` } })
+                          .then(r => r.blob())
+                          .then(blob => { const u = URL.createObjectURL(blob); window.open(u, "_blank"); setTimeout(() => URL.revokeObjectURL(u), 10000); });
+                      }} style={{ background: "none", border: "none", cursor: "pointer", color: T.accent, padding: 0, font: "inherit" }}>{d.filename}</button>
                     </td>
                     <td style={{ ...tcell, textAlign: "center", textTransform: "uppercase", color: T.textMuted, fontSize: 11 }}>{d.file_type}</td>
                     <td style={{ ...tcell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted }}>{d.file_size ? (d.file_size / 1024).toFixed(0) + " КБ" : "—"}</td>
@@ -996,7 +1062,7 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
 
   const [value, setValue] = useState(entry.value || "");
   const [sourceType, setSourceType] = useState(entry.source_type || "");
-  const [mode, setMode] = useState(entry.mode || "printed");
+  const [mode, setMode] = useState(entry.mode || "");
   const [competency, setCompetency] = useState(initialIndicatorContext.competency);
   const [index, setIndex] = useState(initialIndicatorContext.index);
   const [saving, setSaving] = useState(false);
@@ -1027,7 +1093,9 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
       } else if (isLiterature) {
         const v = value.trim();
         if (!v) throw new Error("Заполните значение");
-        payload = { value: v, source_type: sourceType || "", mode: mode || "" };
+        if (!sourceType) throw new Error("Выберите подраздел");
+        if (!mode) throw new Error("Выберите тип");
+        payload = { value: v, source_type: sourceType, mode: mode };
       } else {
         const v = value.trim();
         if (!v) throw new Error("Заполните значение");
@@ -1049,13 +1117,13 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
       {isLiterature && (
         <>
           <div>
-            <div style={miniLabel}>Подраздел</div>
+            <div style={miniLabel}>Подраздел <span style={{ color: T.red }}>*</span></div>
             <Dropdown value={sourceType} options={LIT_TYPE_OPTIONS} onChange={setSourceType}
-              placeholder="Любой подраздел" clearLabel="Любой подраздел" />
+              placeholder="— не указано —" clearLabel="— не указано —" />
           </div>
           <div>
-            <div style={miniLabel}>Тип</div>
-            <Dropdown value={mode} options={MODE_OPTIONS} onChange={setMode} placeholder="—" />
+            <div style={miniLabel}>Тип <span style={{ color: T.red }}>*</span></div>
+            <Dropdown value={mode} options={MODE_OPTIONS} onChange={setMode} placeholder="— не указано —" clearLabel="— не указано —" />
           </div>
         </>
       )}
@@ -1069,7 +1137,8 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
                   value={competency}
                   options={competencyOptions.map(c => ({ value: c, label: c }))}
                   onChange={setCompetency}
-                  placeholder="Выберите компетенцию"
+                  placeholder="— не указано —"
+                  clearLabel="— не указано —"
                 />}
           </div>
           <div style={{ flex: "0 0 180px" }}>
@@ -1127,5 +1196,4 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
 
 const miniLabel = { fontSize: 11, color: T.textMuted, marginBottom: 3 };
 const miniInput = { width: "100%", padding: "6px 10px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, background: T.surface, fontFamily: F, boxSizing: "border-box" };
-const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box", outline: "none" };
-const groupLabelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", flexShrink: 0, width: 90 };
+const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box", outline: "none" };const groupLabelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", flexShrink: 0, width: 90 };

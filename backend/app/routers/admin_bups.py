@@ -26,7 +26,7 @@ from app.services.bup_importer import import_parsed_bup
 router = APIRouter(prefix="/api/admin/bups", tags=["admin-bups"])
 
 def _require_admin(user: User):
-    if not user_can(user, "bups.manage"):
+    if not user_can(user, "sources.manage"):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 def _year_from_filename(name: str) -> int | None:

@@ -4,6 +4,7 @@ import { T, F } from "../../../theme.js";
 import { td, th } from "../../../styles.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
+import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
@@ -138,23 +139,25 @@ function TopicRow({ topic, index, editable, deletable, onSave }) {
   return <tr {...trashProps}>
     <td style={{ ...td, textAlign: "center", fontVariantNumeric: "tabular-nums" }}>{index}</td>
     <td style={{ ...td, padding: 4 }}>
-      <input
+      <ExpandableTextarea
         value={local}
         onChange={e => setLocal(e.target.value)}
         onBlur={() => onSave(local)}
         placeholder="Название темы"
-        style={inlineInput}
+        collapsedMaxHeight={64}
+        style={inlineTextarea}
       />
     </td>
   </tr>;
 }
 
-const inlineInput = {
+const inlineTextarea = {
   width: "100%",
+  minHeight: 32,
   padding: "4px 6px",
   border: "1px solid " + T.borderLight,
   borderRadius: 4,
-  fontSize: 13, fontFamily: F,
+  fontSize: 13, fontFamily: F, lineHeight: 1.45,
   background: T.surface,
   outline: "none",
   boxSizing: "border-box",

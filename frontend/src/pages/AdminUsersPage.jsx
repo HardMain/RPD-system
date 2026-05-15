@@ -5,6 +5,7 @@ import { hdr, tcell, iconBtn } from "../styles.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
+import { Dropdown } from "../components/Dropdown.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { PencilIcon, UserOffIcon, PlusIcon } from "../components/icons.jsx";
@@ -158,13 +159,20 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
     full_name: isCreate ? "" : data.full_name,
     title: isCreate ? "" : (data.title || ""),
     email: isCreate ? "" : (data.email || ""),
-    id_role: isCreate ? (roles[0]?.id_role || 0) : data.id_role,
-    id_department: isCreate ? (departments[0]?.id_department || 0) : data.id_department,
+    id_role: isCreate ? 0 : data.id_role,
+    id_department: isCreate ? 0 : data.id_department,
     password: "",
     is_active: isCreate ? true : data.is_active,
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
+  const [titleOptions, setTitleOptions] = useState([]);
+
+  useEffect(() => {
+    api.adminListDictionary("employee_title", {})
+      .then(r => setTitleOptions((r.data || []).map(e => ({ value: e.value, label: e.value }))))
+      .catch(() => setTitleOptions([]));
+  }, []);
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -211,23 +219,40 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
       {isCreate ? "Новый пользователь" : "Редактирование пользователя"}
     </div>
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-      <Input label="ФИО" value={form.full_name} onChange={e => set("full_name", e.target.value)} />
-      <Input label="Логин" value={form.login} onChange={e => set("login", e.target.value)} disabled={!isCreate} />
-      <Input label="Должность" value={form.title} onChange={e => set("title", e.target.value)} placeholder="Доцент / Профессор / Заведующий..." />
+      <Input required label="ФИО" value={form.full_name} onChange={e => set("full_name", e.target.value)} />
+      <Input required={isCreate} label="Логин" value={form.login} onChange={e => set("login", e.target.value)} disabled={!isCreate} />
+      <div>
+        <label style={labelStyle}>Должность</label>
+        <Dropdown
+          value={form.title}
+          options={titleOptions}
+          onChange={v => set("title", v)}
+          placeholder="— не указано —"
+          clearLabel="— не указано —"
+        />
+      </div>
       <Input label="Email" value={form.email} onChange={e => set("email", e.target.value)} />
 
       <div>
-        <label style={labelStyle}>Роль</label>
-        <select value={form.id_role} onChange={e => set("id_role", +e.target.value)} style={selectStyle}>
-          {roles.map(r => <option key={r.id_role} value={r.id_role}>{r.name}</option>)}
-        </select>
+        <label style={labelStyle}>Роль <span style={{ color: T.red }}>*</span></label>
+        <Dropdown
+          value={String(form.id_role)}
+          options={roles.map(r => ({ value: String(r.id_role), label: r.name }))}
+          onChange={v => set("id_role", +v)}
+          placeholder="— не указано —"
+          clearLabel="— не указано —"
+        />
       </div>
 
       <div>
-        <label style={labelStyle}>Подразделение</label>
-        <select value={form.id_department} onChange={e => set("id_department", +e.target.value)} style={selectStyle}>
-          {departments.map(d => <option key={d.id_department} value={d.id_department}>{d.name}</option>)}
-        </select>
+        <label style={labelStyle}>Подразделение <span style={{ color: T.red }}>*</span></label>
+        <Dropdown
+          value={String(form.id_department)}
+          options={departments.map(d => ({ value: String(d.id_department), label: d.name }))}
+          onChange={v => set("id_department", +v)}
+          placeholder="— не указано —"
+          clearLabel="— не указано —"
+        />
       </div>
 
       <Input

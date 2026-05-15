@@ -14,6 +14,7 @@ from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency, RpdBupDiscipline,
     Permission, RolePermission, RpdApprovalRoute, LlmPrompt,
 )
+from app.models.dictionary import DictionaryEntry
 from app.services.bup_parser import parse_bup_xls
 from app.services.bup_importer import import_parsed_bup
 
@@ -57,21 +58,19 @@ PERMISSION_CATALOG: list[tuple[str, str]] = [
     ("approval_chain.edit", "Изменение маршрута согласования чужих РПД"),
     ("users.manage", "Управление пользователями (создание, редактирование, деактивация)"),
     ("users.create", "Создание пользователей в рамках своего scope"),
-    ("bups.manage", "Управление БУПами"),
-    ("directions.manage", "Управление направлениями подготовки и ФГОС"),
-    ("reference.manage", "Управление справочниками"),
+    ("sources.manage", "Управление источниками данных: БУПы, направления, справочники, документы"),
 ]
 
 ROLE_PERMISSIONS: dict[str, list[str]] = {
     "Преподаватель": [],
-    "Зав. кафедрой": ["rpd.create", "rpd.approve"],
-    "Сотрудник УМУ": ["rpd.create", "reference.manage", "bups.manage", "directions.manage"],
-    "Начальник отдела УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit", "reference.manage", "bups.manage", "directions.manage"],
-    "Начальник управления УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit", "reference.manage", "bups.manage", "directions.manage"],
+    "Зав. кафедрой": ["rpd.approve"],
+    "Сотрудник УМУ": ["rpd.create", "sources.manage"],
+    "Начальник отдела УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit", "sources.manage"],
+    "Начальник управления УМУ": ["rpd.create", "rpd.approve", "rpd.edit_meta", "approval_chain.edit", "sources.manage"],
     "Проректор": ["rpd.approve"],
     "Ректор": ["rpd.approve"],
-    "Техник УМУ": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "rpd.delete_any", "users.create", "reference.manage", "bups.manage", "directions.manage"],
-    "Техник кафедры": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "users.create", "reference.manage", "bups.manage", "directions.manage"],
+    "Техник УМУ": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "rpd.delete_any", "users.create", "sources.manage"],
+    "Техник кафедры": ["rpd.create", "rpd.edit_meta", "approval_chain.edit", "users.create", "sources.manage"],
     "Администратор": ["*"],
 }
 
@@ -468,15 +467,146 @@ async def upgrade_llm_prompts_to_reference_aware():
             print(f"✅ LLM prompts upgraded ({upgraded} updated)")
 
 
+SEED_FACULTIES = [
+    "Аэрокосмический факультет",
+    "Автодорожный факультет",
+    "Горно-нефтяной факультет",
+    "Гуманитарный факультет",
+    "Механико-технологический факультет",
+    "Строительный факультет",
+    "Химико-технологический факультет",
+    "Электротехнический факультет",
+    "Факультет прикладной математики и механики",
+    "Факультет промышленной безопасности",
+    "Факультет менеджмента и бизнеса",
+]
+
+SEED_EMPLOYEE_TITLES = [
+    "Ассистент",
+    "Преподаватель",
+    "Старший преподаватель",
+    "Доцент",
+    "Профессор",
+    "Заведующий кафедрой",
+    "Декан",
+    "Проректор",
+    "Ректор",
+    "Начальник отдела",
+    "Начальник управления",
+    "Ведущий специалист",
+    "Специалист",
+]
+
+SEED_DIRECTIONS = [
+    ("01.03.02", "Прикладная математика и информатика"),
+    ("01.03.04", "Прикладная математика"),
+    ("02.03.03", "Математическое обеспечение и администрирование информационных систем"),
+    ("03.03.02", "Физика"),
+    ("04.03.01", "Химия"),
+    ("08.03.01", "Строительство"),
+    ("09.03.01", "Информатика и вычислительная техника"),
+    ("09.03.02", "Информационные системы и технологии"),
+    ("09.03.03", "Прикладная информатика"),
+    ("09.03.04", "Программная инженерия"),
+    ("10.03.01", "Информационная безопасность"),
+    ("11.03.01", "Радиотехника"),
+    ("11.03.02", "Инфокоммуникационные технологии и системы связи"),
+    ("11.03.03", "Конструирование и технология электронных средств"),
+    ("11.03.04", "Электроника и наноэлектроника"),
+    ("12.03.01", "Приборостроение"),
+    ("12.03.04", "Биотехнические системы и технологии"),
+    ("13.03.01", "Теплоэнергетика и теплотехника"),
+    ("13.03.02", "Электроэнергетика и электротехника"),
+    ("13.03.03", "Энергетическое машиностроение"),
+    ("15.03.01", "Машиностроение"),
+    ("15.03.02", "Технологические машины и оборудование"),
+    ("15.03.03", "Прикладная механика"),
+    ("15.03.04", "Автоматизация технологических процессов и производств"),
+    ("15.03.05", "Конструкторско-технологическое обеспечение машиностроительных производств"),
+    ("15.03.06", "Мехатроника и робототехника"),
+    ("18.03.01", "Химическая технология"),
+    ("18.03.02", "Энерго- и ресурсосберегающие процессы в химической технологии, нефтехимии и биотехнологии"),
+    ("19.03.01", "Биотехнология"),
+    ("20.03.01", "Техносферная безопасность"),
+    ("21.03.01", "Нефтегазовое дело"),
+    ("21.03.02", "Землеустройство и кадастры"),
+    ("22.03.01", "Материаловедение и технологии материалов"),
+    ("23.03.01", "Технология транспортных процессов"),
+    ("23.03.02", "Наземные транспортно-технологические комплексы"),
+    ("23.03.03", "Эксплуатация транспортно-технологических машин и комплексов"),
+    ("24.03.01", "Ракетные комплексы и космонавтика"),
+    ("24.03.04", "Авиастроение"),
+    ("24.03.05", "Двигатели летательных аппаратов"),
+    ("27.03.01", "Стандартизация и метрология"),
+    ("27.03.02", "Управление качеством"),
+    ("27.03.03", "Системный анализ и управление"),
+    ("27.03.04", "Управление в технических системах"),
+    ("27.03.05", "Инноватика"),
+    ("28.03.01", "Нанотехнологии и микросистемная техника"),
+    ("38.03.01", "Экономика"),
+    ("38.03.02", "Менеджмент"),
+    ("38.03.03", "Управление персоналом"),
+    ("38.03.04", "Государственное и муниципальное управление"),
+    ("38.03.05", "Бизнес-информатика"),
+    ("38.03.06", "Торговое дело"),
+    ("39.03.01", "Социология"),
+    ("40.03.01", "Юриспруденция"),
+    ("41.03.04", "Политология"),
+    ("42.03.01", "Реклама и связи с общественностью"),
+    ("43.03.01", "Сервис"),
+    ("43.03.02", "Туризм"),
+    ("44.03.01", "Педагогическое образование"),
+    ("45.03.02", "Лингвистика"),
+    ("54.03.01", "Дизайн"),
+]
+
+async def seed_dictionary_entries():
+    async with async_session() as db:
+        async def seed_kind(kind, values):
+            res = await db.execute(
+                select(DictionaryEntry.value).where(DictionaryEntry.kind == kind)
+            )
+            present = {(v or "").strip().lower() for (v,) in res.all()}
+            added = False
+            for value in values:
+                if value.strip().lower() in present:
+                    continue
+                db.add(DictionaryEntry(kind=kind, value=value, source="seed"))
+                added = True
+            return added
+
+        results = [
+            await seed_kind("faculty", SEED_FACULTIES),
+            await seed_kind("employee_title", SEED_EMPLOYEE_TITLES),
+        ]
+        if any(results):
+            await db.commit()
+
+async def seed_federal_directions():
+    async with async_session() as db:
+        res = await db.execute(select(Direction.code))
+        present = {(c or "").strip().lower() for (c,) in res.all()}
+        added = False
+        for code, name in SEED_DIRECTIONS:
+            if code.strip().lower() in present:
+                continue
+            db.add(Direction(code=code, name=name, profile=None, degree_level="бакалавриат"))
+            present.add(code.strip().lower())
+            added = True
+        if added:
+            await db.commit()
+
 async def seed_data():
     await seed_reference()
     await _seed_demo_data()
+    await seed_federal_directions()
     await seed_permissions()
     await ensure_role_permissions()
     await seed_test_samples()
     await ensure_three_indicators_for_all_competencies()
     await seed_llm_prompts()
     await upgrade_llm_prompts_to_reference_aware()
+    await seed_dictionary_entries()
 
 
 async def ensure_three_indicators_for_all_competencies():

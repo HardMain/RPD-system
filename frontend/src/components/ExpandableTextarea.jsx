@@ -56,7 +56,6 @@ export const ExpandableTextarea = forwardRef(function ExpandableTextarea(
       }}
     />
     {showIcon && (
-
       <button
         type="button"
         onMouseDown={e => e.preventDefault()}

@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/admin/disciplines", tags=["admin-disciplines"])
 
 
 def _ensure_perm(user: User) -> None:
-    if not user_can(user, "reference.manage"):
+    if not user_can(user, "sources.manage"):
         raise HTTPException(status_code=403, detail="Недостаточно прав для управления справочниками")
 
 

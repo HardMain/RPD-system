@@ -5,6 +5,7 @@ import { Modal } from "../../components/Modal.jsx";
 import { Btn } from "../../components/Btn.jsx";
 import { Input } from "../../components/Input.jsx";
 import { MultiSelectDropdown } from "../../components/MultiSelectDropdown.jsx";
+import { Dropdown } from "../../components/Dropdown.jsx";
 import { RowTrashOverlay } from "../../components/RowTrashOverlay.jsx";
 import { PlusIcon } from "../../components/icons.jsx";
 import { ReviewerChain } from "../../components/ReviewerChain.jsx";
@@ -60,6 +61,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
   );
 
   const [archiveRpds, setArchiveRpds] = useState([]);
+  const [dirSug, setDirSug] = useState({ directions: [], profiles: [] });
   const [year, setYear] = useState(draft?.year ?? "2025/2026");
   const [baseId, setBaseId] = useState(draft?.baseId ?? "");
   const [reviewers, setReviewers] = useState([]);
@@ -99,6 +101,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
     api.getDisciplines().then(r => setDisciplines(r.data || [])).catch(() => setDisciplines([]));
     api.getDisciplines({ include_unbound: true }).then(r => setManualDisciplines(r.data || [])).catch(() => setManualDisciplines([]));
     api.getRpds({ status: "Согласовано" }).then(r => setArchiveRpds(r.data || [])).catch(() => {});
+    api.getDirectionSuggestions().then(r => setDirSug(r.data || { directions: [], profiles: [] })).catch(() => {});
     api.getReviewers().then(r => {
       const list = r.data || [];
       setReviewers(list);
@@ -393,6 +396,17 @@ export function CreateRpdModal({ onClose, onCreated }) {
     setSubmitting(false);
   }
 
+  const selectedDir = useMemo(() => {
+    const code = (manual.direction_code || "").trim().toLowerCase();
+    const nm = (manual.direction_name || "").trim().toLowerCase();
+    return (dirSug.directions || []).find(d =>
+      (code && (d.code || "").toLowerCase() === code)
+      || (!code && nm && (d.name || "").toLowerCase() === nm)
+    ) || null;
+  }, [dirSug, manual.direction_code, manual.direction_name]);
+  const profileOptions = selectedDir ? (selectedDir.profiles || []) : [];
+  const directionEntered = !!(manual.direction_name || "").trim();
+
   const labelStyle = { fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 };
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box" };
 
@@ -571,27 +585,47 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
         <ManualBlock title="Направление подготовки">
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
-            <ManualField label="Код" required flash={flashField("direction_code")} pulseKey={errorPulse} value={manual.direction_code} onChange={v => manualField("direction_code", v)} placeholder="09.03.04" width={120} />
-            <ManualField label="Название" required flash={flashField("direction_name")} pulseKey={errorPulse} value={manual.direction_name} onChange={v => manualField("direction_name", v)} placeholder="Программная инженерия" />
+            <SuggestField label="Название" required flash={flashField("direction_name")} pulseKey={errorPulse}
+              value={manual.direction_name}
+              onChange={v => {
+                manualField("direction_name", v);
+                const hit = dirSug.directions.find(d => (d.name || "").trim().toLowerCase() === v.trim().toLowerCase());
+                manualField("direction_code", hit ? hit.code : "");
+              }}
+              options={dirSug.directions.map(d => ({ value: d.name, label: d.code ? `${d.name} (${d.code})` : d.name, code: d.code }))}
+              onPick={o => { manualField("direction_name", o.value); manualField("direction_code", o.code || ""); }}
+              placeholder="Выберите направление" />
+            <ManualField label="Код" required readOnly
+              value={manual.direction_code}
+              flash={flashField("direction_code")} pulseKey={errorPulse}
+              placeholder="из названия" width={150} />
           </div>
-          <ManualField label="Профиль" required flash={flashField("direction_profile")} pulseKey={errorPulse} value={manual.direction_profile} onChange={v => manualField("direction_profile", v)} placeholder="—" />
+          <SuggestField label="Профиль" required flash={flashField("direction_profile")} pulseKey={errorPulse}
+            value={manual.direction_profile}
+            onChange={v => manualField("direction_profile", v)}
+            options={profileOptions.map(p => ({ value: p, label: p }))}
+            disabled={!directionEntered}
+            placeholder={!directionEntered
+              ? "Сначала укажите направление"
+              : (selectedDir ? "Профиль направления или свой" : "Введите профиль")} />
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "0 0 220px", minWidth: 200 }}>
               <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>
                 Форма обучения <span style={{ color: T.red }}>*</span>
               </div>
               <div key={errorPulse} className={flashField("form_of_study") ? "err-flash" : ""} style={{ borderRadius: 4 }}>
-                <select
+                <Dropdown
                   value={manual.form_of_study || ""}
-                  onChange={e => manualField("form_of_study", e.target.value)}
+                  options={[
+                    { value: "очная", label: "очная" },
+                    { value: "заочная", label: "заочная" },
+                    { value: "очно-заочная", label: "очно-заочная" },
+                  ]}
+                  onChange={v => manualField("form_of_study", v)}
+                  placeholder="— не указано —"
+                  clearLabel="— не указано —"
                   title="Обязательное поле"
-                  style={{ width: "100%", padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, boxSizing: "border-box", outline: "none" }}
-                >
-                  <option value="">— не указана —</option>
-                  <option value="очная">очная</option>
-                  <option value="заочная">заочная</option>
-                  <option value="очно-заочная">очно-заочная</option>
-                </select>
+                />
               </div>
             </div>
           </div>
@@ -708,10 +742,13 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
       <div style={{ marginBottom: 4 }}>
         <label style={labelStyle}>На основе архивной РПД (необязательно)</label>
-        <select value={baseId} onChange={e => setBaseId(e.target.value)} style={inputStyle}>
-          <option value="">— Не копировать —</option>
-          {archiveRpds.map(r => <option key={r.id_rpd} value={r.id_rpd}>{r.discipline_name} ({r.academic_year})</option>)}
-        </select>
+        <Dropdown
+          value={baseId ? String(baseId) : ""}
+          options={archiveRpds.map(r => ({ value: String(r.id_rpd), label: `${r.discipline_name} (${r.academic_year})` }))}
+          onChange={v => setBaseId(v || "")}
+          placeholder="— Не копировать —"
+          clearLabel="— Не копировать —"
+        />
       </div>
     </div>
 
@@ -757,18 +794,21 @@ function ManualBlock({ title, children }) {
   </div>;
 }
 
-function ManualField({ label, value, onChange, placeholder, type, width, min, step, required, flash, pulseKey }) {
+function ManualField({ label, value, onChange, placeholder, type, width, min, step, required, flash, pulseKey, readOnly }) {
   const style = {
     width: "100%",
     padding: "6px 10px",
     border: "1px solid " + T.border,
     borderRadius: 4,
     fontSize: 13, fontFamily: F,
-    background: T.surface,
+    background: readOnly ? T.bg : T.surface,
+    color: readOnly ? T.textMuted : T.text,
     boxSizing: "border-box",
     outline: "none",
+    cursor: readOnly ? "default" : "text",
   };
   function onChangeNum(e) {
+    if (!onChange) return;
     if (type === "number") {
       const raw = e.target.value;
       if (raw === "") { onChange(0); return; }
@@ -790,11 +830,99 @@ function ManualField({ label, value, onChange, placeholder, type, width, min, st
         step={type === "number" ? (step ?? 1) : undefined}
         value={value ?? ""}
         onChange={onChangeNum}
+        readOnly={readOnly}
         placeholder={placeholder}
-        title={required ? "Обязательное поле" : undefined}
+        title={readOnly ? "Подставляется автоматически из выбранного названия" : (required ? "Обязательное поле" : undefined)}
         style={style}
       />
     </div>
+  </div>;
+}
+
+function SuggestField({ label, value, onChange, onPick, options, placeholder, width, required, flash, pulseKey, disabled }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDocClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const q = (value || "").trim().toLowerCase();
+  const filtered = useMemo(() => {
+    const list = options || [];
+    const base = q
+      ? list.filter(o => `${o.label} ${o.value}`.toLowerCase().includes(q))
+      : list;
+    return base.slice(0, 50);
+  }, [options, q]);
+
+  const style = {
+    width: "100%",
+    padding: "6px 10px",
+    border: "1px solid " + T.border,
+    borderRadius: 4,
+    fontSize: 13, fontFamily: F,
+    background: disabled ? T.bg : T.surface,
+    color: disabled ? T.textMuted : T.text,
+    cursor: disabled ? "not-allowed" : "text",
+    boxSizing: "border-box",
+    outline: "none",
+  };
+
+  function choose(o) {
+    if (onPick) onPick(o); else onChange(o.value);
+    setOpen(false);
+  }
+
+  return <div ref={wrapRef} style={{ flex: width ? `0 0 ${width}px` : 1, minWidth: width || 120, position: "relative" }}>
+    <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>
+      {label}{required && <span style={{ color: T.red }}> *</span>}
+    </div>
+    <div key={pulseKey} className={flash ? "err-flash" : ""} style={{ borderRadius: 4 }}>
+      <input
+        value={value ?? ""}
+        onChange={e => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        disabled={disabled}
+        placeholder={placeholder}
+        title={disabled ? placeholder : (required ? "Обязательное поле" : undefined)}
+        style={style}
+      />
+    </div>
+    {!disabled && open && filtered.length > 0 && (
+      <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 2, zIndex: 20, border: "1px solid " + T.border, borderRadius: 6, background: T.surface, boxShadow: "0 4px 14px rgba(0,0,0,.10)", maxHeight: 220, overflow: "auto" }}>
+        {filtered.map((o, i) => {
+          const picked = o.value === value;
+          return <button
+            key={`${o.value}-${i}`}
+            type="button"
+            onClick={() => choose(o)}
+            style={{
+              display: "block", width: "100%", textAlign: "left",
+              padding: "8px 12px", border: "none", borderBottom: "1px solid " + T.borderLight,
+              background: picked ? T.accentLight : "transparent",
+              cursor: "pointer", fontFamily: F, fontSize: 13,
+              color: picked ? T.accent : T.text, fontWeight: picked ? 600 : 400,
+            }}
+            onMouseEnter={e => { if (!picked) e.currentTarget.style.background = T.bg; }}
+            onMouseLeave={e => { if (!picked) e.currentTarget.style.background = "transparent"; }}
+          >
+            {o.label}
+          </button>;
+        })}
+      </div>
+    )}
   </div>;
 }
 

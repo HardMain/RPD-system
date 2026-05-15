@@ -7,6 +7,14 @@ import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
+import { useSort, SortTh } from "../components/sortable.jsx";
+
+const BUP_ACCESSORS = {
+  year: b => b.year || 0,
+  name: b => b.name || "",
+  direction: b => b.direction_code || b.direction_name || "",
+  faculty: b => b.faculty || "",
+};
 import { TrashIcon, UploadIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
@@ -45,7 +53,10 @@ export function BupsContent() {
     );
   }, [bups, search]);
 
-  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(filtered, { defaultPageSize: 50, storageKey: "adminBups.pageSize" });
+  const { sort, toggleSort, sortItems } = useSort("name", "asc");
+  const sorted = useMemo(() => sortItems(filtered, BUP_ACCESSORS), [filtered, sort]);
+
+  const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sorted, { defaultPageSize: 50, storageKey: "adminBups.pageSize" });
 
   return <>
     <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
@@ -81,13 +92,13 @@ export function BupsContent() {
       : filtered.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
           {bups.length === 0 ? "БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины." : "Ничего не нашлось."}
         </div>
-      : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+      : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
           <thead><tr style={{ background: T.surface }}>
-            <th style={{ ...hdr, textAlign: "center", width: 80 }}>Год</th>
-            <th style={hdr}>Наименование</th>
-            <th style={hdr}>Направление</th>
-            <th style={hdr}>Факультет</th>
-            <th style={{ ...hdr, width: 1 }} />
+            <SortTh sortKey="year" sort={sort} onSort={toggleSort} align="center" style={{ width: 80 }}>Год</SortTh>
+            <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Наименование</SortTh>
+            <SortTh sortKey="direction" sort={sort} onSort={toggleSort} style={{ width: 280 }}>Направление</SortTh>
+            <SortTh sortKey="faculty" sort={sort} onSort={toggleSort} style={{ width: 220 }}>Факультет</SortTh>
+            <th style={{ ...hdr, width: 56 }} />
           </tr></thead>
           <tbody>
             {pageItems.map(b => <tr key={b.id_bup}
@@ -152,7 +163,7 @@ function ImportBupModal({ onClose, onImported }) {
 
       {!result && <>
         <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 }}>Файл .xls/.xlsx</label>
+          <label style={{ fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 }}>Файл .xls/.xlsx <span style={{ color: T.red }}>*</span></label>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <input ref={inputRef} type="file" accept=".xls,.xlsx" onChange={e => setFile(e.target.files?.[0] || null)}
               style={{ display: "none" }} />

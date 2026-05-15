@@ -149,6 +149,10 @@ export const adminDeleteDepartment = (deptId) => api.delete(`/admin/departments/
 export const searchUsers = (q) => api.get('/admin/users/search', { params: { q } });
 
 export const adminListDirections = () => api.get('/admin/directions/');
+export const adminUpdateDirection = (directionId, payload) => api.patch(`/admin/directions/${directionId}`, payload);
+export const adminAddDirectionProgram = (directionId, payload) => api.post(`/admin/directions/${directionId}/programs`, payload);
+export const adminUpdateDirectionProgram = (programId, payload) => api.patch(`/admin/directions/programs/${programId}`, payload);
+export const adminDeleteDirectionProgram = (programId) => api.delete(`/admin/directions/programs/${programId}`);
 export const adminUploadFgos = (directionId, file) => {
   const form = new FormData();
   form.append('file', file);
@@ -192,6 +196,8 @@ export const fetchPdfInline = (rpdId, config = {}, bdId) => {
 export const getDirections = () => api.get('/rpd/directions');
 
 export const getDisciplines = (params) => api.get('/rpd/disciplines', { params });
+
+export const getDirectionSuggestions = () => api.get('/rpd/direction-suggestions');
 
 export const getNotifications = () => api.get('/notifications/');
 export const getUnreadCount = () => api.get('/notifications/unread-count');

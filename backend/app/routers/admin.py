@@ -23,7 +23,7 @@ def _require_user_admin_or_creator(user: User):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 def _require_dept_admin(user: User):
-    if not (user_can(user, "users.manage") or user_can(user, "reference.manage")):
+    if not (user_can(user, "users.manage") or user_can(user, "sources.manage")):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 async def _resolve_target_role_name(db: AsyncSession, id_role: int) -> str:

@@ -133,18 +133,21 @@ function SoftwareRow({ item, editable, onSave }) {
         onCommit={commitName}
         fetchSuggestions={fetchSoftwareSuggestions}
         placeholder="Например, LibreOffice 7.5"
-        style={inlineInput}
+        textarea
+        collapsedMaxHeight={64}
+        style={inlineTextarea}
       />
     </td>
   </tr>;
 }
 
-const inlineInput = {
+const inlineTextarea = {
   width: "100%",
+  minHeight: 32,
   padding: "4px 6px",
   border: "1px solid " + T.borderLight,
   borderRadius: 4,
-  fontSize: 13, fontFamily: F,
+  fontSize: 13, fontFamily: F, lineHeight: 1.45,
   background: T.surface,
   outline: "none",
   boxSizing: "border-box",

@@ -17,6 +17,7 @@ ALLOWED_KINDS = {
     "literature_title",
     "assessment_tool",
     "competency_code", "indicator_code", "indicator_description",
+    "faculty", "employee_title",
 }
 SCOPED_KINDS = {"literature_title", "indicator_code", "indicator_description"}
 
@@ -49,7 +50,7 @@ class DictionaryEntryUpdate(BaseModel):
 
 
 def _ensure_perm(user: User) -> None:
-    if not user_can(user, "reference.manage"):
+    if not user_can(user, "sources.manage"):
         raise HTTPException(status_code=403, detail="Недостаточно прав для управления справочниками")
 
 

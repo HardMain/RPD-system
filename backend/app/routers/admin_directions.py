@@ -2,34 +2,57 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user, user_can
 from app.core.database import get_db
-from app.models import Direction, StoredFile, User
+from app.models import Direction, DirectionProgram, StoredFile, User
 from app.services import storage_service
 
 router = APIRouter(prefix="/api/admin/directions", tags=["admin-directions"])
+
+class ProgramOut(BaseModel):
+    id_program: int
+    profile: str
 
 class DirectionAdminOut(BaseModel):
     id_direction: int
     code: str
     name: str
-    profile: str | None = None
     degree_level: str | None = None
     fgos_file_id: int | None = None
     fgos_file_name: str | None = None
+    programs: list[ProgramOut] = []
+
+class DirectionUpdate(BaseModel):
+    code: str | None = None
+    name: str | None = None
+
+class ProgramPayload(BaseModel):
+    profile: str
 
 def _require_admin(user: User):
-    if not user_can(user, "directions.manage"):
+    if not user_can(user, "sources.manage"):
         raise HTTPException(status_code=403, detail="Недостаточно прав")
+
+async def _load(db: AsyncSession, direction_id: int) -> Direction:
+    res = await db.execute(
+        select(Direction).where(Direction.id_direction == direction_id)
+        .options(selectinload(Direction.fgos_file), selectinload(Direction.programs))
+    )
+    direc = res.scalar_one_or_none()
+    if direc is None:
+        raise HTTPException(status_code=404, detail="Направление не найдено")
+    return direc
 
 def _to_out(d: Direction) -> DirectionAdminOut:
     fgos = d.fgos_file
     return DirectionAdminOut(
         id_direction=d.id_direction,
-        code=d.code, name=d.name, profile=d.profile, degree_level=d.degree_level,
+        code=d.code, name=d.name, degree_level=d.degree_level,
         fgos_file_id=fgos.id_file if fgos else None,
         fgos_file_name=fgos.original_name if fgos else None,
+        programs=[ProgramOut(id_program=p.id_program, profile=p.profile) for p in (d.programs or [])],
     )
 
 @router.get("/", response_model=list[DirectionAdminOut])
@@ -38,11 +61,88 @@ async def admin_list_directions(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    from sqlalchemy.orm import selectinload
     res = await db.execute(
-        select(Direction).options(selectinload(Direction.fgos_file)).order_by(Direction.code)
+        select(Direction)
+        .options(selectinload(Direction.fgos_file), selectinload(Direction.programs))
+        .order_by(Direction.code)
     )
     return [_to_out(d) for d in res.scalars().all()]
+
+@router.patch("/{direction_id}", response_model=DirectionAdminOut)
+async def admin_update_direction(
+    direction_id: int,
+    data: DirectionUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    direc = await db.get(Direction, direction_id)
+    if not direc:
+        raise HTTPException(status_code=404, detail="Направление не найдено")
+    if data.code is not None:
+        code = data.code.strip()
+        if not code:
+            raise HTTPException(status_code=400, detail="Код обязателен")
+        direc.code = code
+    if data.name is not None:
+        name = data.name.strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Название обязательно")
+        direc.name = name
+    await db.commit()
+    return _to_out(await _load(db, direction_id))
+
+@router.post("/{direction_id}/programs", response_model=DirectionAdminOut, status_code=201)
+async def admin_add_program(
+    direction_id: int,
+    data: ProgramPayload,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    direc = await _load(db, direction_id)
+    profile = (data.profile or "").strip()
+    if not profile:
+        raise HTTPException(status_code=400, detail="Профиль обязателен")
+    if any(p.profile.strip().lower() == profile.lower() for p in direc.programs):
+        raise HTTPException(status_code=400, detail="Такой профиль уже есть у направления")
+    db.add(DirectionProgram(id_direction=direction_id, profile=profile))
+    await db.commit()
+    return _to_out(await _load(db, direction_id))
+
+@router.patch("/programs/{program_id}", response_model=DirectionAdminOut)
+async def admin_update_program(
+    program_id: int,
+    data: ProgramPayload,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    prog = await db.get(DirectionProgram, program_id)
+    if not prog:
+        raise HTTPException(status_code=404, detail="Профиль не найден")
+    profile = (data.profile or "").strip()
+    if not profile:
+        raise HTTPException(status_code=400, detail="Профиль обязателен")
+    direction_id = prog.id_direction
+    prog.profile = profile
+    await db.commit()
+    return _to_out(await _load(db, direction_id))
+
+@router.delete("/programs/{program_id}", response_model=DirectionAdminOut)
+async def admin_delete_program(
+    program_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    prog = await db.get(DirectionProgram, program_id)
+    if not prog:
+        raise HTTPException(status_code=404, detail="Профиль не найден")
+    direction_id = prog.id_direction
+    await db.delete(prog)
+    await db.commit()
+    return _to_out(await _load(db, direction_id))
 
 @router.post("/{direction_id}/fgos", response_model=DirectionAdminOut, status_code=201)
 async def admin_upload_fgos(
@@ -76,13 +176,7 @@ async def admin_upload_fgos(
     await db.flush()
     direc.id_fgos_file = sf.id_file
     await db.commit()
-
-    from sqlalchemy.orm import selectinload
-    res = await db.execute(
-        select(Direction).where(Direction.id_direction == direction_id)
-        .options(selectinload(Direction.fgos_file))
-    )
-    return _to_out(res.scalar_one())
+    return _to_out(await _load(db, direction_id))
 
 @router.delete("/{direction_id}/fgos", status_code=204)
 async def admin_remove_fgos(

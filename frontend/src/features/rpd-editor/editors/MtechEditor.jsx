@@ -141,7 +141,9 @@ function MtechRow({ item, editable, onSave }) {
         onCommit={commitRoom}
         fetchSuggestions={fetchRoomTypeSuggestions}
         placeholder="Например, Лабораторные работы"
-        style={inlineInput}
+        textarea
+        collapsedMaxHeight={64}
+        style={inlineTextarea}
       />
     </td>
     <td style={{ ...td, padding: 4 }}>
@@ -167,17 +169,6 @@ function MtechRow({ item, editable, onSave }) {
     </td>
   </tr>;
 }
-
-const inlineInput = {
-  width: "100%",
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F,
-  background: T.surface,
-  outline: "none",
-  boxSizing: "border-box",
-};
 
 const inlineTextarea = {
   width: "100%",

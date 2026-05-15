@@ -219,8 +219,8 @@ export function OutcomesEditor() {
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
       <colgroup>
         <col style={{ width: "10%" }} />
-        <col style={{ width: "10%" }} />
-        <col style={{ width: "30%" }} />
+        <col style={{ width: "13%" }} />
+        <col style={{ width: "27%" }} />
         <col style={{ width: "30%" }} />
         <col style={{ width: "20%" }} />
       </colgroup>
@@ -313,12 +313,14 @@ async function fetchKind(kind, q, source_type) {
 }
 
 function SnapshotInput({ value, onSave, placeholder, bold, kind, parent }) {
-  const style = { width: "100%", padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontWeight: bold ? 700 : 400, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
+  const style = { width: "100%", minHeight: 32, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontWeight: bold ? 700 : 400, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
   return <Combobox
     value={value || ""}
     onCommit={v => { if (v !== (value || "")) onSave(v); }}
     fetchSuggestions={(q) => fetchKind(kind, q, parent)}
     placeholder={placeholder}
+    textarea
+    collapsedMaxHeight={36}
     style={style}
   />;
 }
@@ -452,7 +454,7 @@ function OutcomeTextarea({ value, disabled, onSave }) {
 
 function AssessmentToolPicker({ value, disabled, onSave }) {
   if (disabled) {
-    return <div style={{ padding: "6px 8px", fontSize: 13, color: T.text }}>{value || ""}</div>;
+    return <div style={{ padding: "6px 8px", fontSize: 13, color: T.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{value || ""}</div>;
   }
   return <Combobox
     value={value || ""}
@@ -460,6 +462,8 @@ function AssessmentToolPicker({ value, disabled, onSave }) {
     fetchSuggestions={fetchAssessmentToolSuggestions}
     placeholder="Средство оценки"
     title="Средство оценки"
-    style={{ width: "100%", padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
+    textarea
+    collapsedMaxHeight={64}
+    style={{ width: "100%", minHeight: 32, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
   />;
 }
