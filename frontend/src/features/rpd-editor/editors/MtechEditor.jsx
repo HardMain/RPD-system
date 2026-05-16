@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
-import { T, F } from "../../../theme.js";
-import { td, th } from "../../../styles.js";
+import { T, td, th, inlineTextarea, inlineNumber } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Combobox } from "../../../components/Combobox.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
@@ -170,28 +169,4 @@ function MtechRow({ item, editable, onSave }) {
   </tr>;
 }
 
-const inlineTextarea = {
-  width: "100%",
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F, lineHeight: 1.45,
-  background: T.surface,
-  minHeight: 32,
-  boxSizing: "border-box",
-  outline: "none",
-};
-
-const inlineNumber = {
-  width: "auto",
-  fieldSizing: "content",
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F,
-  textAlign: "center",
-  fontVariantNumeric: "tabular-nums",
-  background: T.surface,
-  outline: "none",
-};
 

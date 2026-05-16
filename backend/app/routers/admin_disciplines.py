@@ -4,6 +4,7 @@ from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, user_can
+from app.core.crud import get_or_404, ensure_permission
 from app.core.database import get_db
 from app.models import User, Discipline, BupDiscipline, Rpd
 
@@ -11,8 +12,7 @@ router = APIRouter(prefix="/api/admin/disciplines", tags=["admin-disciplines"])
 
 
 def _ensure_perm(user: User) -> None:
-    if not user_can(user, "sources.manage"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав для управления справочниками")
+    ensure_permission(user, "sources.manage", detail="Недостаточно прав для управления справочниками")
 
 
 class DisciplineRefOut(BaseModel):
@@ -96,9 +96,7 @@ async def update_discipline(
     user: User = Depends(get_current_user),
 ):
     _ensure_perm(user)
-    d = await db.get(Discipline, id_discipline)
-    if d is None:
-        raise HTTPException(status_code=404)
+    d = await get_or_404(db, Discipline, id_discipline)
     if data.name is not None:
         new_name = data.name.strip()
         if not new_name:
@@ -134,9 +132,7 @@ async def delete_discipline(
     user: User = Depends(get_current_user),
 ):
     _ensure_perm(user)
-    d = await db.get(Discipline, id_discipline)
-    if d is None:
-        raise HTTPException(status_code=404)
+    d = await get_or_404(db, Discipline, id_discipline)
     bd_count = (await db.execute(
         select(func.count(BupDiscipline.id_bup_discipline))
         .where(BupDiscipline.id_discipline == id_discipline)

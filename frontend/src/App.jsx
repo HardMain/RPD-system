@@ -5,7 +5,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 
 import * as api from "./api/client.js";
-import { T, F } from "./theme.js";
+import { T, F } from "./styles/index.js";
 import { Spinner } from "./components/Spinner.jsx";
 import { TabBtn } from "./components/TabBtn.jsx";
 import { BellIcon } from "./components/icons.jsx";

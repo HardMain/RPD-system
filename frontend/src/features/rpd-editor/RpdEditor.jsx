@@ -1,8 +1,8 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { Document, Page } from "react-pdf";
 import * as api from "../../api/client.js";
-import { T, F } from "../../theme.js";
-import { pdfToolBtn } from "../../styles.js";
+import { T, F, pdfToolBtn } from "../../styles/index.js";
+import { formatDateTimeRu } from "../../utils/format.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Spinner } from "../../components/Spinner.jsx";
 import { DownloadIcon } from "../../components/icons.jsx";
@@ -1040,7 +1040,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
               {rpd.approvals?.length > 0 && <div style={{ marginTop: 32 }}>
                 <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>История согласования</div>
                 {rpd.approvals.map(a => <div key={a.id_approval} style={{ padding: "8px 0", borderBottom: "1px solid " + T.borderLight, fontSize: 12 }}>
-                  <span style={{ color: T.textMuted }}>{a.created_at ? new Date(a.created_at).toLocaleString("ru-RU") : ""}</span> — <b>{a.reviewer_name}</b> — <span>{a.status}</span>
+                  <span style={{ color: T.textMuted }}>{a.created_at ? formatDateTimeRu(a.created_at) : ""}</span> — <b>{a.reviewer_name}</b> — <span>{a.status}</span>
                   {a.comment && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 2 }}>{a.comment}</div>}
                 </div>)}
               </div>}

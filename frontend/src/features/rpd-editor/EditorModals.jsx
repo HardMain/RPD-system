@@ -1,9 +1,9 @@
-import { T, F } from "../../theme.js";
+import { T, F, modalFooter, modalCenterBody, modalTitle, modalIconHeader, modalIconCircle, modalHeadTitle, modalHeadSub } from "../../styles/index.js";
 import { Modal } from "../../components/Modal.jsx";
 import { Btn } from "../../components/Btn.jsx";
 
 function ModalFooter({ children, onClose, closeLabel = "Закрыть" }) {
-  return <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "12px 20px", borderTop: "1px solid " + T.borderLight }}>
+  return <div style={modalFooter}>
     {children}
     <Btn onClick={onClose}>{closeLabel}</Btn>
   </div>;
@@ -11,8 +11,8 @@ function ModalFooter({ children, onClose, closeLabel = "Закрыть" }) {
 
 export function SentModal({ onClose }) {
   return <Modal onClose={onClose} width={400}>
-    <div style={{ padding: "24px 24px 16px", textAlign: "center" }}>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>РПД отправлена на согласование</div>
+    <div style={modalCenterBody}>
+      <div style={modalTitle}>РПД отправлена на согласование</div>
     </div>
     <ModalFooter onClose={onClose} />
   </Modal>;
@@ -20,8 +20,8 @@ export function SentModal({ onClose }) {
 
 export function ErrorModal({ onClose }) {
   return <Modal onClose={onClose} width={440}>
-    <div style={{ padding: "24px 24px 16px", textAlign: "center" }}>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Ошибка при отправке</div>
+    <div style={modalCenterBody}>
+      <div style={modalTitle}>Ошибка при отправке</div>
       <div style={{ fontSize: 13, color: T.textMuted }}>Проверьте заполненность разделов</div>
     </div>
     <ModalFooter onClose={onClose} />
@@ -30,8 +30,8 @@ export function ErrorModal({ onClose }) {
 
 export function ApprovedModal({ onClose }) {
   return <Modal onClose={onClose} width={400}>
-    <div style={{ padding: "24px 24px 16px", textAlign: "center" }}>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>РПД согласована</div>
+    <div style={modalCenterBody}>
+      <div style={modalTitle}>РПД согласована</div>
     </div>
     <ModalFooter onClose={onClose} />
   </Modal>;
@@ -51,16 +51,16 @@ export function RejectModal({ comment, onChange, onClose, onSubmit }) {
 
 export function ConfirmDeleteModal({ title = "Удалить?", message, onClose, onConfirm, confirmLabel = "Удалить" }) {
   return <Modal onClose={onClose} width={460}>
-    <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "flex-start", gap: 12 }}>
-      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 18, background: "#fbe5e5", flexShrink: 0 }}>
+    <div style={modalIconHeader("flex-start")}>
+      <span style={modalIconCircle(T.redSoft)}>
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={T.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <polyline points="3 6 5 6 21 6" />
           <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
         </svg>
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{title}</div>
-        {message && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4, lineHeight: 1.45 }}>{message}</div>}
+        <div style={modalHeadTitle}>{title}</div>
+        {message && <div style={modalHeadSub}>{message}</div>}
       </div>
     </div>
     <ModalFooter onClose={onClose} closeLabel="Отмена">
@@ -71,11 +71,11 @@ export function ConfirmDeleteModal({ title = "Удалить?", message, onClose
 
 export function AlertModal({ title = "Внимание", message, onClose }) {
   return <Modal onClose={onClose} width={420}>
-    <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "flex-start", gap: 12 }}>
-      <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 36, height: 36, borderRadius: 18, background: T.orangeLight, flexShrink: 0, fontSize: 18 }}>⚠️</span>
+    <div style={modalIconHeader("flex-start")}>
+      <span style={{ ...modalIconCircle(T.orangeLight), fontSize: 18 }}>⚠️</span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>{title}</div>
-        {message && <div style={{ fontSize: 12, color: T.textMuted, marginTop: 4, lineHeight: 1.45, whiteSpace: "pre-wrap" }}>{message}</div>}
+        <div style={modalHeadTitle}>{title}</div>
+        {message && <div style={{ ...modalHeadSub, whiteSpace: "pre-wrap" }}>{message}</div>}
       </div>
     </div>
     <ModalFooter onClose={onClose} />
@@ -84,10 +84,10 @@ export function AlertModal({ title = "Внимание", message, onClose }) {
 
 export function StalePdfDownloadModal({ onClose, onRefreshAndDownload, onDownloadAnyway }) {
   return <Modal onClose={onClose} width={460}>
-    <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "center", gap: 10 }}>
+    <div style={modalIconHeader("center")}>
       <span style={{ fontSize: 20 }}>⚠️</span>
       <div>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>Печатная форма устарела</div>
+        <div style={modalHeadTitle}>Печатная форма устарела</div>
         <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>На экране показано превью, собранное до последних правок</div>
       </div>
     </div>
@@ -100,10 +100,10 @@ export function StalePdfDownloadModal({ onClose, onRefreshAndDownload, onDownloa
 
 export function ValidationModal({ errors, onGoTo, onClose }) {
   return <Modal onClose={onClose} width={460}>
-    <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "center", gap: 10 }}>
+    <div style={modalIconHeader("center")}>
       <span style={{ fontSize: 20 }}>⚠️</span>
       <div>
-        <div style={{ fontSize: 15, fontWeight: 700 }}>Нельзя отправить на согласование</div>
+        <div style={modalHeadTitle}>Нельзя отправить на согласование</div>
         <div style={{ fontSize: 12, color: T.textMuted, marginTop: 2 }}>Заполните все обязательные разделы</div>
       </div>
     </div>

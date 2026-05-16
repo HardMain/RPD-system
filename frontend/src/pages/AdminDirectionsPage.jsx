@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F } from "../theme.js";
-import { hdr, tcell, iconBtn } from "../styles.js";
+import { T, F, hdr, tcell, iconBtn, formErrorBox, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
+import { FilterChip } from "../components/FilterChip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
@@ -79,8 +79,8 @@ export function DirectionsContent() {
   const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sorted, { defaultPageSize: 50, storageKey: "adminDirections.pageSize" });
 
   return <>
-    <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+    <div style={adminAddPanel}>
+      <div style={sectionLabel}>
         Добавить запись
       </div>
       <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
@@ -88,16 +88,12 @@ export function DirectionsContent() {
       </div>
     </div>
 
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+    <div style={adminToolbar}>
       <input
         value={search}
         onChange={e => setSearch(e.target.value)}
         placeholder="Поиск по коду, названию, профилю…"
-        style={{
-          flex: 1, minWidth: 220, maxWidth: 360,
-          padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4,
-          fontSize: 13, fontFamily: F, outline: "none",
-        }}
+        style={adminSearch(360)}
       />
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         <FilterChip label="Все" count={counts.all} active={fgosFilter === "all"} onClick={() => setFgosFilter("all")} />
@@ -114,7 +110,7 @@ export function DirectionsContent() {
         ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
         : filtered.length === 0
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>{items.length === 0 ? "Направлений нет — они подтянутся при импорте БУПов." : "Ничего не нашлось."}</div>
-          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
+          : <table style={{ ...dataTable, tableLayout: "fixed" }}>
             <thead><tr style={{ background: T.surface }}>
               <SortTh sortKey="code" sort={sort} onSort={toggleSort} style={{ width: 130 }}>Код</SortTh>
               <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Наименование</SortTh>
@@ -263,7 +259,7 @@ function DirectionEditModal({ direction, busy, onClose, onUpload, onDetach, onSa
   }
 
   return <Modal width={560} onClose={onClose}>
-    <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, fontSize: 16, fontWeight: 700 }}>
+    <div style={modalTitleHeader}>
       Направление подготовки
     </div>
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -314,9 +310,9 @@ function DirectionEditModal({ direction, busy, onClose, onUpload, onDetach, onSa
           <UploadIcon /> {direction.fgos_file_id ? "Заменить файл ФГОС" : "Загрузить файл ФГОС"}
         </Btn>
       </div>
-      {err && <div style={{ background: "#fde6e3", color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13 }}>{err}</div>}
+      {err && <div style={formErrorBox}>{err}</div>}
     </div>
-    <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "space-between", gap: 10 }}>
+    <div style={modalFooterWide("space-between")}>
       <Btn danger onClick={onDetach} disabled={!direction.fgos_file_id || busy}>
         Открепить ФГОС
       </Btn>
@@ -326,26 +322,6 @@ function DirectionEditModal({ direction, busy, onClose, onUpload, onDetach, onSa
       </div>
     </div>
   </Modal>;
-}
-
-function FilterChip({ label, count, active, onClick }) {
-  return <button
-    type="button"
-    onClick={onClick}
-    style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "4px 10px", borderRadius: 12,
-      border: "1px solid " + (active ? T.accent : T.border),
-      background: active ? T.accentLight : T.surface,
-      color: active ? T.accent : T.text,
-      fontSize: 12, fontWeight: active ? 700 : 500,
-      cursor: "pointer", fontFamily: F,
-      whiteSpace: "nowrap",
-    }}
-  >
-    {label}
-    <span style={{ fontSize: 11, opacity: 0.7, fontVariantNumeric: "tabular-nums" }}>({count})</span>
-  </button>;
 }
 
 const miniLabel = { fontSize: 11, color: T.textMuted, marginBottom: 4 };

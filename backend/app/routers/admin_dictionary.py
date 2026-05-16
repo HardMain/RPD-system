@@ -5,6 +5,7 @@ from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, user_can
+from app.core.crud import get_or_404, ensure_permission
 from app.core.database import get_db
 from app.models import User, DictionaryEntry
 
@@ -50,8 +51,7 @@ class DictionaryEntryUpdate(BaseModel):
 
 
 def _ensure_perm(user: User) -> None:
-    if not user_can(user, "sources.manage"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав для управления справочниками")
+    ensure_permission(user, "sources.manage", detail="Недостаточно прав для управления справочниками")
 
 
 @router.get("/{kind}", response_model=list[DictionaryEntryOut])

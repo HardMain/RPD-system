@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { T, F } from "../theme.js";
+import { T, F, statusChip } from "../styles/index.js";
 import { Btn } from "./Btn.jsx";
 import { TrashIcon, PlusIcon, DragHandleIcon } from "./icons.jsx";
 import { ConfirmDeleteModal } from "../features/rpd-editor/EditorModals.jsx";
@@ -165,5 +165,5 @@ function StatusChip({ status }) {
     rejected: { text: "отклонено", color: T.red, bg: T.redLight || "#ffebee" },
   };
   const s = map[status] || { text: status, color: T.textMuted, bg: T.borderLight };
-  return <span style={{ fontSize: 10, fontWeight: 600, color: s.color, background: s.bg, padding: "1px 6px", borderRadius: 3, textTransform: "uppercase", letterSpacing: .3 }}>{s.text}</span>;
+  return <span style={statusChip({ color: s.color, bg: s.bg })}>{s.text}</span>;
 }

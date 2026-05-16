@@ -1,23 +1,12 @@
-import { useEffect, useRef, useState } from "react";
-import { T, F } from "../../theme.js";
+import { useRef, useState } from "react";
+import { T, F, dropdownChevron, dropdownItem } from "../../styles/index.js";
+import { useDismiss } from "../../hooks/useDismiss.js";
 
 export function BupDropdown({ bds, value, onChange, compact = false, title }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), [ref]);
 
   const current = bds.find(b => b.id_bup_discipline === value) || bds[0];
   if (!current) return null;
@@ -52,11 +41,7 @@ export function BupDropdown({ bds, value, onChange, compact = false, title }) {
       }}
     >
       {labelOf(current)}
-      <span style={{
-        position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-        color: T.textMuted, fontSize: compact ? 14 : 16, fontWeight: 700,
-        pointerEvents: "none", lineHeight: 1,
-      }}>▾</span>
+      <span style={dropdownChevron(compact ? 14 : 16)}>▾</span>
     </button>
     {open && (
       <div style={{
@@ -78,24 +63,7 @@ export function BupDropdown({ bds, value, onChange, compact = false, title }) {
             key={b.id_bup_discipline}
             type="button"
             onClick={() => { onChange(b.id_bup_discipline); setOpen(false); }}
-            style={{
-              display: "block",
-              width: "100%",
-              textAlign: "left",
-              padding: "8px 10px",
-              border: "none",
-              borderBottom: "1px solid " + T.borderLight,
-              background: picked ? T.accentLight : "transparent",
-              cursor: "pointer",
-              fontFamily: F,
-              fontSize,
-              color: picked ? T.accent : T.text,
-              fontWeight: picked ? 600 : 400,
-              lineHeight: 1.4,
-              wordBreak: "normal",
-              overflowWrap: "break-word",
-              whiteSpace: "normal",
-            }}
+            style={dropdownItem({ picked, fontSize })}
             onMouseEnter={e => { if (!picked) e.currentTarget.style.background = T.bg; }}
             onMouseLeave={e => { if (!picked) e.currentTarget.style.background = "transparent"; }}
           >

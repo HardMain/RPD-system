@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
-import { T, F } from "../../../theme.js";
-import { td, th } from "../../../styles.js";
+import { T, F, td, th, inlineNumber } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
@@ -328,7 +327,7 @@ function HourInput({ value, onChange, onBlur }) {
     value={value ?? 0}
     onChange={e => onChange(e.target.value === "" ? 0 : +e.target.value)}
     onBlur={onBlur}
-    style={hourInput}
+    style={inlineNumber}
   />;
 }
 
@@ -358,16 +357,4 @@ const inlineTextarea = {
   outline: "none",
 };
 
-const hourInput = {
-  width: "auto",
-  fieldSizing: "content",
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F,
-  textAlign: "center",
-  fontVariantNumeric: "tabular-nums",
-  background: T.surface,
-  outline: "none",
-};
 

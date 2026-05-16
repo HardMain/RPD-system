@@ -1,6 +1,6 @@
 import { useState } from "react";
 import * as api from "../api/client.js";
-import { T, F } from "../theme.js";
+import { T, F } from "../styles/index.js";
 import { Input } from "../components/Input.jsx";
 
 export function LoginPage({ onLogin }) {

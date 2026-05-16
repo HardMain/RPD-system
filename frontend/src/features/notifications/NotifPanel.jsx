@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import * as api from "../../api/client.js";
-import { T } from "../../theme.js";
+import { T } from "../../styles/index.js";
+import { formatDateTimeRu } from "../../utils/format.js";
 
 export function NotifPanel({ show, onClose }) {
   const [ns, setNs] = useState([]);
@@ -17,7 +18,7 @@ export function NotifPanel({ show, onClose }) {
         ? <div style={{ padding: 30, textAlign: "center", color: T.textMuted, fontSize: 13 }}>Нет уведомлений</div>
         : ns.map(n => <div key={n.id_notification} style={{ padding: "12px 16px", borderBottom: "1px solid " + T.borderLight, background: n.is_read ? T.surface : T.accentLight + "44" }}>
           <div style={{ fontSize: 13, fontWeight: n.is_read ? 400 : 600 }}>{n.message}</div>
-          {n.created_at && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{new Date(n.created_at).toLocaleString("ru-RU")}</div>}
+          {n.created_at && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{formatDateTimeRu(n.created_at)}</div>}
         </div>)}</div>
       {unread > 0 && <div style={{ padding: "10px 16px", borderTop: "1px solid " + T.borderLight, textAlign: "center" }}>
         <span onClick={() => { api.readAllNotifications(); setNs(ns.map(n => ({ ...n, is_read: true }))); }} style={{ fontSize: 12, color: T.accent, cursor: "pointer", fontWeight: 600 }}>Прочитать все</span>

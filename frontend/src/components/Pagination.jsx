@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { T, F } from "../theme.js";
+import { T, F } from "../styles/index.js";
 
 const DEFAULT_PAGE_SIZES = [10, 25, 50, 100, 200];
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../api/client.js";
-import { T, F } from "../../theme.js";
+import { T, F, sectionLabel } from "../../styles/index.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Modal } from "../../components/Modal.jsx";
 import { TrashIcon } from "../../components/icons.jsx";
@@ -119,7 +119,7 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, user, reload, onClose }) {
 
 function Section({ title, children }) {
   return <div>
-    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 10 }}>{title}</div>
+    <div style={{ ...sectionLabel, marginBottom: 10 }}>{title}</div>
     {children}
   </div>;
 }

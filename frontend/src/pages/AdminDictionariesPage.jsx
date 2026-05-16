@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F } from "../theme.js";
-import { hdr, tcell, iconBtn } from "../styles.js";
+import { T, F, hdr, tcell, iconBtn, inputBase, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
+import { FilterChip } from "../components/FilterChip.jsx";
+import { formatDateTimeRu } from "../utils/format.js";
 import { Modal } from "../components/Modal.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { Dropdown } from "../components/Dropdown.jsx";
@@ -420,8 +421,8 @@ export function AdminDictionariesPage() {
       {kind === "llm_prompt" && <LlmPromptsContent />}
 
       {!isCustomKind && <>
-      <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+      <div style={adminAddPanel}>
+        <div style={sectionLabel}>
           Добавить запись
         </div>
 
@@ -513,16 +514,12 @@ export function AdminDictionariesPage() {
         )}
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+      <div style={adminToolbar}>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Поиск по значению…"
-          style={{
-            flex: 1, minWidth: 220, maxWidth: 360,
-            padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4,
-            fontSize: 13, fontFamily: F, outline: "none",
-          }}
+          style={adminSearch(360)}
         />
         {showPrefixFilter && prefixCounts && prefixCounts.list.length > 0 && (
           <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -547,7 +544,7 @@ export function AdminDictionariesPage() {
             ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
                 {items.length === 0 ? "Записей пока нет — добавьте первую сверху." : "Ничего не нашлось."}
               </div>
-            : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
+            : <table style={{ ...dataTable, tableLayout: "fixed" }}>
               <thead><tr style={{ background: T.surface }}>
                 {useGroupedView ? <>
                   <th style={{ ...hdr, width: 180 }}>{parentMeta.col}</th>
@@ -725,8 +722,8 @@ function DocumentsContent() {
   const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sortedDocs, { defaultPageSize: 50, storageKey: "adminDocs.pageSize" });
 
   return <>
-    <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+    <div style={adminAddPanel}>
+      <div style={sectionLabel}>
         Добавить запись
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -746,7 +743,7 @@ function DocumentsContent() {
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
               Документы для контекста LLM не загружены. PDF, DOCX, TXT, XLSX — до 50 МБ.
             </div>
-          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
+          : <table style={{ ...dataTable, tableLayout: "fixed" }}>
             <thead><tr style={{ background: T.surface }}>
               <th style={{ ...hdr, width: 30 }} />
               <SortTh sortKey="filename" sort={sort} onSort={toggleSort}>Файл</SortTh>
@@ -778,7 +775,7 @@ function DocumentsContent() {
                     </td>
                     <td style={{ ...tcell, textAlign: "center", textTransform: "uppercase", color: T.textMuted, fontSize: 11 }}>{d.file_type}</td>
                     <td style={{ ...tcell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted }}>{d.file_size ? (d.file_size / 1024).toFixed(0) + " КБ" : "—"}</td>
-                    <td style={{ ...tcell, color: T.textMuted, fontSize: 11 }}>{d.uploaded_at ? new Date(d.uploaded_at).toLocaleString("ru-RU") : "—"}</td>
+                    <td style={{ ...tcell, color: T.textMuted, fontSize: 11 }}>{d.uploaded_at ? formatDateTimeRu(d.uploaded_at) : "—"}</td>
                     <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }}>
                       <button onClick={() => setPendingDelete(d)} title="Удалить файл" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
                     </td>
@@ -830,7 +827,7 @@ function DocumentSectionsView({ docId, loading, sections, reparsing, onReparse }
 
   return <div style={{ padding: "12px 16px" }}>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px" }}>
+      <div style={{ ...sectionLabel, marginBottom: 0 }}>
         {sections && sections.length > 0
           ? `Извлечено секций: ${sections.length}`
           : "Секции не извлечены — эвристика не распознала заголовки"}
@@ -936,7 +933,7 @@ function PromptCard({ prompt, onSave }) {
     onSave(prompt.id_prompt, "description", description || null);
   }
 
-  const updatedAt = prompt.updated_at ? new Date(prompt.updated_at).toLocaleString("ru-RU") : null;
+  const updatedAt = prompt.updated_at ? formatDateTimeRu(prompt.updated_at) : null;
 
   return <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
     <button type="button" onClick={() => setCollapsed(c => !c)}
@@ -1010,26 +1007,6 @@ const textareaStyle = {
   boxSizing: "border-box",
   background: T.surface,
 };
-
-function FilterChip({ label, count, active, onClick }) {
-  return <button
-    type="button"
-    onClick={onClick}
-    style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "4px 10px", borderRadius: 12,
-      border: "1px solid " + (active ? T.accent : T.border),
-      background: active ? T.accentLight : T.surface,
-      color: active ? T.accent : T.text,
-      fontSize: 12, fontWeight: active ? 700 : 500,
-      cursor: "pointer", fontFamily: F,
-      whiteSpace: "nowrap",
-    }}
-  >
-    {label}
-    <span style={{ fontSize: 11, opacity: 0.7, fontVariantNumeric: "tabular-nums" }}>({count})</span>
-  </button>;
-}
 
 function RowActions({ onEdit, onDelete }) {
   return <div style={{ display: "inline-flex", gap: 4 }}>
@@ -1110,7 +1087,7 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
   }
 
   return <Modal width={560} onClose={onClose}>
-    <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, fontSize: 16, fontWeight: 700 }}>
+    <div style={modalTitleHeader}>
       Редактирование записи
     </div>
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
@@ -1182,7 +1159,7 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
         </div>
       )}
     </div>
-    <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "space-between", gap: 10 }}>
+    <div style={modalFooterWide("space-between")}>
       <div>
         {onDelete && <Btn danger onClick={onDelete} disabled={saving}>Удалить</Btn>}
       </div>
@@ -1196,4 +1173,5 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
 
 const miniLabel = { fontSize: 11, color: T.textMuted, marginBottom: 3 };
 const miniInput = { width: "100%", padding: "6px 10px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, background: T.surface, fontFamily: F, boxSizing: "border-box" };
-const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box", outline: "none" };const groupLabelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", flexShrink: 0, width: 90 };
+const inputStyle = inputBase;
+const groupLabelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", flexShrink: 0, width: 90 };

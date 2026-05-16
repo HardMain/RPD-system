@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user
+from app.core.crud import get_or_404
 from app.core.database import get_db
 from app.models import StoredFile, User
 from app.services import storage_service
@@ -14,9 +15,7 @@ async def download_file(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    sf = await db.get(StoredFile, file_id)
-    if not sf:
-        raise HTTPException(status_code=404, detail="Файл не найден")
+    sf = await get_or_404(db, StoredFile, file_id, "Файл не найден")
     try:
         return storage_service.file_response(
             sf.storage_uri, filename=sf.original_name,

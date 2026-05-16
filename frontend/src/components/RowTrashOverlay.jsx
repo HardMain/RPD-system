@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { T } from "../theme.js";
+import { T } from "../styles/index.js";
 import { TrashIcon } from "./icons.jsx";
 
 export function RowTrashOverlay({ tbodyRef, onDelete, title = "Удалить", right = -30 }) {

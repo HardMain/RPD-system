@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { T, F } from "../theme.js";
-import { hdr, tcell } from "../styles.js";
+import { T, F, hdr, tcell, iconBtn, pageContainer, pageToolbar, pageScroll, dataTable, toolbarSearch } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
+import { FilterChip } from "../components/FilterChip.jsx";
 import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon } from "../components/icons.jsx";
 import { STATUSES, StatusBadge } from "../components/StatusBadge.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
@@ -102,18 +102,14 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
 
   const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(filteredSorted, { defaultPageSize: 50, storageKey: "rpdList.pageSize" });
 
-  return <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: T.bg }}>
-    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "8px 16px", flexShrink: 0, background: T.surface, borderBottom: "1px solid " + T.border, flexWrap: "wrap" }}>
+  return <div style={pageContainer}>
+    <div style={pageToolbar}>
       {canCreate ? <Btn small onClick={onCreate}><PlusIcon /> Создать РПД</Btn> : null}
       <input
         value={query}
         onChange={e => setQuery(e.target.value)}
         placeholder="Поиск: дисциплина, направление, год, автор"
-        style={{
-          flex: 1, minWidth: 220, maxWidth: 420,
-          padding: "6px 10px", border: "1px solid " + T.border, borderRadius: 4,
-          background: T.bg, fontSize: 13, fontFamily: F, color: T.text, outline: "none",
-        }}
+        style={toolbarSearch}
       />
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
         <FilterChip label="Все" count={statusCounts.all} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
@@ -157,9 +153,9 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
         {filteredSorted.length} {filteredSorted.length === rpds.length ? "РПД" : `из ${rpds.length}`}
       </span>
     </div>
-    <div style={{ flex: 1, overflow: "auto", padding: 16 }}>
+    <div style={pageScroll}>
       <div className="table-scroll">
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F }}>
+      <table style={dataTable}>
         <thead>
           <tr style={{ background: T.surface }}>
             {COLS.map((c) => {
@@ -184,7 +180,6 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
           )}
           {pageItems.map(r => {
             const canEdit = r.status === "Черновик" || r.status === "На доработке";
-            const iconBtn = { display: "inline-flex", alignItems: "center", justifyContent: "center", padding: "5px 7px", borderRadius: 4, border: "1px solid " + T.border, background: T.surface, color: T.text, fontFamily: F };
             const openByDblClick = (e) => {
               if (e.ctrlKey) onOpen(r);
               else if (canEdit) onEdit(r);
@@ -230,27 +225,4 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
         onPageChange={setPage} onPageSizeChange={setPageSize} />
     </div>
   </div>;
-}
-
-function FilterChip({ label, count, active, color, bg, onClick }) {
-  const isActive = active && count >= 0;
-  const activeColor = color || T.accent;
-  const activeBg = bg || T.accentLight;
-  return <button
-    type="button"
-    onClick={onClick}
-    style={{
-      display: "inline-flex", alignItems: "center", gap: 4,
-      padding: "4px 10px", borderRadius: 12,
-      border: "1px solid " + (isActive ? activeColor : T.border),
-      background: isActive ? activeBg : T.surface,
-      color: isActive ? activeColor : T.text,
-      fontSize: 12, fontWeight: isActive ? 700 : 500,
-      cursor: "pointer", fontFamily: F,
-      whiteSpace: "nowrap",
-    }}
-  >
-    {label}
-    <span style={{ fontSize: 11, opacity: 0.7, fontVariantNumeric: "tabular-nums" }}>({count})</span>
-  </button>;
 }

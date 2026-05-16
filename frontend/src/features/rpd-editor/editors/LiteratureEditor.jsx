@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
-import { T, F } from "../../../theme.js";
-import { td, th } from "../../../styles.js";
+import { T, td, th, inlineTextarea, inlineInput, inlineNumber } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Dropdown } from "../../../components/Dropdown.jsx";
 import { MultiSelectDropdown } from "../../../components/MultiSelectDropdown.jsx";
@@ -435,39 +434,4 @@ function ElectronicRow({ item, editable, onSave }) {
   </tr>;
 }
 
-const inlineTextarea = {
-  width: "100%",
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F, lineHeight: 1.45,
-  background: T.surface,
-  minHeight: 32,
-  boxSizing: "border-box",
-  outline: "none",
-};
-
-const inlineInput = {
-  width: "100%",
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F,
-  background: T.surface,
-  outline: "none",
-  boxSizing: "border-box",
-};
-
-const inlineNumber = {
-  width: "auto",
-  fieldSizing: "content",
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F,
-  textAlign: "center",
-  fontVariantNumeric: "tabular-nums",
-  background: T.surface,
-  outline: "none",
-};
 

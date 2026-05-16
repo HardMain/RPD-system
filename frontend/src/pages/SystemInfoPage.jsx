@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import * as api from "../api/client.js";
-import { T } from "../theme.js";
+import { T } from "../styles/index.js";
 
 export function SystemInfoPage() {
   const [h, setH] = useState(null);

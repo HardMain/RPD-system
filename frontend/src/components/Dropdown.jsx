@@ -1,44 +1,16 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { T, F } from "../theme.js";
+import { T, dropdownTrigger, dropdownChevron, dropdownPopup, dropdownItem } from "../styles/index.js";
+import { useDismiss } from "../hooks/useDismiss.js";
+import { useDropdownAnchor } from "../hooks/useDropdownAnchor.js";
 
 export function Dropdown({ value, onChange, options, placeholder = "—", disabled = false, title, clearLabel }) {
   const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState(null);
   const wrapRef = useRef(null);
   const popupRef = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e) => {
-      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
-      if (popupRef.current && popupRef.current.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open) { setCoords(null); return; }
-    const place = () => {
-      const el = wrapRef.current; if (!el) return;
-      const r = el.getBoundingClientRect();
-      setCoords({ left: r.left, top: r.bottom + 2, width: r.width });
-    };
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [open]);
+  useDismiss(open, () => setOpen(false), [wrapRef, popupRef]);
+  const coords = useDropdownAnchor(wrapRef, open);
 
   const opts = (options || []).map(o => ({ value: o.value, label: o.label ?? o.value }));
   const current = opts.find(o => o.value === value);
@@ -50,62 +22,18 @@ export function Dropdown({ value, onChange, options, placeholder = "—", disabl
       type="button"
       disabled={disabled}
       onClick={() => { if (!disabled) setOpen(o => !o); }}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        padding: "6px 26px 6px 10px",
-        border: "1px solid " + T.borderLight,
-        borderRadius: 4,
-        background: disabled ? "transparent" : T.surface,
-        fontSize: 13,
-        fontFamily: F,
-        cursor: disabled ? "default" : "pointer",
-
-        whiteSpace: "normal",
-        wordBreak: "normal",
-        overflowWrap: "break-word",
-        lineHeight: 1.35,
-        position: "relative",
-        color: empty ? T.textMuted : T.text,
-        fontStyle: empty ? "italic" : "normal",
-        boxSizing: "border-box",
-        outline: "none",
-      }}
+      style={dropdownTrigger({ disabled, empty, wrap: true })}
     >
       {display || placeholder}
-      {!disabled && <span style={{
-        position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-        color: T.textMuted, fontSize: 16, fontWeight: 700,
-        pointerEvents: "none", lineHeight: 1,
-      }}>▾</span>}
+      {!disabled && <span style={dropdownChevron(16)}>▾</span>}
     </button>
     {open && coords && createPortal(
-      <div ref={popupRef} style={{
-        position: "fixed",
-        left: coords.left,
-        top: coords.top,
-        width: coords.width,
-        background: T.surface,
-        border: "1px solid " + T.border,
-        borderRadius: 4,
-        boxShadow: "0 6px 20px rgba(0,0,0,.14)",
-        zIndex: 1100,
-        maxHeight: 240,
-        overflowY: "auto",
-      }}>
+      <div ref={popupRef} style={dropdownPopup({ left: coords.left, top: coords.top, width: coords.width, maxHeight: 240 })}>
         {clearLabel && (
           <button
             type="button"
             onClick={() => { onChange(""); setOpen(false); }}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "8px 10px",
-              border: "none", borderBottom: "1px solid " + T.borderLight,
-              background: "transparent",
-              cursor: "pointer", fontFamily: F, fontSize: 13,
-              color: T.textMuted, fontStyle: "italic",
-              lineHeight: 1.4,
-            }}
+            style={{ ...dropdownItem({}), color: T.textMuted, fontStyle: "italic" }}
             onMouseEnter={e => e.currentTarget.style.background = T.bg}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
           >
@@ -120,19 +48,7 @@ export function Dropdown({ value, onChange, options, placeholder = "—", disabl
             key={o.value}
             type="button"
             onClick={() => { onChange(o.value); setOpen(false); }}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "8px 10px",
-              border: "none", borderBottom: "1px solid " + T.borderLight,
-              background: picked ? T.accentLight : "transparent",
-              cursor: "pointer", fontFamily: F, fontSize: 13,
-              color: picked ? T.accent : T.text,
-              fontWeight: picked ? 600 : 400,
-              lineHeight: 1.4,
-              wordBreak: "normal",
-              overflowWrap: "break-word",
-              whiteSpace: "normal",
-            }}
+            style={dropdownItem({ picked })}
             onMouseEnter={e => { if (!picked) e.currentTarget.style.background = T.bg; }}
             onMouseLeave={e => { if (!picked) e.currentTarget.style.background = "transparent"; }}
           >

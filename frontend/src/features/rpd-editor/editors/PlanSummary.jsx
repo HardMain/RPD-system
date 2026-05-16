@@ -1,4 +1,4 @@
-import { T } from "../../../theme.js";
+import { T } from "../../../styles/index.js";
 
 export function PlanSummary({ bupDisciplines, sections }) {
   if (!bupDisciplines || bupDisciplines.length === 0) {

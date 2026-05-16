@@ -1,4 +1,4 @@
-import { T, F } from "../../theme.js";
+import { T, F } from "../../styles/index.js";
 
 function TabChip({ tab, isCurrent, pairNumber, isDragging, onDragStart, onDragEnd, onClick, onClose }) {
 

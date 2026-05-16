@@ -1,5 +1,5 @@
 import { forwardRef, useLayoutEffect, useRef, useState } from "react";
-import { T } from "../theme.js";
+import { T } from "../styles/index.js";
 import { ChevronDownIcon, ChevronUpIcon } from "./icons.jsx";
 
 export const ExpandableTextarea = forwardRef(function ExpandableTextarea(

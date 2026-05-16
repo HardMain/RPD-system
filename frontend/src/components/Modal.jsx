@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { T } from "../theme.js";
+import { modalOverlay, modalBox } from "../styles/index.js";
 
 export function Modal({ children, onClose, width }) {
   const startedOnOverlayRef = useRef(false);
@@ -19,7 +19,7 @@ export function Modal({ children, onClose, width }) {
     if (startedOnOverlay && e.target === e.currentTarget) onClose();
   }
 
-  return <div onMouseDown={onOverlayMouseDown} onMouseUp={onOverlayMouseUp} style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(44,37,32,.45)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-    <div style={{ background: T.surface, borderRadius: 10, boxShadow: "0 20px 60px rgba(44,37,32,.25)", width: width || 480, maxWidth: "92vw", maxHeight: "88vh", overflow: "auto" }}>{children}</div>
+  return <div onMouseDown={onOverlayMouseDown} onMouseUp={onOverlayMouseUp} style={modalOverlay}>
+    <div style={modalBox(width)}>{children}</div>
   </div>;
 }

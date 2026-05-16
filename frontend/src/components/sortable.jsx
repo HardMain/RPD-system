@@ -1,6 +1,5 @@
 import { useState } from "react";
-import { T } from "../theme.js";
-import { hdr } from "../styles.js";
+import { T, hdr } from "../styles/index.js";
 
 export function useSort(defaultKey, defaultDir = "asc") {
   const [sort, setSort] = useState({ key: defaultKey, dir: defaultDir });

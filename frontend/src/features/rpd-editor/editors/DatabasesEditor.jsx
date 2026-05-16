@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import * as api from "../../../api/client.js";
-import { T, F } from "../../../theme.js";
-import { td, th } from "../../../styles.js";
+import { T, td, th, inlineTextarea } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Dropdown } from "../../../components/Dropdown.jsx";
 import { Combobox } from "../../../components/Combobox.jsx";
@@ -139,15 +138,3 @@ function DatabaseRow({ item, editable, onSave }) {
     </td>
   </tr>;
 }
-
-const inlineTextarea = {
-  width: "100%",
-  minHeight: 32,
-  padding: "4px 6px",
-  border: "1px solid " + T.borderLight,
-  borderRadius: 4,
-  fontSize: 13, fontFamily: F, lineHeight: 1.45,
-  background: T.surface,
-  outline: "none",
-  boxSizing: "border-box",
-};

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user, user_can
+from app.core.crud import get_or_404, ensure_permission
 from app.core.database import get_db
 from app.models import (
     Bup, BupDiscipline, BupDisciplineCompetency,
@@ -26,8 +27,7 @@ from app.services.bup_importer import import_parsed_bup
 router = APIRouter(prefix="/api/admin/bups", tags=["admin-bups"])
 
 def _require_admin(user: User):
-    if not user_can(user, "sources.manage"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    ensure_permission(user, "sources.manage")
 
 def _year_from_filename(name: str) -> int | None:
     m = re.search(r"(20\d{2}|19\d{2})", name or "")
@@ -100,9 +100,7 @@ async def admin_update_bup(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    bup = await db.get(Bup, bup_id)
-    if not bup:
-        raise HTTPException(status_code=404)
+    bup = await get_or_404(db, Bup, bup_id)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(bup, k, v)
     await db.commit()
@@ -259,9 +257,7 @@ async def admin_add_bup_discipline(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    bup = await db.get(Bup, bup_id)
-    if not bup:
-        raise HTTPException(status_code=404, detail="БУП не найден")
+    bup = await get_or_404(db, Bup, bup_id, "БУП не найден")
     bd = BupDiscipline(
         id_bup=bup_id,
         **data.model_dump(exclude={"competency_ids"}),
@@ -285,9 +281,7 @@ async def admin_update_bup_discipline(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    bd = await db.get(BupDiscipline, bd_id)
-    if not bd:
-        raise HTTPException(status_code=404)
+    bd = await get_or_404(db, BupDiscipline, bd_id)
     payload = data.model_dump(exclude_unset=True)
     comp_ids = payload.pop("competency_ids", None)
     for k, v in payload.items():
@@ -309,9 +303,7 @@ async def admin_delete_bup_discipline(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    bd = await db.get(BupDiscipline, bd_id)
-    if not bd:
-        raise HTTPException(status_code=404)
+    bd = await get_or_404(db, BupDiscipline, bd_id)
     await db.delete(bd)
     await db.commit()
 
@@ -325,9 +317,7 @@ async def admin_download_bup_source(
     bup = await db.get(Bup, bup_id)
     if not bup or not bup.id_source_file:
         raise HTTPException(status_code=404, detail="Исходный файл не прикреплён")
-    sf = await db.get(StoredFile, bup.id_source_file)
-    if not sf:
-        raise HTTPException(status_code=404)
+    sf = await get_or_404(db, StoredFile, bup.id_source_file)
     try:
         return storage_service.file_response(
             sf.storage_uri, filename=sf.original_name,

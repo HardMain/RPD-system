@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { T, F } from "../../theme.js";
+import { T, F } from "../../styles/index.js";
 import { Btn } from "../../components/Btn.jsx";
 import { StatusBadge } from "../../components/StatusBadge.jsx";
+import { formatDateTimeRu, pluralRu } from "../../utils/format.js";
 
 export function BottomBar({
   showPdf, isEdit, isHead, canEdit, canReviewNow, savedTick, status,
@@ -73,7 +74,7 @@ function UpdatedAgo({ updatedAt }) {
   }, []);
   const text = formatRelative(updatedAt);
   if (!text) return null;
-  const full = new Date(updatedAt).toLocaleString("ru-RU");
+  const full = formatDateTimeRu(updatedAt);
   return <span title={`Последнее изменение: ${full}`} style={{ fontSize: 12, color: T.textMuted }}>
     Изменено {text}
   </span>;
@@ -87,19 +88,11 @@ function formatRelative(iso) {
   const diffMs = now - d;
   const diffMin = Math.floor(diffMs / 60_000);
   if (diffMin < 1) return "только что";
-  if (diffMin < 60) return `${diffMin} ${plural(diffMin, "минуту", "минуты", "минут")} назад`;
+  if (diffMin < 60) return `${diffMin} ${pluralRu(diffMin, "минуту", "минуты", "минут")} назад`;
   const diffH = Math.floor(diffMin / 60);
-  if (diffH < 24) return `${diffH} ${plural(diffH, "час", "часа", "часов")} назад`;
+  if (diffH < 24) return `${diffH} ${pluralRu(diffH, "час", "часа", "часов")} назад`;
   const diffD = Math.floor(diffH / 24);
   if (diffD === 1) return `вчера в ${d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}`;
-  if (diffD < 7) return `${diffD} ${plural(diffD, "день", "дня", "дней")} назад`;
+  if (diffD < 7) return `${diffD} ${pluralRu(diffD, "день", "дня", "дней")} назад`;
   return d.toLocaleDateString("ru-RU");
-}
-
-function plural(n, one, few, many) {
-  const mod10 = n % 10;
-  const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return one;
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
-  return many;
 }

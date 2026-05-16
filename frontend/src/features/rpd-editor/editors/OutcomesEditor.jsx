@@ -1,7 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import * as api from "../../../api/client.js";
-import { T, F } from "../../../theme.js";
-import { td, th } from "../../../styles.js";
+import { T, F, td, th } from "../../../styles/index.js";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { BupDropdown } from "../BupDropdown.jsx";
 import { Combobox } from "../../../components/Combobox.jsx";

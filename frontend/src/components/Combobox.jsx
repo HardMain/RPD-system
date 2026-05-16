@@ -1,6 +1,7 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { T, F } from "../theme.js";
+import { T, dropdownPopup, dropdownItem } from "../styles/index.js";
+import { useDropdownAnchor } from "../hooks/useDropdownAnchor.js";
 import { ExpandableTextarea } from "./ExpandableTextarea.jsx";
 
 export function Combobox({
@@ -16,11 +17,12 @@ export function Combobox({
   const [local, setLocal] = useState(value || "");
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState([]);
-  const [coords, setCoords] = useState(null);
   const wrapRef = useRef(null);
   const popupRef = useRef(null);
   const lastSyncedRef = useRef(value || "");
   const debRef = useRef(null);
+
+  const coords = useDropdownAnchor(wrapRef, open, { observeResize: true });
 
   useEffect(() => {
     const next = value || "";
@@ -42,25 +44,6 @@ export function Combobox({
     return () => { if (debRef.current) clearTimeout(debRef.current); };
   }, [open, local]);
 
-  useLayoutEffect(() => {
-    if (!open) { setCoords(null); return; }
-    const el = wrapRef.current;
-    if (!el) return;
-    const place = () => {
-      const r = el.getBoundingClientRect();
-      setCoords({ left: r.left, top: r.bottom + 2, width: r.width });
-    };
-    place();
-    const ro = new ResizeObserver(place);
-    ro.observe(el);
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      ro.disconnect();
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [open]);
 
   function commitIfChanged(v) {
     if (v !== (value || "")) onCommit(v);
@@ -90,22 +73,12 @@ export function Combobox({
       ? <ExpandableTextarea {...sharedProps} collapsedMaxHeight={collapsedMaxHeight} />
       : <input type="text" {...sharedProps} />}
     {open && coords && items.length > 0 && createPortal(
-      <div ref={popupRef} style={{
-        position: "fixed", left: coords.left, top: coords.top, width: coords.width,
-        background: T.surface, border: "1px solid " + T.border, borderRadius: 4,
-        boxShadow: "0 6px 20px rgba(0,0,0,.14)", zIndex: 1100, maxHeight: 240, overflowY: "auto",
-      }}>
+      <div ref={popupRef} style={dropdownPopup({ left: coords.left, top: coords.top, width: coords.width, maxHeight: 240 })}>
         {items.map((s, i) => (
           <button key={i} type="button"
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => pick(s)}
-            style={{
-              display: "block", width: "100%", textAlign: "left",
-              padding: "7px 10px", border: "none",
-              borderBottom: i < items.length - 1 ? "1px solid " + T.borderLight : "none",
-              background: "transparent", cursor: "pointer", fontFamily: F, fontSize: 13,
-              color: T.text, lineHeight: 1.35, whiteSpace: "normal", wordBreak: "normal", overflowWrap: "break-word",
-            }}
+            style={dropdownItem({ padding: "7px 10px", lineHeight: 1.35, borderBottom: i < items.length - 1 })}
             onMouseEnter={e => e.currentTarget.style.background = T.bg}
             onMouseLeave={e => e.currentTarget.style.background = "transparent"}
           >

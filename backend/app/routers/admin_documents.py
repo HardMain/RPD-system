@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, user_can
+from app.core.crud import get_or_404, ensure_permission
 from app.core.config import settings
 from app.core.database import get_db
 from app.models import User, UploadedDocument, UploadedDocumentSection, LlmPrompt
@@ -21,8 +22,7 @@ MAX_SIZE = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
 
 
 def _ensure_perm(user: User) -> None:
-    if not user_can(user, "sources.manage"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав для управления справочниками")
+    ensure_permission(user, "sources.manage", detail="Недостаточно прав для управления справочниками")
 
 
 def _ensure_upload_dir():
@@ -111,9 +111,7 @@ async def list_document_sections(
     user: User = Depends(get_current_user),
 ):
     _ensure_perm(user)
-    doc = await db.get(UploadedDocument, doc_id)
-    if not doc:
-        raise HTTPException(status_code=404)
+    doc = await get_or_404(db, UploadedDocument, doc_id)
     res = await db.execute(
         select(UploadedDocumentSection, LlmPrompt.section_label, LlmPrompt.order_index)
         .outerjoin(LlmPrompt, LlmPrompt.section_key == UploadedDocumentSection.section_key)
@@ -141,9 +139,7 @@ async def reparse_document(
     user: User = Depends(get_current_user),
 ):
     _ensure_perm(user)
-    doc = await db.get(UploadedDocument, doc_id)
-    if not doc:
-        raise HTTPException(status_code=404)
+    doc = await get_or_404(db, UploadedDocument, doc_id)
     if not os.path.exists(doc.file_path):
         raise HTTPException(status_code=404, detail="Файл не найден на диске")
     count = await extract_and_save_sections(db, doc.id_document, doc.file_path)

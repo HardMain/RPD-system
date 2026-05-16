@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F } from "../theme.js";
-import { hdr, tcell, iconBtn } from "../styles.js";
+import { T, F, hdr, tcell, iconBtn, fieldLabel, formErrorBox, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
@@ -90,8 +89,8 @@ export function DepartmentsContent() {
   const addInput = { width: "100%", height: 32, padding: "0 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none", boxSizing: "border-box" };
 
   return <>
-    <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+    <div style={adminAddPanel}>
+      <div style={sectionLabel}>
         Добавить запись
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -122,16 +121,12 @@ export function DepartmentsContent() {
       {addErr && <div style={{ marginTop: 6, fontSize: 12, color: T.red }}>{addErr}</div>}
     </div>
 
-    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
+    <div style={adminToolbar}>
       <input
         value={search}
         onChange={e => setSearch(e.target.value)}
         placeholder="Поиск по названию или факультету…"
-        style={{
-          flex: 1, minWidth: 220, maxWidth: 360,
-          padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4,
-          fontSize: 13, fontFamily: F, outline: "none",
-        }}
+        style={adminSearch(360)}
       />
       <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>
         {filtered.length} {filtered.length === items.length ? "" : `из ${items.length}`}
@@ -145,7 +140,7 @@ export function DepartmentsContent() {
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
               {items.length === 0 ? "Подразделений пока нет." : "Ничего не нашлось."}
             </div>
-          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
+          : <table style={{ ...dataTable, tableLayout: "fixed" }}>
             <thead><tr style={{ background: T.surface }}>
               <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Название</SortTh>
               <SortTh sortKey="faculty" sort={sort} onSort={toggleSort} style={{ width: 300 }}>Факультет</SortTh>
@@ -235,13 +230,13 @@ function DepartmentEditModal({ data, facultyOptions, onClose, onSaved, onError }
   }
 
   return <Modal width={520} onClose={onClose}>
-    <div style={{ padding: "18px 24px", borderBottom: "1px solid " + T.borderLight, fontSize: 16, fontWeight: 700 }}>
+    <div style={modalTitleHeader}>
       Редактирование подразделения
     </div>
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
       <Input required label="Название" value={name} onChange={e => setName(e.target.value)} placeholder="Кафедра / отдел / управление…" />
       <div>
-        <label style={{ fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 }}>Факультет <span style={{ color: T.red }}>*</span></label>
+        <label style={fieldLabel}>Факультет <span style={{ color: T.red }}>*</span></label>
         <Dropdown
           value={faculty}
           options={facultyOptions}
@@ -250,9 +245,9 @@ function DepartmentEditModal({ data, facultyOptions, onClose, onSaved, onError }
           clearLabel="— не указано —"
         />
       </div>
-      {err && <div style={{ background: "#fde6e3", color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13 }}>{err}</div>}
+      {err && <div style={formErrorBox}>{err}</div>}
     </div>
-    <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+    <div style={modalFooterWide()}>
       <Btn primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
       <Btn onClick={onClose}>Отмена</Btn>
     </div>

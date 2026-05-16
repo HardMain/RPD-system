@@ -1,5 +1,5 @@
 import { useLayoutEffect, useRef, useState } from "react";
-import { T, F } from "../../../theme.js";
+import { T, F } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { ChevronDownIcon, ChevronUpIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";

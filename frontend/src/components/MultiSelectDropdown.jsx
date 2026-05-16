@@ -1,6 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { T, F } from "../theme.js";
+import { T, F, dropdownTrigger, dropdownChevron, dropdownPopup } from "../styles/index.js";
+import { useDismiss } from "../hooks/useDismiss.js";
+import { useDropdownAnchor } from "../hooks/useDropdownAnchor.js";
 
 let _measureCtx = null;
 function _measure(s) {
@@ -14,9 +16,11 @@ function _measure(s) {
 
 export function MultiSelectDropdown({ value, onChange, options, placeholder = "Не выбрано", disabled = false, title }) {
   const [open, setOpen] = useState(false);
-  const [coords, setCoords] = useState(null);
   const wrapRef = useRef(null);
   const popupRef = useRef(null);
+
+  useDismiss(open, () => setOpen(false), [wrapRef, popupRef]);
+  const coords = useDropdownAnchor(wrapRef, open);
 
   const propValue = Array.isArray(value) ? value : [];
   const propKey = propValue.join("|");
@@ -31,37 +35,6 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "�
     }
   }, [propKey]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDocClick = (e) => {
-      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
-      if (popupRef.current && popupRef.current.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onKey = (e) => { if (e.key === "Escape") setOpen(false); };
-    document.addEventListener("mousedown", onDocClick);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDocClick);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-
-  useLayoutEffect(() => {
-    if (!open) { setCoords(null); return; }
-    const place = () => {
-      const el = wrapRef.current; if (!el) return;
-      const r = el.getBoundingClientRect();
-      setCoords({ left: r.left, top: r.bottom + 2, btnWidth: r.width });
-    };
-    place();
-    window.addEventListener("scroll", place, true);
-    window.addEventListener("resize", place);
-    return () => {
-      window.removeEventListener("scroll", place, true);
-      window.removeEventListener("resize", place);
-    };
-  }, [open]);
 
   function toggle(opt) {
     const prev = localSelectedRef.current;
@@ -85,48 +58,13 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "�
       type="button"
       disabled={disabled}
       onClick={() => { if (!disabled) setOpen(o => !o); }}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        padding: "6px 26px 6px 10px",
-        border: "1px solid " + T.borderLight,
-        borderRadius: 4,
-        background: disabled ? "transparent" : T.surface,
-        fontSize: 13,
-        fontFamily: F,
-        cursor: disabled ? "default" : "pointer",
-        whiteSpace: "nowrap",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        lineHeight: 1.35,
-        position: "relative",
-        color: empty ? T.textMuted : T.text,
-        fontStyle: empty ? "italic" : "normal",
-        boxSizing: "border-box",
-        outline: "none",
-      }}
+      style={dropdownTrigger({ disabled, empty, wrap: false })}
     >
       {display || placeholder}
-      {!disabled && <span style={{
-        position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)",
-        color: T.textMuted, fontSize: 16, fontWeight: 700,
-        pointerEvents: "none", lineHeight: 1,
-      }}>▾</span>}
+      {!disabled && <span style={dropdownChevron(16)}>▾</span>}
     </button>
     {open && coords && createPortal(
-      <div ref={popupRef} style={{
-        position: "fixed",
-        left: coords.left, top: coords.top,
-        width: Math.max(coords.btnWidth, popupContentWidth),
-        background: T.surface,
-        border: "1px solid " + T.border,
-        borderRadius: 4,
-        boxShadow: "0 6px 20px rgba(0,0,0,.14)",
-        zIndex: 1100,
-        maxHeight: 280,
-        overflowY: "auto",
-        padding: "4px 0",
-      }}>
+      <div ref={popupRef} style={dropdownPopup({ left: coords.left, top: coords.top, width: Math.max(coords.width, popupContentWidth), maxHeight: 280, padding: "4px 0" })}>
         {(options || []).map(opt => {
           const checked = localSelected.includes(opt);
           return <label

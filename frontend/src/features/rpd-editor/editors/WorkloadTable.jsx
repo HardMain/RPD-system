@@ -1,5 +1,4 @@
-import { T } from "../../../theme.js";
-import { td, th } from "../../../styles.js";
+import { T, td, th } from "../../../styles/index.js";
 
 export function WorkloadTable({ rpd }) {
   const bds = rpd?.bup_disciplines || [];

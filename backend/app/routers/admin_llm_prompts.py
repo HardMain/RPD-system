@@ -1,10 +1,11 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, user_can
+from app.core.crud import get_or_404, ensure_permission
 from app.core.database import get_db
 from app.models import User, LlmPrompt
 
@@ -34,8 +35,7 @@ class LlmPromptUpdate(BaseModel):
 
 
 def _ensure_perm(user: User) -> None:
-    if not (user_can(user, "users.manage") or user_can(user, "sources.manage")):
-        raise HTTPException(status_code=403, detail="Недостаточно прав для управления промптами LLM")
+    ensure_permission(user, "users.manage", "sources.manage", detail="Недостаточно прав для управления промптами LLM")
 
 
 @router.get("/", response_model=list[LlmPromptOut])
@@ -58,9 +58,7 @@ async def update_prompt(
     user: User = Depends(get_current_user),
 ):
     _ensure_perm(user)
-    prompt = await db.get(LlmPrompt, id_prompt)
-    if not prompt:
-        raise HTTPException(status_code=404, detail="Промпт не найден")
+    prompt = await get_or_404(db, LlmPrompt, id_prompt, "Промпт не найден")
     payload = data.model_dump(exclude_unset=True)
     for key, value in payload.items():
         setattr(prompt, key, value)

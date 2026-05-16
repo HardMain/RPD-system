@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F } from "../theme.js";
-import { hdr, tcell, iconBtn } from "../styles.js";
+import { T, F, hdr, tcell, iconBtn, dataTable, sectionLabel, formErrorBox } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
@@ -60,7 +59,7 @@ export function BupsContent() {
 
   return <>
     <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>
+      <div style={sectionLabel}>
         Добавить запись
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -92,7 +91,7 @@ export function BupsContent() {
       : filtered.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
           {bups.length === 0 ? "БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины." : "Ничего не нашлось."}
         </div>
-      : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "fixed" }}>
+      : <table style={{ ...dataTable, tableLayout: "fixed" }}>
           <thead><tr style={{ background: T.surface }}>
             <SortTh sortKey="year" sort={sort} onSort={toggleSort} align="center" style={{ width: 80 }}>Год</SortTh>
             <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Наименование</SortTh>
@@ -173,7 +172,7 @@ function ImportBupModal({ onClose, onImported }) {
         </div>
         <Input label="Год (если не определяется автоматически)" value={year} onChange={e => setYear(e.target.value)} placeholder="например, 2024" />
         <Input label="Имя БУПа (необязательно)" value={nameOverride} onChange={e => setNameOverride(e.target.value)} placeholder="оставьте пустым для авто-имени" />
-        {err && <div style={{ background: "#fde6e3", color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13, marginBottom: 12 }}>{err}</div>}
+        {err && <div style={{ ...formErrorBox, marginBottom: 12 }}>{err}</div>}
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
           <Btn primary onClick={handleSubmit} disabled={busy}>{busy ? "Загружаю…" : "Импортировать"}</Btn>
           <Btn onClick={onClose}>Закрыть</Btn>
@@ -221,7 +220,7 @@ function BupDetailModal({ bupId, onClose, onDelete }) {
         </div>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>Дисциплины БУПа ({data.disciplines.length})</div>
         <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "auto", maxHeight: "55vh" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, fontFamily: F, tableLayout: "auto" }}>
+          <table style={{ ...dataTable, tableLayout: "auto" }}>
             <thead><tr style={{ background: T.bg }}>
               <th style={hdr}>Индекс</th>
               <th style={hdr}>Кафедра</th>

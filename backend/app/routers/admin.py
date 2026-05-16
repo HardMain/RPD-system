@@ -8,6 +8,7 @@ from app.core.auth import (
     get_current_user, hash_password, user_can,
     can_create_user_with, assignable_role_names, assignable_department_ids,
 )
+from app.core.crud import get_or_404, ensure_permission
 from app.models.user import User, Role, Department
 from app.models.bup import BupDiscipline
 from app.schemas import UserCreate, UserDetailOut, RoleOut, DepartmentIn, DepartmentOut
@@ -15,16 +16,13 @@ from app.schemas import UserCreate, UserDetailOut, RoleOut, DepartmentIn, Depart
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
 def _require_admin(user: User):
-    if not user_can(user, "users.manage"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    ensure_permission(user, "users.manage")
 
 def _require_user_admin_or_creator(user: User):
-    if not (user_can(user, "users.manage") or user_can(user, "users.create")):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    ensure_permission(user, "users.manage", "users.create")
 
 def _require_dept_admin(user: User):
-    if not (user_can(user, "users.manage") or user_can(user, "sources.manage")):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    ensure_permission(user, "users.manage", "sources.manage")
 
 async def _resolve_target_role_name(db: AsyncSession, id_role: int) -> str:
     role = await db.get(Role, id_role)
@@ -240,9 +238,7 @@ async def update_department(
     user: User = Depends(get_current_user),
 ):
     _require_dept_admin(user)
-    dept = await db.get(Department, dept_id)
-    if not dept:
-        raise HTTPException(status_code=404, detail="Подразделение не найдено")
+    dept = await get_or_404(db, Department, dept_id, "Подразделение не найдено")
     name = (data.name or "").strip()
     if not name:
         raise HTTPException(status_code=400, detail="Название обязательно")
@@ -269,9 +265,7 @@ async def delete_department(
     user: User = Depends(get_current_user),
 ):
     _require_dept_admin(user)
-    dept = await db.get(Department, dept_id)
-    if not dept:
-        raise HTTPException(status_code=404, detail="Подразделение не найдено")
+    dept = await get_or_404(db, Department, dept_id, "Подразделение не найдено")
     users_res = await db.execute(
         select(func.count(User.id_user)).where(User.id_department == dept_id)
     )

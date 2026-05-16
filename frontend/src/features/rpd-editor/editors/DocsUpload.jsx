@@ -1,6 +1,6 @@
 import { useRef } from "react";
 import * as api from "../../../api/client.js";
-import { T } from "../../../theme.js";
+import { T } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { TrashIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";

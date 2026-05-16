@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api/client.js";
-import { T, F } from "../../theme.js";
+import { T, F, fieldLabel, sectionLabel } from "../../styles/index.js";
 import { Modal } from "../../components/Modal.jsx";
 import { Btn } from "../../components/Btn.jsx";
 import { Input } from "../../components/Input.jsx";
@@ -407,7 +407,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const profileOptions = selectedDir ? (selectedDir.profiles || []) : [];
   const directionEntered = !!(manual.direction_name || "").trim();
 
-  const labelStyle = { fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 };
+  const labelStyle = fieldLabel;
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box" };
 
   return <Modal onClose={onClose} width={880}>
@@ -789,7 +789,7 @@ function ModeButton({ active, onClick, children }) {
 
 function ManualBlock({ title, children }) {
   return <div style={{ marginBottom: 16 }}>
-    <div style={{ fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 }}>{title}</div>
+    <div style={sectionLabel}>{title}</div>
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{children}</div>
   </div>;
 }
@@ -956,7 +956,7 @@ function totalCell(mismatch) {
     textAlign: "center",
     fontWeight: 700,
     fontVariantNumeric: "tabular-nums",
-    background: mismatch ? "#fde6e3" : T.surface,
+    background: mismatch ? T.redBg : T.surface,
     color: mismatch ? T.red : T.text,
   };
 }

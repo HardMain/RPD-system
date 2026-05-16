@@ -1,4 +1,4 @@
-import { T, F } from "../../theme.js";
+import { T, F } from "../../styles/index.js";
 import { EyeIcon, PencilIcon, SplitIcon, SparkleIcon } from "../../components/icons.jsx";
 import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from "./constants.js";
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
-import { T, F } from "../../../theme.js";
+import { T, F } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Modal } from "../../../components/Modal.jsx";
 import { TrashIcon } from "../../../components/icons.jsx";

@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user, user_can
+from app.core.crud import get_or_404, ensure_permission
 from app.core.database import get_db
 from app.models import Direction, DirectionProgram, StoredFile, User
 from app.services import storage_service
@@ -32,8 +33,7 @@ class ProgramPayload(BaseModel):
     profile: str
 
 def _require_admin(user: User):
-    if not user_can(user, "sources.manage"):
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    ensure_permission(user, "sources.manage")
 
 async def _load(db: AsyncSession, direction_id: int) -> Direction:
     res = await db.execute(
@@ -76,9 +76,7 @@ async def admin_update_direction(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    direc = await db.get(Direction, direction_id)
-    if not direc:
-        raise HTTPException(status_code=404, detail="Направление не найдено")
+    direc = await get_or_404(db, Direction, direction_id, "Направление не найдено")
     if data.code is not None:
         code = data.code.strip()
         if not code:
@@ -118,9 +116,7 @@ async def admin_update_program(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    prog = await db.get(DirectionProgram, program_id)
-    if not prog:
-        raise HTTPException(status_code=404, detail="Профиль не найден")
+    prog = await get_or_404(db, DirectionProgram, program_id, "Профиль не найден")
     profile = (data.profile or "").strip()
     if not profile:
         raise HTTPException(status_code=400, detail="Профиль обязателен")
@@ -136,9 +132,7 @@ async def admin_delete_program(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    prog = await db.get(DirectionProgram, program_id)
-    if not prog:
-        raise HTTPException(status_code=404, detail="Профиль не найден")
+    prog = await get_or_404(db, DirectionProgram, program_id, "Профиль не найден")
     direction_id = prog.id_direction
     await db.delete(prog)
     await db.commit()
@@ -152,9 +146,7 @@ async def admin_upload_fgos(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    direc = await db.get(Direction, direction_id)
-    if not direc:
-        raise HTTPException(status_code=404, detail="Направление не найдено")
+    direc = await get_or_404(db, Direction, direction_id, "Направление не найдено")
     fname = file.filename or "fgos.pdf"
     if not fname.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Ожидается PDF")
@@ -185,9 +177,7 @@ async def admin_remove_fgos(
     user: User = Depends(get_current_user),
 ):
     _require_admin(user)
-    direc = await db.get(Direction, direction_id)
-    if not direc:
-        raise HTTPException(status_code=404)
+    direc = await get_or_404(db, Direction, direction_id)
     if not direc.id_fgos_file:
         return
     old = await db.get(StoredFile, direc.id_fgos_file)

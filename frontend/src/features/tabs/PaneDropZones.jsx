@@ -1,4 +1,4 @@
-import { T } from "../../theme.js";
+import { T } from "../../styles/index.js";
 
 export function PaneDropZones({ draggingTabId, dragOverSide, onSetDragOverSide, onDropToSide }) {
   if (draggingTabId === null) return null;
