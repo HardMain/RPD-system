@@ -25,6 +25,14 @@ export const login = (username, password) =>
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
   });
 export const getMe = () => api.get('/auth/me');
+export const changePassword = (payload) => api.post('/auth/change-password', payload);
+export const updateProfile = (payload) => api.patch('/auth/me', payload);
+export const uploadAvatar = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/auth/me/avatar', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const deleteAvatar = () => api.delete('/auth/me/avatar');
 
 export function userCan(user, perm) {
   const perms = user?.permissions;
@@ -117,12 +125,23 @@ export const adminDeleteGlobalDocument = (idDocument) =>
   api.delete(`/admin/documents/${idDocument}`);
 export const adminGlobalDocumentDownloadUrl = (idDocument) =>
   `/api/admin/documents/${idDocument}/download`;
+export const openDocument = async (idDocument) =>
+  openBlob(await api.get(`/admin/documents/${idDocument}/download`, { responseType: 'blob' }));
 export const adminListDocumentSections = (idDocument) =>
   api.get(`/admin/documents/${idDocument}/sections`);
 export const adminReparseDocument = (idDocument) =>
   api.post(`/admin/documents/${idDocument}/reparse`);
 
 export const fileUrl = (fileId) => `/api/files/${fileId}`;
+
+const openBlob = (res) => {
+  const url = URL.createObjectURL(res.data);
+  window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+};
+
+export const openFile = async (fileId) =>
+  openBlob(await api.get(`/files/${fileId}`, { responseType: 'blob' }));
 
 export const getFosFiles = (rpdId) => api.get(`/rpd/${rpdId}/fos`);
 export const uploadFosFile = (rpdId, file, role = "other", name = "", comment = "") => {
@@ -149,6 +168,8 @@ export const adminDeleteDepartment = (deptId) => api.delete(`/admin/departments/
 export const searchUsers = (q) => api.get('/admin/users/search', { params: { q } });
 
 export const adminListDirections = () => api.get('/admin/directions/');
+export const adminCreateDirection = (payload) => api.post('/admin/directions/', payload);
+export const adminDeleteDirection = (directionId) => api.delete(`/admin/directions/${directionId}`);
 export const adminUpdateDirection = (directionId, payload) => api.patch(`/admin/directions/${directionId}`, payload);
 export const adminAddDirectionProgram = (directionId, payload) => api.post(`/admin/directions/${directionId}/programs`, payload);
 export const adminUpdateDirectionProgram = (programId, payload) => api.patch(`/admin/directions/programs/${programId}`, payload);

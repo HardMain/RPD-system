@@ -12,10 +12,22 @@ class UserOut(BaseModel):
     email: str | None = None
     role: str
     department: str
+    avatar_color: str | None = None
+    avatar_data_url: str | None = None
+    theme: str | None = None
     permissions: list[str] = []
+
+class ProfileUpdate(BaseModel):
+    email: str | None = None
+    avatar_color: str | None = None
+    theme: str | None = None
 
     class Config:
         from_attributes = True
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
 
 class TokenResponse(BaseModel):
     access_token: str

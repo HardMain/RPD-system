@@ -1,4 +1,4 @@
-from app.schemas.auth import LoginRequest, TokenResponse, UserOut
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, ProfileUpdate, TokenResponse, UserOut
 from app.schemas.curriculum import (
     DirectionOut, DisciplineOut, IndicatorOut, CompetencyOut, DisciplineCompetencyOut,
 )
@@ -32,7 +32,7 @@ TokenResponse.model_rebuild()
 RpdDetailOut.model_rebuild()
 
 __all__ = [
-    "LoginRequest", "TokenResponse", "UserOut",
+    "ChangePasswordRequest", "LoginRequest", "ProfileUpdate", "TokenResponse", "UserOut",
     "DirectionOut", "DisciplineOut", "IndicatorOut", "CompetencyOut", "DisciplineCompetencyOut",
     "BupOut", "BupDetailOut", "BupDisciplineOut", "BupDisciplineCompetencyOut",
     "BupCreate", "BupUpdate", "BupDisciplineCreate", "BupDisciplineUpdate",

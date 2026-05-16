@@ -4,6 +4,7 @@ import { T, F, fieldLabel, sectionLabel } from "../../styles/index.js";
 import { Modal } from "../../components/Modal.jsx";
 import { Btn } from "../../components/Btn.jsx";
 import { Input } from "../../components/Input.jsx";
+import { LoadingOverlay } from "../../components/LoadingOverlay.jsx";
 import { MultiSelectDropdown } from "../../components/MultiSelectDropdown.jsx";
 import { Dropdown } from "../../components/Dropdown.jsx";
 import { RowTrashOverlay } from "../../components/RowTrashOverlay.jsx";
@@ -36,9 +37,11 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
   const [mode, setMode] = useState(draft?.mode ?? "bup");
 
+  const draftDiscId = draft?.discId ?? null;
+
   const [disciplines, setDisciplines] = useState([]);
-  const [discFilter, setDiscFilter] = useState(draft?.discFilter ?? "");
-  const [discId, setDiscId] = useState(draft?.discId ?? null);
+  const [discId, setDiscId] = useState(draftDiscId);
+  const [ready, setReady] = useState(false);
 
   const [bupDisciplines, setBupDisciplines] = useState([]);
   const [bdLoading, setBdLoading] = useState(false);
@@ -83,14 +86,14 @@ export function CreateRpdModal({ onClose, onCreated }) {
     try {
       sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
         mode,
-        discFilter, discId,
+        discId,
         bdIds: Array.from(bdIds),
         discQuery, discPickedId,
         manual, manualSemesters,
         year, baseId, reviewerIds,
       }));
     } catch {}
-  }, [mode, discFilter, discId, bdIds, discQuery, discPickedId, manual, manualSemesters, year, baseId, reviewerIds]);
+  }, [mode, discId, bdIds, discQuery, discPickedId, manual, manualSemesters, year, baseId, reviewerIds]);
 
   function discardAndClose() {
     clearDraft();
@@ -98,27 +101,38 @@ export function CreateRpdModal({ onClose, onCreated }) {
   }
 
   useEffect(() => {
-    api.getDisciplines().then(r => setDisciplines(r.data || [])).catch(() => setDisciplines([]));
-    api.getDisciplines({ include_unbound: true }).then(r => setManualDisciplines(r.data || [])).catch(() => setManualDisciplines([]));
-    api.getRpds({ status: "Согласовано" }).then(r => setArchiveRpds(r.data || [])).catch(() => {});
-    api.getDirectionSuggestions().then(r => setDirSug(r.data || { directions: [], profiles: [] })).catch(() => {});
-    api.getReviewers().then(r => {
-      const list = r.data || [];
-      setReviewers(list);
-      setReviewerIds(prev => {
-        if (prev.length > 0) return prev.filter(id => list.some(u => u.id_user === id));
-        return list.length === 1 ? [list[0].id_user] : [];
-      });
-    }).catch(() => setReviewers([]));
+    const ps = [
+      api.getDisciplines().then(r => setDisciplines(r.data || [])).catch(() => setDisciplines([])),
+      api.getDisciplines({ include_unbound: true }).then(r => setManualDisciplines(r.data || [])).catch(() => setManualDisciplines([])),
+      api.getRpds({ status: "Согласовано" }).then(r => setArchiveRpds(r.data || [])).catch(() => {}),
+      api.getDirectionSuggestions().then(r => setDirSug(r.data || { directions: [], profiles: [] })).catch(() => {}),
+      api.getReviewers().then(r => {
+        const list = r.data || [];
+        setReviewers(list);
+        setReviewerIds(prev => {
+          if (prev.length > 0) return prev.filter(id => list.some(u => u.id_user === id));
+          return list.length === 1 ? [list[0].id_user] : [];
+        });
+      }).catch(() => setReviewers([])),
+    ];
+    if (draftDiscId) {
+      ps.push(
+        api.getBupDisciplinesByDiscipline(draftDiscId)
+          .then(r => setBupDisciplines(r.data || []))
+          .catch(() => setBupDisciplines([]))
+      );
+    }
+    Promise.allSettled(ps).then(() => setReady(true));
   }, []);
 
   const initialDiscEffectRef = useRef(true);
   useEffect(() => {
     const initial = initialDiscEffectRef.current;
     initialDiscEffectRef.current = false;
-    if (!discId) { setBupDisciplines([]); if (!initial) setBdIds(new Set()); return; }
+    if (initial) return;
+    if (!discId) { setBupDisciplines([]); setBdIds(new Set()); return; }
     setBdLoading(true);
-    if (!initial) setBdIds(new Set());
+    setBdIds(new Set());
     api.getBupDisciplinesByDiscipline(discId)
       .then(r => setBupDisciplines(r.data || []))
       .catch(() => setBupDisciplines([]))
@@ -135,11 +149,6 @@ export function CreateRpdModal({ onClose, onCreated }) {
     return () => document.removeEventListener("mousedown", onDocClick);
   }, [discListOpen]);
 
-  const filteredDisciplines = useMemo(() => {
-    if (!discFilter.trim()) return disciplines;
-    const q = discFilter.toLowerCase();
-    return disciplines.filter(d => (d.name || "").toLowerCase().includes(q));
-  }, [disciplines, discFilter]);
 
   const filteredManualDisciplines = useMemo(() => {
     if (!discQuery.trim()) return manualDisciplines;
@@ -410,6 +419,10 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const labelStyle = fieldLabel;
   const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box" };
 
+  if (!ready) {
+    return <LoadingOverlay onClose={onClose} />;
+  }
+
   return <Modal onClose={onClose} width={880}>
     <div style={{ padding: "20px 24px", borderBottom: "1px solid " + T.borderLight }}>
       <div style={{ fontSize: 16, fontWeight: 700 }}>Создание РПД</div>
@@ -445,36 +458,20 @@ export function CreateRpdModal({ onClose, onCreated }) {
           <label style={labelStyle}>
             Дисциплина <span style={{ color: T.red }}>*</span>
           </label>
-          <input
-            value={discFilter}
-            onChange={e => setDiscFilter(e.target.value)}
-            placeholder="Поиск по названию или направлению…"
-            style={{ ...inputStyle, marginBottom: 6 }}
-          />
-          <div key={errorPulse} className={flashField("bupDiscipline") ? "err-flash" : ""} style={{ border: "1px solid " + T.border, borderRadius: 6, maxHeight: 200, overflow: "auto", background: T.surface }} title="Обязательное поле">
-            {filteredDisciplines.length === 0 && (
-              <div style={{ padding: 14, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>
-                {disciplines.length === 0 ? "Дисциплин пока нет — попросите администратора загрузить XLS-файл БУПа." : "Ничего не нашлось."}
-              </div>
-            )}
-            {filteredDisciplines.map(d => {
-              const picked = d.id_discipline === discId;
-              return <button
-                key={d.id_discipline}
-                type="button"
-                onClick={() => setDiscId(d.id_discipline)}
-                style={{
-                  display: "block", width: "100%", textAlign: "left",
-                  padding: "10px 12px", border: "none", borderBottom: "1px solid " + T.borderLight,
-                  background: picked ? T.accentLight : "transparent",
-                  cursor: "pointer", fontFamily: F, fontSize: 13,
-                  color: picked ? T.accent : T.text, fontWeight: picked ? 600 : 400,
-                }}
-              >
-                {d.name}
-              </button>;
-            })}
+          <div key={errorPulse} className={flashField("bupDiscipline") ? "err-flash" : ""} style={{ borderRadius: 4 }} title="Обязательное поле">
+            <Dropdown
+              value={discId ?? ""}
+              options={disciplines.map(d => ({ value: d.id_discipline, label: d.name }))}
+              onChange={v => setDiscId(v === "" ? null : v)}
+              placeholder="— не указано —"
+              clearLabel="— не указано —"
+            />
           </div>
+          {disciplines.length === 0 && (
+            <div style={{ fontSize: 12, color: T.textMuted, fontStyle: "italic", marginTop: 4 }}>
+              Дисциплин пока нет — попросите администратора загрузить XLS-файл БУПа.
+            </div>
+          )}
         </div>
 
         {discId && (
@@ -539,7 +536,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
               value={discQuery}
               onChange={e => onDiscQueryChange(e.target.value)}
               onFocus={() => setDiscListOpen(true)}
-              placeholder="Введите название или выберите из списка"
+              placeholder="Выберите дисциплину или введите новую"
               title="Обязательное поле"
               style={inputStyle}
             />
@@ -594,7 +591,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
               }}
               options={dirSug.directions.map(d => ({ value: d.name, label: d.code ? `${d.name} (${d.code})` : d.name, code: d.code }))}
               onPick={o => { manualField("direction_name", o.value); manualField("direction_code", o.code || ""); }}
-              placeholder="Выберите направление" />
+              placeholder="Выберите направление или введите новое" />
             <ManualField label="Код" required readOnly
               value={manual.direction_code}
               flash={flashField("direction_code")} pulseKey={errorPulse}
@@ -607,7 +604,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
             disabled={!directionEntered}
             placeholder={!directionEntered
               ? "Сначала укажите направление"
-              : (selectedDir ? "Профиль направления или свой" : "Введите профиль")} />
+              : "Выберите профиль направления или введите новый"} />
           <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div style={{ flex: "0 0 220px", minWidth: 200 }}>
               <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>

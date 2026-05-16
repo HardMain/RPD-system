@@ -10,6 +10,7 @@ import { Spinner } from "../components/Spinner.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { PencilIcon, UserOffIcon, PlusIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
+import { useStickyState } from "../hooks/useStickyState.js";
 
 export function AdminUsersPage({ user }) {
   const [users, setUsers] = useState([]);
@@ -17,8 +18,8 @@ export function AdminUsersPage({ user }) {
   const [departments, setDepartments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("active");
-  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useStickyState("adminUsers.statusFilter.v1", "active");
+  const [search, setSearch] = useStickyState("adminUsers.search.v1", "");
   const [pendingDeactivate, setPendingDeactivate] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
 
@@ -148,17 +149,37 @@ export function AdminUsersPage({ user }) {
   </div>;
 }
 
+const USER_DRAFT_KEY = "createUserDraft.v1";
+function loadUserDraft() {
+  try {
+    const raw = sessionStorage.getItem(USER_DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return d && typeof d === "object" ? d : null;
+  } catch { return null; }
+}
+function clearUserDraft() {
+  try { sessionStorage.removeItem(USER_DRAFT_KEY); } catch {}
+}
+
 function UserEditModal({ data, roles, departments, onClose, onSaved }) {
   const isCreate = !!data.create;
-  const [form, setForm] = useState({
-    login: isCreate ? "" : data.login,
-    full_name: isCreate ? "" : data.full_name,
-    title: isCreate ? "" : (data.title || ""),
-    email: isCreate ? "" : (data.email || ""),
-    id_role: isCreate ? 0 : data.id_role,
-    id_department: isCreate ? 0 : data.id_department,
-    password: "",
-    is_active: isCreate ? true : data.is_active,
+  const draft = isCreate ? loadUserDraft() : null;
+  const [form, setForm] = useState(() => {
+    if (isCreate) {
+      const base = { login: "", full_name: "", title: "", email: "", id_role: 0, id_department: 0, password: "", is_active: true };
+      return draft ? { ...base, ...draft, password: "" } : base;
+    }
+    return {
+      login: data.login,
+      full_name: data.full_name,
+      title: data.title || "",
+      email: data.email || "",
+      id_role: data.id_role,
+      id_department: data.id_department,
+      password: "",
+      is_active: data.is_active,
+    };
   });
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState("");
@@ -169,6 +190,19 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
       .then(r => setTitleOptions((r.data || []).map(e => ({ value: e.value, label: e.value }))))
       .catch(() => setTitleOptions([]));
   }, []);
+
+  useEffect(() => {
+    if (!isCreate) return;
+    try {
+      const { password, ...rest } = form;
+      sessionStorage.setItem(USER_DRAFT_KEY, JSON.stringify(rest));
+    } catch {}
+  }, [isCreate, form]);
+
+  function discardAndClose() {
+    if (isCreate) clearUserDraft();
+    onClose();
+  }
 
   function set(k, v) { setForm(f => ({ ...f, [k]: v })); }
 
@@ -190,6 +224,7 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
           id_department: +form.id_department,
           password: form.password || null,
         });
+        clearUserDraft();
       } else {
         const payload = {
           full_name: form.full_name.trim(),
@@ -269,7 +304,7 @@ function UserEditModal({ data, roles, departments, onClose, onSaved }) {
     </div>
     <div style={{ padding: "12px 20px", borderTop: "1px solid " + T.borderLight, display: "flex", justifyContent: "flex-end", gap: 10 }}>
       <Btn primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
-      <Btn onClick={onClose}>Отмена</Btn>
+      <Btn onClick={discardAndClose}>Отмена</Btn>
     </div>
   </Modal>;
 }

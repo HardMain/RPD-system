@@ -1,8 +1,26 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { T, hdr } from "../styles/index.js";
 
-export function useSort(defaultKey, defaultDir = "asc") {
-  const [sort, setSort] = useState({ key: defaultKey, dir: defaultDir });
+export function useSort(defaultKey, defaultDir = "asc", storageKey) {
+  const [sort, setSort] = useState(() => {
+    if (storageKey) {
+      try {
+        const raw = sessionStorage.getItem(storageKey);
+        if (raw) {
+          const v = JSON.parse(raw);
+          if (v && typeof v.key === "string" && (v.dir === "asc" || v.dir === "desc")) return v;
+        }
+      } catch {}
+    }
+    return { key: defaultKey, dir: defaultDir };
+  });
+
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify(sort));
+    } catch {}
+  }, [storageKey, sort]);
 
   function toggleSort(key) {
     setSort(prev => prev.key === key

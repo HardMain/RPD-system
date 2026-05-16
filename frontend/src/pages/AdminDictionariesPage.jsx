@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F, hdr, tcell, iconBtn, inputBase, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
+import { T, F, hdr, tcell, iconBtn, inputBase, adminAddField, adminAddLabel, adminAddBtn, linkBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { FilterChip } from "../components/FilterChip.jsx";
 import { formatDateTimeRu } from "../utils/format.js";
@@ -10,6 +10,7 @@ import { Dropdown } from "../components/Dropdown.jsx";
 import { TrashIcon, PlusIcon, PencilIcon, UploadIcon } from "../components/icons.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { useSort, SortTh } from "../components/sortable.jsx";
+import { useStickyState } from "../hooks/useStickyState.js";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 import { LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
 import { BupsContent } from "./AdminBupsPage.jsx";
@@ -152,7 +153,10 @@ const DOC_ACCESSORS = {
 };
 
 export function AdminDictionariesPage() {
-  const [kind, setKind] = useState(KINDS[0].id);
+  const [kind, setKind] = useStickyState("adminDict.kind.v1", KINDS[0].id);
+  useEffect(() => {
+    if (!KINDS.some(k => k.id === kind)) setKind(KINDS[0].id);
+  }, []);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -255,7 +259,7 @@ export function AdminDictionariesPage() {
     });
   }, [items, search, showPrefixFilter, prefixFilter, kind]);
 
-  const { sort, toggleSort, sortItems } = useSort("value", "asc");
+  const { sort, toggleSort, sortItems } = useSort("value", "asc", "adminDict.sort.v1");
   const sortedRows = useMemo(
     () => sortItems(filtered, DICT_ACCESSORS),
     [filtered, sort]
@@ -360,18 +364,8 @@ export function AdminDictionariesPage() {
         ? !!newValue.trim() && !!newSourceType && !!newMode
         : !!newValue.trim();
 
-  const kindHint = kind === "bup" ? "Загруженные XLS-БУПы. При импорте дисциплины, компетенции и индикаторы попадают в справочники автоматически."
-    : kind === "direction" ? "Направления подготовки: код, название, профиль и файл ФГОС. Базовые федеральные коды засидированы, остальное подтягивается при импорте БУПов. Отсюда же берутся подсказки кода/названия/профиля при создании РПД вручную."
-    : kind === "document" ? "Документы, которые передаются LLM как контекст при генерации разделов РПД. Загруженные здесь файлы используются глобально для всех РПД."
-    : kind === "department" ? "Кафедры, отделы и управления, к которым привязаны пользователи системы."
-    : kind === "llm_prompt" ? "Шаблоны промптов, по которым LLM генерирует содержание разделов РПД. В шаблоне доступны плейсхолдеры: {discipline}, {direction}, {profile}, {total_hours}, {lecture_hours}, {practice_hours}, {lab_hours}, {self_study_hours}. Если system_prompt пуст — используется общий системный промпт."
-    : isDiscipline ? "Перечень всех дисциплин, доступных для создания РПД вручную. Пополняется автоматически при импорте БУПов; при удалении БУПа дисциплины из справочника не удаляются."
-    : "Записи отсюда подсказываются преподавателям при заполнении РПД. Автоматически дополняются после согласования каждой РПД.";
-
   return <div style={{ flex: 1, overflow: "auto", scrollbarGutter: "stable", padding: 24, background: T.bg }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 14, lineHeight: 1.5 }}>{kindHint}</div>
-
       <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 10, marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
           <span style={groupLabelStyle}>Раздел</span>
@@ -489,13 +483,13 @@ export function AdminDictionariesPage() {
             <div style={miniLabel}>
               {KINDS.find(k => k.id === kind)?.valueLabel || "Значение"} <span style={{ color: T.red }}>*</span>
             </div>
-            <div style={{ display: "flex", gap: 8, alignItems: "stretch" }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
               {kind === "indicator_description" ? (
                 <textarea
                   value={newValue}
                   onChange={e => setNewValue(e.target.value)}
                   placeholder={'Например: "Знает методы…"'}
-                  style={{ flex: 1, padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none", minHeight: 60, resize: "vertical" }}
+                  style={{ ...adminAddField, flex: 1, minHeight: 34, padding: "7px 10px", resize: "vertical" }}
                 />
               ) : (
                 <input
@@ -503,10 +497,10 @@ export function AdminDictionariesPage() {
                   onChange={e => setNewValue(e.target.value)}
                   onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
                   placeholder="Введите значение…"
-                  style={{ flex: 1, padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none" }}
+                  style={{ ...adminAddField, flex: 1 }}
                 />
               )}
-              <Btn small primary onClick={handleAdd} disabled={adding || !canAdd}>
+              <Btn small primary onClick={handleAdd} disabled={adding || !canAdd} style={adminAddBtn}>
                 <PlusIcon /> Добавить
               </Btn>
             </div>
@@ -766,12 +760,7 @@ function DocumentsContent() {
                       </button>
                     </td>
                     <td style={{ ...tcell, fontWeight: 500 }}>
-                      <button onClick={() => {
-                        const token = localStorage.getItem("token");
-                        fetch(api.adminGlobalDocumentDownloadUrl(d.id_document), { headers: { Authorization: `Bearer ${token}` } })
-                          .then(r => r.blob())
-                          .then(blob => { const u = URL.createObjectURL(blob); window.open(u, "_blank"); setTimeout(() => URL.revokeObjectURL(u), 10000); });
-                      }} style={{ background: "none", border: "none", cursor: "pointer", color: T.accent, padding: 0, font: "inherit" }}>{d.filename}</button>
+                      <button onClick={() => api.openDocument(d.id_document)} style={linkBtn}>{d.filename}</button>
                     </td>
                     <td style={{ ...tcell, textAlign: "center", textTransform: "uppercase", color: T.textMuted, fontSize: 11 }}>{d.file_type}</td>
                     <td style={{ ...tcell, textAlign: "right", fontVariantNumeric: "tabular-nums", color: T.textMuted }}>{d.file_size ? (d.file_size / 1024).toFixed(0) + " КБ" : "—"}</td>
@@ -1161,7 +1150,7 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
     </div>
     <div style={modalFooterWide("space-between")}>
       <div>
-        {onDelete && <Btn danger onClick={onDelete} disabled={saving}>Удалить</Btn>}
+        {onDelete && <Btn danger onClick={onDelete}>Удалить</Btn>}
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <Btn primary onClick={save} disabled={saving}>{saving ? "Сохранение…" : "Сохранить"}</Btn>
@@ -1171,7 +1160,7 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
   </Modal>;
 }
 
-const miniLabel = { fontSize: 11, color: T.textMuted, marginBottom: 3 };
+const miniLabel = adminAddLabel;
 const miniInput = { width: "100%", padding: "6px 10px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, background: T.surface, fontFamily: F, boxSizing: "border-box" };
 const inputStyle = inputBase;
 const groupLabelStyle = { fontSize: 10, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", flexShrink: 0, width: 90 };

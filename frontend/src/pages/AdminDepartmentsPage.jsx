@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F, hdr, tcell, iconBtn, fieldLabel, formErrorBox, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
+import { T, hdr, tcell, iconBtn, fieldLabel, formErrorBox, adminAddField, adminAddLabel, adminAddBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
@@ -85,8 +85,6 @@ export function DepartmentsContent() {
 
   const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sorted, { defaultPageSize: 50, storageKey: "adminDepartments.pageSize" });
 
-  const miniLabel = { fontSize: 11, color: T.textMuted, marginBottom: 3 };
-  const addInput = { width: "100%", height: 32, padding: "0 10px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 13, fontFamily: F, outline: "none", boxSizing: "border-box" };
 
   return <>
     <div style={adminAddPanel}>
@@ -95,17 +93,17 @@ export function DepartmentsContent() {
       </div>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 240px", minWidth: 200 }}>
-          <div style={miniLabel}>Название <span style={{ color: T.red }}>*</span></div>
+          <div style={adminAddLabel}>Название <span style={{ color: T.red }}>*</span></div>
           <input
             value={newName}
             onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleAdd()}
             placeholder="Кафедра / отдел / управление…"
-            style={addInput}
+            style={adminAddField}
           />
         </div>
         <div style={{ flex: "1 1 200px", minWidth: 180 }}>
-          <div style={miniLabel}>Факультет <span style={{ color: T.red }}>*</span></div>
+          <div style={adminAddLabel}>Факультет <span style={{ color: T.red }}>*</span></div>
           <Dropdown
             value={newFaculty}
             options={facultyOptions}
@@ -114,7 +112,7 @@ export function DepartmentsContent() {
             clearLabel="— не указано —"
           />
         </div>
-        <Btn small primary onClick={handleAdd} disabled={adding || !newName.trim() || !newFaculty.trim()} style={{ height: 32 }}>
+        <Btn small primary onClick={handleAdd} disabled={adding || !newName.trim() || !newFaculty.trim()} style={adminAddBtn}>
           <PlusIcon /> Добавить
         </Btn>
       </div>

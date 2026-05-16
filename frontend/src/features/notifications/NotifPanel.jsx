@@ -16,7 +16,7 @@ export function NotifPanel({ show, onClose }) {
       </div>
       <div style={{ flex: 1, overflow: "auto" }}>{ns.length === 0
         ? <div style={{ padding: 30, textAlign: "center", color: T.textMuted, fontSize: 13 }}>Нет уведомлений</div>
-        : ns.map(n => <div key={n.id_notification} style={{ padding: "12px 16px", borderBottom: "1px solid " + T.borderLight, background: n.is_read ? T.surface : T.accentLight + "44" }}>
+        : ns.map(n => <div key={n.id_notification} style={{ padding: "12px 16px", borderBottom: "1px solid " + T.borderLight, background: n.is_read ? T.surface : T.unreadBg }}>
           <div style={{ fontSize: 13, fontWeight: n.is_read ? 400 : 600 }}>{n.message}</div>
           {n.created_at && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 3 }}>{formatDateTimeRu(n.created_at)}</div>}
         </div>)}</div>

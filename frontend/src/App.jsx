@@ -5,7 +5,10 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 
 import * as api from "./api/client.js";
-import { T, F } from "./styles/index.js";
+import { T, F, injectThemeStyles, applyTheme } from "./styles/index.js";
+
+injectThemeStyles();
+applyTheme("light");
 import { Spinner } from "./components/Spinner.jsx";
 import { TabBtn } from "./components/TabBtn.jsx";
 import { BellIcon } from "./components/icons.jsx";
@@ -13,10 +16,11 @@ import { BellIcon } from "./components/icons.jsx";
 import { LoginPage } from "./pages/LoginPage.jsx";
 import { RpdListPage } from "./pages/RpdListPage.jsx";
 import { AdminUsersPage } from "./pages/AdminUsersPage.jsx";
-import { SystemInfoPage } from "./pages/SystemInfoPage.jsx";
 import { AdminDictionariesPage } from "./pages/AdminDictionariesPage.jsx";
+import { ProfilePage } from "./pages/ProfilePage.jsx";
 
 import { NotifPanel } from "./features/notifications/NotifPanel.jsx";
+import { AccountMenu } from "./features/account/AccountMenu.jsx";
 import { CreateRpdModal } from "./features/rpd-create/CreateRpdModal.jsx";
 import { OpenRpdsBar } from "./features/tabs/OpenRpdsBar.jsx";
 import { PaneDropZones } from "./features/tabs/PaneDropZones.jsx";
@@ -42,6 +46,7 @@ export default function App() {
   const resizingSplitRef = useRef(false);
 
   const [tabReloadKeys, setTabReloadKeys] = useState({});
+  const [accountSection, setAccountSection] = useState("profile");
   const [showNotif, setShowNotif] = useState(false); const [showCreate, setShowCreate] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
@@ -76,6 +81,10 @@ export default function App() {
   useEffect(() => {
     if (user) { loadRpds(); loadUnread(); }
   }, [user, loadRpds, loadUnread]);
+
+  useEffect(() => {
+    applyTheme(user?.theme || "light");
+  }, [user]);
 
   useEffect(() => {
     if (!user) return;
@@ -255,6 +264,8 @@ export default function App() {
 
   const handleLogout = () => {
     localStorage.removeItem("token");
+    try { sessionStorage.clear(); } catch {}
+    applyTheme("light");
     setUser(null); setOpenRpds([]);
     setPanes({ left: { tabs: [], activeId: null }, right: null });
     setTabReloadKeys({});
@@ -264,7 +275,7 @@ export default function App() {
 
   useEffect(() => {
     if (!user) return;
-    const allowed = new Set(["my", "system", "edit"]);
+    const allowed = new Set(["my", "edit", "account"]);
     if (api.userCan(user, "users.manage") || api.userCan(user, "users.create")) allowed.add("adminUsers");
     const canSources = api.userCan(user, "bups.manage")
       || api.userCan(user, "directions.manage")
@@ -276,7 +287,6 @@ export default function App() {
   if (checking) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}><Spinner size={40} /></div>;
   if (!user) return <LoginPage onLogin={u => setUser(u)} />;
 
-  const role = user.role;
   const canManageUsers = api.userCan(user, "users.manage") || api.userCan(user, "users.create");
   const canManageSources = api.userCan(user, "bups.manage")
     || api.userCan(user, "directions.manage")
@@ -285,11 +295,10 @@ export default function App() {
     { id: "my", label: `РПД (${rpds.length})` },
     canManageUsers ? { id: "adminUsers", label: "Пользователи" } : null,
     canManageSources ? { id: "adminSources", label: "Источники" } : null,
-    { id: "system", label: "Система" },
   ].filter(Boolean);
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
-    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accent + "00}50%{box-shadow:0 0 0 2px " + T.accent + "66}100%{box-shadow:0 0 0 2px " + T.accent + "00}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}@keyframes savedFade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-2px)}}.saved-fade{animation:savedFade 1.5s ease-in-out;display:inline-block}@keyframes errFlash{0%{box-shadow:0 0 0 2px " + T.red + "00}50%{box-shadow:0 0 0 2px " + T.red + "AA}100%{box-shadow:0 0 0 2px " + T.red + "00}}.err-flash{animation:errFlash 2.1s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}.expandable-field::-webkit-scrollbar{width:8px}.expandable-field::-webkit-scrollbar-track{background:" + T.bg + ";margin:28px 0 4px 0;border-radius:4px}.expandable-field::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:4px;border:none}.expandable-field::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.expandable-field-sm::-webkit-scrollbar{width:6px}.expandable-field-sm::-webkit-scrollbar-track{background:" + T.bg + ";margin:24px 0 2px 0;border-radius:3px}.expandable-field-sm::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:3px;border:none}.expandable-field-sm::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
+    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accentGhost + "}50%{box-shadow:0 0 0 2px " + T.accentGlow + "}100%{box-shadow:0 0 0 2px " + T.accentGhost + "}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}@keyframes savedFade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-2px)}}.saved-fade{animation:savedFade 1.5s ease-in-out;display:inline-block}@keyframes errFlash{0%{box-shadow:0 0 0 2px " + T.redGhost + "}50%{box-shadow:0 0 0 2px " + T.redGlow + "}100%{box-shadow:0 0 0 2px " + T.redGhost + "}}.err-flash{animation:errFlash 2.1s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}.expandable-field::-webkit-scrollbar{width:8px}.expandable-field::-webkit-scrollbar-track{background:" + T.bg + ";margin:28px 0 4px 0;border-radius:4px}.expandable-field::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:4px;border:none}.expandable-field::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.expandable-field-sm::-webkit-scrollbar{width:6px}.expandable-field-sm::-webkit-scrollbar-track{background:" + T.bg + ";margin:24px 0 2px 0;border-radius:3px}.expandable-field-sm::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:3px;border:none}.expandable-field-sm::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
 
     <div style={{ flexShrink: 0, zIndex: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", height: 44, background: T.headerBg, color: T.headerText }}>
@@ -304,17 +313,14 @@ export default function App() {
             {unreadCount > 0 && <span style={{ position: "absolute", top: -2, right: -4, background: T.red, color: "#fff", borderRadius: 8, padding: "0 5px", fontSize: 10, fontWeight: 700 }}>{unreadCount}</span>}
           </button>
           <span style={{ width: 1, height: 20, background: "rgba(255,255,255,.2)" }} />
-          <span style={{ fontSize: 12, opacity: .7, padding: "2px 8px", border: "1px solid rgba(255,255,255,.2)", borderRadius: 4 }}>{role}</span>
-          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", lineHeight: 1.15 }}>
-            <span style={{ fontSize: 13, fontWeight: 600 }}>{user.full_name}</span>
-            {user.title && <span style={{ fontSize: 11, opacity: .65 }}>{user.title}</span>}
-          </span>
-          <button onClick={handleLogout} style={{ border: "none", background: "none", color: T.headerText, cursor: "pointer", fontSize: 12, opacity: .7 }}>Выйти</button>
+          <AccountMenu user={user}
+            onOpenProfile={(s) => { setAccountSection(s || "profile"); setActiveTab("account"); }}
+            onLogout={handleLogout} />
         </div>
       </div>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "0 12px", paddingTop: 6, background: T.bg, borderBottom: "1px solid " + T.border }}>
+      {navTabs.length > 1 && <div style={{ display: "flex", alignItems: "flex-end", gap: 2, padding: "0 12px", paddingTop: 6, background: T.bg, borderBottom: "1px solid " + T.border }}>
         {navTabs.map(t => <TabBtn key={t.id} label={t.label} active={activeTab === t.id} onClick={() => setActiveTab(t.id)} />)}
-      </div>
+      </div>}
       <OpenRpdsBar
         openRpds={openRpds}
         panes={panes}
@@ -332,7 +338,7 @@ export default function App() {
     {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} user={user} />}
     {activeTab === "adminUsers" && <AdminUsersPage user={user} />}
     {activeTab === "adminSources" && <AdminDictionariesPage />}
-    {activeTab === "system" && <SystemInfoPage />}
+    {activeTab === "account" && <ProfilePage user={user} section={accountSection} onUserUpdated={setUser} />}
 
     <div ref={splitContainerRef} style={{ display: activeTab === "edit" ? "block" : "none", flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
       {openRpds.map(t => {

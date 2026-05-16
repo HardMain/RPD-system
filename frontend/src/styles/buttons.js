@@ -22,6 +22,12 @@ export const pdfToolBtn = (disabled) => ({
   fontSize: 12, fontWeight: 600, fontFamily: F,
 });
 
+export const linkBtn = {
+  background: "none", border: "none", padding: 0,
+  cursor: "pointer", color: T.accent, fontWeight: 600,
+  font: "inherit", textAlign: "left",
+};
+
 export const iconBtn = {
   display: "inline-flex", alignItems: "center", justifyContent: "center",
   padding: "5px 7px", borderRadius: 4,

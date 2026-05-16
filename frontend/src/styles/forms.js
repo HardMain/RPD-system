@@ -8,6 +8,16 @@ export const inputBase = {
 
 export const fieldLabel = { fontSize: 12, color: T.textMuted, display: "block", marginBottom: 4 };
 
+export const adminAddField = {
+  width: "100%", height: 34, padding: "0 10px",
+  border: "1px solid " + T.border, borderRadius: 4,
+  fontSize: 13, fontFamily: F, outline: "none", boxSizing: "border-box",
+};
+
+export const adminAddLabel = { fontSize: 11, color: T.textMuted, marginBottom: 4 };
+
+export const adminAddBtn = { height: 34, boxSizing: "border-box" };
+
 export const sectionLabel = { fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".5px", marginBottom: 8 };
 
 export const formErrorBox = { background: T.redBg, color: T.red, padding: "8px 12px", borderRadius: 6, fontSize: 13 };

@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user, user_can
 from app.core.crud import get_or_404, ensure_permission
 from app.core.database import get_db
-from app.models import Direction, DirectionProgram, StoredFile, User
+from app.models import Bup, Competency, Direction, DirectionProgram, StoredFile, User
 from app.services import storage_service
 
 router = APIRouter(prefix="/api/admin/directions", tags=["admin-directions"])
@@ -28,6 +28,10 @@ class DirectionAdminOut(BaseModel):
 class DirectionUpdate(BaseModel):
     code: str | None = None
     name: str | None = None
+
+class DirectionCreate(BaseModel):
+    code: str
+    name: str
 
 class ProgramPayload(BaseModel):
     profile: str
@@ -67,6 +71,27 @@ async def admin_list_directions(
         .order_by(Direction.code)
     )
     return [_to_out(d) for d in res.scalars().all()]
+
+@router.post("/", response_model=DirectionAdminOut, status_code=201)
+async def admin_create_direction(
+    data: DirectionCreate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    code = (data.code or "").strip()
+    name = (data.name or "").strip()
+    if not code:
+        raise HTTPException(status_code=400, detail="Код обязателен")
+    if not name:
+        raise HTTPException(status_code=400, detail="Название обязательно")
+    exists = await db.execute(select(Direction).where(Direction.code == code))
+    if exists.scalars().first():
+        raise HTTPException(status_code=400, detail="Направление с таким кодом уже есть")
+    direc = Direction(code=code, name=name)
+    db.add(direc)
+    await db.commit()
+    return _to_out(await _load(db, direc.id_direction))
 
 @router.patch("/{direction_id}", response_model=DirectionAdminOut)
 async def admin_update_direction(
@@ -185,4 +210,37 @@ async def admin_remove_fgos(
     if old:
         storage_service.delete(old.storage_uri)
         await db.delete(old)
+    await db.commit()
+
+@router.delete("/{direction_id}", status_code=204)
+async def admin_delete_direction(
+    direction_id: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_admin(user)
+    direc = await get_or_404(db, Direction, direction_id, "Направление не найдено")
+    bup_count = await db.scalar(
+        select(func.count(Bup.id_bup)).where(Bup.id_direction == direction_id)
+    )
+    comp_count = await db.scalar(
+        select(func.count(Competency.id_competency)).where(Competency.id_direction == direction_id)
+    )
+    blockers = []
+    if bup_count:
+        blockers.append(f"БУПов: {bup_count}")
+    if comp_count:
+        blockers.append(f"компетенций: {comp_count}")
+    if blockers:
+        raise HTTPException(
+            status_code=400,
+            detail="Нельзя удалить направление — на него ссылаются " + ", ".join(blockers)
+            + ". Сначала удалите связанные записи.",
+        )
+    if direc.id_fgos_file:
+        old = await db.get(StoredFile, direc.id_fgos_file)
+        if old:
+            storage_service.delete(old.storage_uri)
+            await db.delete(old)
+    await db.delete(direc)
     await db.commit()

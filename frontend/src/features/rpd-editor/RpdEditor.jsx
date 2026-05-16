@@ -778,8 +778,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           isEdit={isEdit}
           hasPair={hasPair}
           canEdit={canEdit}
-          isHead={isHead}
-          status={rpd.status}
           validationErrors={validationErrors}
           activeSec={activeSec}
           hasLabTopics={hasLabTopics}

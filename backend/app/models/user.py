@@ -45,9 +45,13 @@ class User(Base):
     password_hash = Column(String(200))
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    avatar_color = Column(String(20))
+    id_avatar_file = Column(Integer, ForeignKey("stored_files.id_file"), nullable=True)
+    theme = Column(String(10))
 
     role = relationship("Role", back_populates="users")
     department = relationship("Department", back_populates="users")
+    avatar_file = relationship("StoredFile", foreign_keys=[id_avatar_file])
 
 class Notification(Base):
     __tablename__ = "notifications"

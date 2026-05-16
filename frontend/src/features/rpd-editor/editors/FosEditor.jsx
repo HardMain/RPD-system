@@ -3,6 +3,7 @@ import * as api from "../../../api/client.js";
 import { T, F } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { Modal } from "../../../components/Modal.jsx";
+import { LoadingOverlay } from "../../../components/LoadingOverlay.jsx";
 import { TrashIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../EditorModals.jsx";
@@ -167,15 +168,18 @@ function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
     setBusyId(null);
   }
 
+  if (loading) {
+    return <LoadingOverlay onClose={onClose} />;
+  }
+
   return <Modal width={620} onClose={onClose}>
     <div style={{ padding: 20 }}>
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Выбор файла ФОС из хранилища</div>
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Поиск…"
         style={{ width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, marginBottom: 12, boxSizing: "border-box" }} />
       <div style={{ maxHeight: 360, overflowY: "auto", border: "1px solid " + T.borderLight, borderRadius: 6, background: T.surface }}>
-        {loading && <div style={{ padding: 14, fontSize: 13, color: T.textMuted }}>Загрузка…</div>}
-        {!loading && filtered.length === 0 && <div style={{ padding: 14, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>В хранилище нет ФОС-файлов. Загрузите новый PDF.</div>}
-        {!loading && filtered.map(it => (
+        {filtered.length === 0 && <div style={{ padding: 14, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>В хранилище нет ФОС-файлов. Загрузите новый PDF.</div>}
+        {filtered.map(it => (
           <div key={it.id_file} style={{ padding: "10px 12px", borderBottom: "1px solid " + T.borderLight, display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontWeight: 600, fontSize: 13 }}>{it.name || it.original_name}</div>

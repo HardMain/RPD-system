@@ -5,7 +5,7 @@ import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from
 export const SIDEBAR_COLLAPSED_W = 38;
 
 export function Sidebar({
-  width, isEdit, hasPair, canEdit, isHead, status,
+  width, isEdit, hasPair, canEdit,
   validationErrors, activeSec,
   hasLabTopics, hasPracticeTopics,
   isCollapsed,
@@ -79,8 +79,6 @@ export function Sidebar({
       onMouseEnter={e => e.currentTarget.style.background = T.bg}
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >ⓘ Свойства РПД</button>}
-
-    {isHead && status === "На согласовании" && <div style={{ padding: "4px 10px", background: T.accentLight, borderBottom: "1px solid " + T.accent, fontSize: 10, fontWeight: 700, color: T.accent, textAlign: "center", letterSpacing: .3 }}>📋 СОГЛАСОВАНИЕ</div>}
 
     <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SIDEBAR_KEYS.map(k => {
 
