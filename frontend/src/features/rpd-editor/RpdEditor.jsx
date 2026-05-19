@@ -26,6 +26,7 @@ import { MtechEditor } from "./editors/MtechEditor.jsx";
 import { WorkloadTable } from "./editors/WorkloadTable.jsx";
 import { FosEditor } from "./editors/FosEditor.jsx";
 import { RpdMetaModal } from "./RpdMetaModal.jsx";
+import { DocsModal } from "./DocsModal.jsx";
 
 function pdfRelevantSnapshot(r) {
   if (!r) return "";
@@ -110,12 +111,13 @@ function pdfRelevantSnapshot(r) {
   });
 }
 
-export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, user, onCloseTab, onExportPdf, onToggleMode, isActive = true }) {
+export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, user, onCloseTab, onExportPdf, onToggleMode, onBack, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
   const [showMeta, setShowMeta] = useState(false);
+  const [showDocs, setShowDocs] = useState(false);
 
   const [collapsedSet, setCollapsedSet] = useState(() => new Set());
   const isCollapsed = useCallback((key) => collapsedSet.has(key), [collapsedSet]);
@@ -788,6 +790,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           onOpenPair={onOpenPair}
           onGoTo={goTo}
           onOpenMeta={() => setShowMeta(true)}
+          onOpenDocs={() => setShowDocs(true)}
+          docsCount={rpd.uploaded_documents?.length || 0}
           onAutoFillAll={autoFillAll}
           onExpand={() => setSidebarW(lastExpandedSidebarW.current || 220)}
         />
@@ -1049,6 +1053,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       </div>
 
       <BottomBar
+        onBack={onBack}
         showPdf={showPdf}
         isEdit={isEdit}
         isHead={isHead}
@@ -1082,6 +1087,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         reload={() => load(true)}
         onClose={() => setShowMeta(false)}
       />}
+      {showDocs && <DocsModal onClose={() => setShowDocs(false)} />}
     </div>
   </RpdEditorProvider>;
 }

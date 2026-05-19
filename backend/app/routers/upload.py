@@ -5,14 +5,16 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.config import settings
 from app.models.user import User, UploadedDocument, Rpd
+from app.models import UploadedDocumentSection
 from app.schemas import UploadedDocumentOut
 from app.services.document_sections import extract_and_save_sections
+from app.services.llm_service import CONTEXT_CHAR_LIMIT
 
 router = APIRouter(prefix="/api/upload", tags=["upload"])
 
@@ -97,7 +99,44 @@ async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db), user:
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404)
-    if os.path.exists(doc.file_path):
-        os.remove(doc.file_path)
+    file_path = doc.file_path
+    await db.execute(
+        delete(UploadedDocumentSection).where(UploadedDocumentSection.id_document == doc_id)
+    )
     await db.delete(doc)
+    await db.commit()
+    if file_path and os.path.exists(file_path):
+        os.remove(file_path)
+
+@router.get("/doc/{doc_id}/sections")
+async def document_sections(doc_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(UploadedDocumentSection)
+        .where(UploadedDocumentSection.id_document == doc_id)
+        .order_by(UploadedDocumentSection.id_section_chunk)
+    )
+    chunks = result.scalars().all()
+    return {
+        "context_char_limit": CONTEXT_CHAR_LIMIT,
+        "sections": [
+            {
+                "id_section_chunk": c.id_section_chunk,
+                "section_key": c.section_key,
+                "extraction_method": c.extraction_method,
+                "content": c.content or "",
+                "length": len(c.content or ""),
+            }
+            for c in chunks
+        ],
+    }
+
+@router.delete("/section/{chunk_id}", status_code=204)
+async def delete_document_section(chunk_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    result = await db.execute(
+        select(UploadedDocumentSection).where(UploadedDocumentSection.id_section_chunk == chunk_id)
+    )
+    chunk = result.scalar_one_or_none()
+    if not chunk:
+        raise HTTPException(status_code=404)
+    await db.delete(chunk)
     await db.commit()

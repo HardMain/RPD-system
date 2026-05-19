@@ -5,12 +5,13 @@ import { StatusBadge } from "../../components/StatusBadge.jsx";
 import { formatDateTimeRu, pluralRu } from "../../utils/format.js";
 
 export function BottomBar({
-  showPdf, isEdit, isHead, canEdit, canReviewNow, savedTick, status,
+  onBack, showPdf, isEdit, isHead, canEdit, canReviewNow, savedTick, status,
   completion, onJumpToMissing, updatedAt,
   onSendApproval, onApprove, onReject,
 }) {
   const showReviewButtons = canReviewNow && status === "На согласовании";
   return <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 16px", flexShrink: 0, background: T.surface, borderTop: "1px solid " + T.border }}>
+    {onBack && <Btn small onClick={onBack}>← Назад</Btn>}
     {status && <StatusBadge status={status} />}
     {completion && <CompletionIndicator completion={completion} onJumpToMissing={onJumpToMissing} />}
     {updatedAt && <UpdatedAgo updatedAt={updatedAt} />}

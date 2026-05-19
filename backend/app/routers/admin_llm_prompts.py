@@ -2,12 +2,13 @@ from datetime import datetime
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.auth import get_current_user, user_can
 from app.core.crud import get_or_404, ensure_permission
 from app.core.database import get_db
-from app.models import User, LlmPrompt
+from app.models import User, LlmPrompt, LlmGenerationLog, Rpd
 
 router = APIRouter(prefix="/api/admin/llm-prompts", tags=["admin-llm-prompts"])
 
@@ -65,3 +66,37 @@ async def update_prompt(
     await db.commit()
     await db.refresh(prompt)
     return prompt
+
+
+@router.get("/logs")
+async def list_generation_logs(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _ensure_perm(user)
+    labels = dict(
+        (await db.execute(select(LlmPrompt.section_key, LlmPrompt.section_label))).all()
+    )
+    result = await db.execute(
+        select(LlmGenerationLog, Rpd)
+        .join(Rpd, Rpd.id_rpd == LlmGenerationLog.id_rpd)
+        .options(selectinload(Rpd.discipline))
+        .order_by(LlmGenerationLog.created_at.desc())
+        .limit(200)
+    )
+    out = []
+    for log, rpd in result.all():
+        disc = rpd.discipline.name if rpd.discipline else "—"
+        out.append({
+            "id_log": log.id_log,
+            "id_rpd": log.id_rpd,
+            "rpd_label": f"{disc} ({rpd.academic_year})" if rpd.academic_year else disc,
+            "section_name": log.section_name,
+            "section_label": labels.get(log.section_name, log.section_name),
+            "model_name": log.model_name,
+            "tokens_used": log.tokens_used,
+            "generation_time_ms": log.generation_time_ms,
+            "context_sources": (log.context_sources.split("\n") if log.context_sources else []),
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        })
+    return out

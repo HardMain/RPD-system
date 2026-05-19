@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../../api/client.js";
 import { T, F, sectionLabel } from "../../styles/index.js";
 import { Btn } from "../../components/Btn.jsx";
@@ -16,6 +16,7 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, user, reload, onClose }) {
   const initialCommentRef = useRef(rpd.comment || "");
   const debounceRef = useRef(null);
   const lastSavedRef = useRef(rpd.comment || "");
+  const routeApiRef = useRef(null);
 
   useEffect(() => {
     const fresh = rpd.comment || "";
@@ -52,6 +53,11 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, user, reload, onClose }) {
       if (canEdit && comment !== lastSavedRef.current) {
         try { await api.updateRpd(rpdId, { comment }); lastSavedRef.current = comment; await reload(); } catch {}
       }
+    }
+    const r = routeApiRef.current;
+    if (r && r.isDirty()) {
+      const ok = await r.commit();
+      if (!ok) return;
     }
     onClose();
   }
@@ -107,7 +113,7 @@ export function RpdMetaModal({ rpd, rpdId, canEdit, user, reload, onClose }) {
       </Section>
 
       <Section title="Маршрут согласования">
-        <ApprovalRouteEditor rpdId={rpdId} rpd={rpd} canEdit={canEdit} user={user} reload={reload} />
+        <ApprovalRouteEditor rpdId={rpdId} rpd={rpd} canEdit={canEdit} user={user} reload={reload} routeApiRef={routeApiRef} />
       </Section>
     </div>
 
@@ -233,7 +239,11 @@ function ManualDisciplineTable({ bupDisciplines, disciplineName }) {
   </div>;
 }
 
-function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
+function sameIds(a, b) {
+  return a.length === b.length && a.every((id, i) => id === b[i]);
+}
+
+function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload, routeApiRef }) {
   const route = rpd.approval_route || [];
   const status = rpd.status;
   const hasChainPerm = api.userCan(user, "approval_chain.edit");
@@ -241,13 +251,43 @@ function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
   const ownerEditable = isOwner && canEdit && (status === "Черновик" || status === "На доработке");
   const editable = status !== "Согласовано" && (ownerEditable || hasChainPerm);
 
+  const persistedIds = useMemo(() => route.map(s => s.id_reviewer), [route]);
+  const [draftIds, setDraftIds] = useState(persistedIds);
   const [reviewers, setReviewers] = useState([]);
   const [errorMsg, setErrorMsg] = useState(null);
+  const baseIdsRef = useRef(persistedIds);
 
   useEffect(() => {
     if (!editable) return;
     api.getReviewers().then(r => setReviewers(r.data || [])).catch(() => setReviewers([]));
   }, [editable]);
+
+  useEffect(() => {
+    if (!sameIds(draftIds, baseIdsRef.current)) return;
+    baseIdsRef.current = persistedIds;
+    setDraftIds(persistedIds);
+
+  }, [persistedIds]);
+
+  const dirty = editable && !sameIds(draftIds, baseIdsRef.current);
+
+  async function commit() {
+    try {
+      await api.setApprovalRoute(rpdId, draftIds);
+      baseIdsRef.current = draftIds;
+      await reload();
+      return true;
+    } catch (e) {
+      setErrorMsg("Не удалось сохранить маршрут: " + (e?.response?.data?.detail || e.message));
+      return false;
+    }
+  }
+
+  useEffect(() => {
+    if (!routeApiRef) return;
+    routeApiRef.current = { isDirty: () => dirty, commit };
+    return () => { if (routeApiRef) routeApiRef.current = null; };
+  });
 
   const routeReviewers = route.map(s => ({
     id_user: s.id_reviewer, full_name: s.reviewer_name,
@@ -269,23 +309,16 @@ function ApprovalRouteEditor({ rpdId, rpd, canEdit, user, reload }) {
     if (!merged.some(m => m.id_user === r.id_user)) merged.push(r);
   }
 
-  async function handleChange(newIds) {
-    try {
-      await api.setApprovalRoute(rpdId, newIds);
-      await reload();
-    } catch (e) {
-      setErrorMsg("Не удалось сохранить маршрут: " + (e?.response?.data?.detail || e.message));
-      await reload();
-    }
-  }
-
   return <>
     <ReviewerChain
       reviewers={merged}
-      selectedIds={route.map(s => s.id_reviewer)}
-      onChange={handleChange}
-      statuses={route.map(s => s.status)}
+      selectedIds={draftIds}
+      onChange={setDraftIds}
+      statuses={dirty ? null : route.map(s => s.status)}
     />
+    {dirty && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
+      Изменения маршрута сохранятся при закрытии окна. Согласующим уйдёт одно уведомление.
+    </div>}
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </>;
 }

@@ -35,6 +35,7 @@ export const adminToolbar = {
 export const adminSearch = (maxWidth = 420) => ({
   flex: 1, minWidth: 220, maxWidth,
   padding: "7px 10px", border: "1px solid " + T.border, borderRadius: 4,
+  background: T.surface, color: T.text,
   fontSize: 13, fontFamily: F, outline: "none",
 });
 

@@ -17,6 +17,7 @@ import { LoginPage } from "./pages/LoginPage.jsx";
 import { RpdListPage } from "./pages/RpdListPage.jsx";
 import { AdminUsersPage } from "./pages/AdminUsersPage.jsx";
 import { AdminDictionariesPage } from "./pages/AdminDictionariesPage.jsx";
+import { AdminLlmPage } from "./pages/AdminLlmPage.jsx";
 import { ProfilePage } from "./pages/ProfilePage.jsx";
 
 import { NotifPanel } from "./features/notifications/NotifPanel.jsx";
@@ -32,7 +33,11 @@ pdfjs.GlobalWorkerOptions.workerPort = new PdfJsWorker();
 export default function App() {
   const [user, setUser] = useState(null); const [checking, setChecking] = useState(true);
   const [activeTab, setActiveTab] = useState("my");
+  const [prevTab, setPrevTab] = useState("my");
   const [rpds, setRpds] = useState([]);
+  const [adminUsers, setAdminUsers] = useState([]);
+  const [adminRoles, setAdminRoles] = useState([]);
+  const [adminDepartments, setAdminDepartments] = useState([]);
 
   const [openRpds, setOpenRpds] = useState([]);
 
@@ -78,9 +83,25 @@ export default function App() {
       }
     }
   }, []);
+  const loadAdminData = useCallback(async () => {
+    for (let i = 0; i < 6; i++) {
+      try {
+        const [u, r, d] = await Promise.all([api.adminListUsers(), api.adminListRoles(), api.adminListDepartments()]);
+        setAdminUsers(u.data || []); setAdminRoles(r.data || []); setAdminDepartments(d.data || []);
+        return;
+      } catch {
+        if (i === 5) return;
+        await new Promise(res => setTimeout(res, 500 * Math.pow(2, i)));
+      }
+    }
+  }, []);
+  const canLoadAdminData = (u) => !!u && (api.userCan(u, "users.manage") || api.userCan(u, "users.create"));
   useEffect(() => {
-    if (user) { loadRpds(); loadUnread(); }
-  }, [user, loadRpds, loadUnread]);
+    if (user) {
+      loadRpds(); loadUnread();
+      if (canLoadAdminData(user)) loadAdminData();
+    }
+  }, [user, loadRpds, loadUnread, loadAdminData]);
 
   useEffect(() => {
     applyTheme(user?.theme || "light");
@@ -91,7 +112,10 @@ export default function App() {
     if (activeTab === "my") {
       loadRpds();
     }
-  }, [user, activeTab, loadRpds]);
+    if (activeTab === "adminUsers" && canLoadAdminData(user)) {
+      loadAdminData();
+    }
+  }, [user, activeTab, loadRpds, loadAdminData]);
 
   function findPaneOf(tabId) {
     if (panes.left.tabs.includes(tabId)) return "left";
@@ -124,7 +148,7 @@ export default function App() {
       }
       return { ...prev, left: { tabs: [...prev.left.tabs, tabId], activeId: tabId } };
     });
-    if (!options.skipFocus) setActiveTab("edit");
+    if (!options.skipFocus) { setPrevTab(p => activeTab === "edit" ? p : activeTab); setActiveTab("edit"); }
   }
   function focusTab(tabId) {
     setPanes(prev => {
@@ -132,6 +156,7 @@ export default function App() {
       if (prev.right && prev.right.tabs.includes(tabId)) return { ...prev, right: { ...prev.right, activeId: tabId } };
       return prev;
     });
+    setPrevTab(p => activeTab === "edit" ? p : activeTab);
     setActiveTab("edit");
   }
   function toggleTabMode(tabId) {
@@ -281,6 +306,7 @@ export default function App() {
       || api.userCan(user, "directions.manage")
       || api.userCan(user, "reference.manage");
     if (canSources) allowed.add("adminSources");
+    if (api.userCan(user, "users.manage") || api.userCan(user, "sources.manage")) allowed.add("adminLlm");
     if (!allowed.has(activeTab)) setActiveTab("my");
   }, [user, activeTab]);
 
@@ -291,10 +317,12 @@ export default function App() {
   const canManageSources = api.userCan(user, "bups.manage")
     || api.userCan(user, "directions.manage")
     || api.userCan(user, "reference.manage");
+  const canManageLlm = api.userCan(user, "users.manage") || api.userCan(user, "sources.manage");
   const navTabs = [
     { id: "my", label: `РПД (${rpds.length})` },
     canManageUsers ? { id: "adminUsers", label: "Пользователи" } : null,
     canManageSources ? { id: "adminSources", label: "Источники" } : null,
+    canManageLlm ? { id: "adminLlm", label: "LLM" } : null,
   ].filter(Boolean);
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
@@ -314,7 +342,7 @@ export default function App() {
           </button>
           <span style={{ width: 1, height: 20, background: "rgba(255,255,255,.2)" }} />
           <AccountMenu user={user}
-            onOpenProfile={(s) => { setAccountSection(s || "profile"); setActiveTab("account"); }}
+            onOpenProfile={(s) => { setAccountSection(s || "profile"); setPrevTab(p => activeTab === "account" ? p : activeTab); setActiveTab("account"); }}
             onLogout={handleLogout} />
         </div>
       </div>
@@ -336,9 +364,10 @@ export default function App() {
     </div>
 
     {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} user={user} />}
-    {activeTab === "adminUsers" && <AdminUsersPage user={user} />}
+    {activeTab === "adminUsers" && <AdminUsersPage user={user} users={adminUsers} roles={adminRoles} departments={adminDepartments} reload={loadAdminData} />}
     {activeTab === "adminSources" && <AdminDictionariesPage />}
-    {activeTab === "account" && <ProfilePage user={user} section={accountSection} onUserUpdated={setUser} />}
+    {activeTab === "adminLlm" && <AdminLlmPage />}
+    {activeTab === "account" && <ProfilePage user={user} section={accountSection} onUserUpdated={setUser} onBack={() => setActiveTab(prevTab)} />}
 
     <div ref={splitContainerRef} style={{ display: activeTab === "edit" ? "block" : "none", flex: 1, minHeight: 0, position: "relative", overflow: "hidden" }}>
       {openRpds.map(t => {
@@ -372,6 +401,7 @@ export default function App() {
             onCloseTab={() => closeRpdTab(t.tabId)}
             onExportPdf={handleExportPdf}
             onToggleMode={() => toggleTabMode(t.tabId)}
+            onBack={() => setActiveTab(prevTab)}
             isActive={visible}
           />
         </div>;

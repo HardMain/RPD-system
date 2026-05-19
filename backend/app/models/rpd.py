@@ -1,6 +1,6 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, SmallInteger, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, backref
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -175,7 +175,10 @@ class UploadedDocumentSection(Base):
     content = Column(Text, nullable=False)
     extraction_method = Column(String(20), nullable=False, default="heuristic")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    document = relationship("UploadedDocument", backref="section_chunks")
+    document = relationship(
+        "UploadedDocument",
+        backref=backref("section_chunks", cascade="all, delete-orphan", passive_deletes=True),
+    )
 
 
 class LlmGenerationLog(Base):
@@ -187,6 +190,7 @@ class LlmGenerationLog(Base):
     model_name = Column(String(100))
     tokens_used = Column(Integer)
     generation_time_ms = Column(Integer)
+    context_sources = Column(Text)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     rpd = relationship("Rpd", back_populates="llm_logs")
 

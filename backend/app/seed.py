@@ -1216,9 +1216,12 @@ async def _seed_demo_data():
         db.add(RpdDeveloper(id_rpd=rpd4.id_rpd, id_user=teacher.id_user))
 
         db.add_all([
-            Notification(id_user=teacher.id_user, id_rpd=rpd3.id_rpd, message="РПД Физика отправлена на согласование", is_read=False),
-            Notification(id_user=teacher.id_user, id_rpd=rpd4.id_rpd, message="РПД Информатика согласована", is_read=False),
-            Notification(id_user=teacher.id_user, id_rpd=rpd2.id_rpd, message="РПД Компьютерная графика возвращена на доработку", is_read=True),
+            Notification(id_user=teacher.id_user, id_rpd=rpd3.id_rpd,
+                         message=f"РПД «{d_phys.name}» ({rpd3.academic_year}) отправлена на согласование", is_read=False),
+            Notification(id_user=teacher.id_user, id_rpd=rpd4.id_rpd,
+                         message=f"РПД «{d_inf.name}» ({rpd4.academic_year}) полностью согласована", is_read=False),
+            Notification(id_user=teacher.id_user, id_rpd=rpd2.id_rpd,
+                         message=f"РПД «{d_kg.name}» ({rpd2.academic_year}) возвращена на доработку ({head.full_name})", is_read=True),
         ])
 
         await db.commit()

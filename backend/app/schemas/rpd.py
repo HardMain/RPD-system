@@ -236,12 +236,19 @@ class DeveloperOut(BaseModel):
     class Config:
         from_attributes = True
 
+class ParsedSectionOut(BaseModel):
+    section_key: str
+    chars: int
+
 class UploadedDocumentOut(BaseModel):
     id_document: int
     filename: str
     file_type: str
     file_size: int | None = None
     uploaded_at: datetime | None = None
+    parse_mode: str = "full"
+    parsed_sections: list[ParsedSectionOut] = []
+    parsed_chars: int = 0
 
     class Config:
         from_attributes = True
@@ -295,6 +302,9 @@ class LlmGenerateResponse(BaseModel):
     model: str
     tokens_used: int | None = None
     structural_created: int = 0
+    context_chars: int = 0
+    context_limit: int = 0
+    context_sources: list[str] = []
 
 class RpdListOut(BaseModel):
     id_rpd: int

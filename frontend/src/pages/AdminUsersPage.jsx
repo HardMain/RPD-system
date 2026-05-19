@@ -6,32 +6,17 @@ import { FilterChip } from "../components/FilterChip.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
 import { Dropdown } from "../components/Dropdown.jsx";
-import { Spinner } from "../components/Spinner.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { PencilIcon, UserOffIcon, PlusIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 import { useStickyState } from "../hooks/useStickyState.js";
 
-export function AdminUsersPage({ user }) {
-  const [users, setUsers] = useState([]);
-  const [roles, setRoles] = useState([]);
-  const [departments, setDepartments] = useState([]);
-  const [loading, setLoading] = useState(true);
+export function AdminUsersPage({ user, users, roles, departments, reload }) {
   const [editing, setEditing] = useState(null);
   const [statusFilter, setStatusFilter] = useStickyState("adminUsers.statusFilter.v1", "active");
   const [search, setSearch] = useStickyState("adminUsers.search.v1", "");
   const [pendingDeactivate, setPendingDeactivate] = useState(null);
   const [errorMsg, setErrorMsg] = useState(null);
-
-  const fetchAll = (silent) => {
-    if (!silent) setLoading(true);
-    Promise.all([api.adminListUsers(), api.adminListRoles(), api.adminListDepartments()])
-      .then(([u, r, d]) => { setUsers(u.data || []); setRoles(r.data || []); setDepartments(d.data || []); })
-      .catch(() => {})
-      .finally(() => { if (!silent) setLoading(false); });
-  };
-  const reload = () => fetchAll(true);
-  useEffect(() => { fetchAll(false); }, []);
 
   async function performDeactivate(u) {
     if (!u) return;
@@ -86,8 +71,7 @@ export function AdminUsersPage({ user }) {
     </div>
     <div style={pageScroll}>
       <div className="table-scroll">
-        {loading ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
-        : filtered.length === 0
+        {filtered.length === 0
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>{users.length === 0 ? "Пользователей нет." : "Ничего не нашлось."}</div>
           : <table style={dataTable}>
             <thead><tr style={{ background: T.surface }}>
@@ -125,10 +109,8 @@ export function AdminUsersPage({ user }) {
             </tbody>
           </table>}
       </div>
-      {!loading && (
-        <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize}
-          onPageChange={setPage} onPageSizeChange={setPageSize} />
-      )}
+      <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize}
+        onPageChange={setPage} onPageSizeChange={setPageSize} />
     </div>
 
     {editing && <UserEditModal

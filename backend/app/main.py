@@ -61,6 +61,7 @@ async def _apply_schema_patches() -> None:
 
         await conn.execute(text("ALTER TABLE competency_indicators ALTER COLUMN code TYPE VARCHAR(40)"))
         await conn.execute(text("ALTER TABLE uploaded_documents ALTER COLUMN id_rpd DROP NOT NULL"))
+        await conn.execute(text("ALTER TABLE llm_generation_log ADD COLUMN IF NOT EXISTS context_sources TEXT"))
 
         await conn.execute(text(r"""
             UPDATE competency_indicators ci
@@ -130,4 +131,14 @@ app.include_router(fos.router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok", "service": "ИС РПД", "version": "1.0.0"}
+    from app.core.config import settings
+    llm_demo = settings.LLM_API_KEY.strip().lower() == "demo"
+    return {
+        "status": "ok",
+        "service": "ИС РПД",
+        "version": "1.0.0",
+        "llm": {
+            "mode": "demo" if llm_demo else "online",
+            "model": settings.LLM_MODEL,
+        },
+    }

@@ -3,33 +3,39 @@ import * as api from "../api/client.js";
 import { T, F, fieldLabel, inputBase, formErrorBox, sectionLabel, THEMES, applyTheme, THEME_LIGHT, THEME_DARK } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { Avatar, AVATAR_COLORS } from "../components/Avatar.jsx";
-import { KeyIcon, InfoIcon } from "../components/icons.jsx";
+import { KeyIcon, InfoIcon, GearIcon, ThemeIcon } from "../components/icons.jsx";
 
 const SECTIONS = [
-  { id: "profile", label: "Профиль" },
-  { id: "security", label: "Безопасность" },
-  { id: "appearance", label: "Внешний вид" },
-  { id: "system", label: "Система" },
+  { id: "profile", label: "Профиль", icon: <GearIcon size={15} /> },
+  { id: "security", label: "Безопасность", icon: <KeyIcon size={15} /> },
+  { id: "appearance", label: "Внешний вид", icon: <ThemeIcon size={15} /> },
+  { id: "system", label: "Система", icon: <InfoIcon size={15} /> },
 ];
 
-export function ProfilePage({ user, section = "profile", onUserUpdated }) {
+export function ProfilePage({ user, section = "profile", onUserUpdated, onBack }) {
   const [active, setActive] = useState(SECTIONS.some(s => s.id === section) ? section : "profile");
   useEffect(() => {
     if (SECTIONS.some(s => s.id === section)) setActive(section);
   }, [section]);
 
   return <div style={{ flex: 1, overflow: "auto", scrollbarGutter: "stable", background: T.bg }}>
-    <div style={{ maxWidth: 880, margin: "24px auto", padding: "0 24px", display: "flex", gap: 24, alignItems: "flex-start" }}>
+    {onBack && <div style={{ maxWidth: 880, margin: "20px auto 0", padding: "0 24px" }}>
+      <Btn small onClick={onBack}>← Назад</Btn>
+    </div>}
+    <div style={{ maxWidth: 880, margin: onBack ? "14px auto 24px" : "24px auto", padding: "0 24px", display: "flex", gap: 24, alignItems: "flex-start" }}>
       <div style={{ flex: "0 0 200px", background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 10, padding: 8, position: "sticky", top: 24 }}>
         {SECTIONS.map(s => (
           <button key={s.id} onClick={() => setActive(s.id)} style={{
-            display: "block", width: "100%", textAlign: "left",
+            display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left",
             padding: "10px 12px", border: "none", borderRadius: 7,
             background: active === s.id ? T.accentLight : "transparent",
             color: active === s.id ? T.accent : T.text,
             fontWeight: active === s.id ? 700 : 500,
             fontSize: 13, fontFamily: F, cursor: "pointer", marginBottom: 2,
-          }}>{s.label}</button>
+          }}>
+            <span style={{ display: "flex", color: active === s.id ? T.accent : T.textMuted }}>{s.icon}</span>
+            {s.label}
+          </button>
         ))}
       </div>
 
@@ -158,7 +164,7 @@ function SecuritySection() {
   }
 
   return <div style={{ maxWidth: 360 }}>
-    <Heading><span style={{ display: "inline-flex", verticalAlign: "-2px", marginRight: 8, color: T.textMuted }}><KeyIcon /></span>Смена пароля</Heading>
+    <Heading>Смена пароля</Heading>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div>
         <label style={fieldLabel}>Текущий пароль</label>
@@ -238,12 +244,17 @@ function AppearanceSection({ user, onUserUpdated }) {
 function SystemSection() {
   const [h, setH] = useState(null);
   useEffect(() => { api.getHealth().then(r => setH(r.data)).catch(() => {}); }, []);
+  const llmOnline = h?.llm?.mode === "online";
   const cards = [
-    { title: "Статус", rows: [["Сервер", h ? "online" : "…", h ? T.green : T.orange], ["LLM", "demo-режим", T.orange], ["Версия", h?.version || "1.0.0"]] },
-    { title: "О системе", rows: [["Организация", "ПНИПУ"], ["Модель LLM", "настраивается в .env"]] },
+    { title: "Статус", rows: [
+      ["Сервер", h ? "online" : "…", h ? T.green : T.orange],
+      ["LLM", h ? (llmOnline ? "подключена" : "demo-режим") : "…", h ? (llmOnline ? T.green : T.orange) : T.orange],
+      ["Версия", h?.version || "1.0.0"],
+    ] },
+    { title: "О системе", rows: [["Организация", "ПНИПУ"], ["Модель LLM", h?.llm?.model || "настраивается в .env"]] },
   ];
   return <div>
-    <Heading><span style={{ display: "inline-flex", verticalAlign: "-2px", marginRight: 8, color: T.textMuted }}><InfoIcon /></span>Системная информация</Heading>
+    <Heading>Системная информация</Heading>
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {cards.map(c => <div key={c.title} style={{ background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 16 }}>
         <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>{c.title}</div>

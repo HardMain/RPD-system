@@ -18,7 +18,10 @@ export function injectThemeStyles() {
   el.id = "theme-vars";
   el.textContent =
     block(':root, :root[data-theme="light"]', THEME_LIGHT)
-    + block(':root[data-theme="dark"]', THEME_DARK);
+    + block(':root[data-theme="dark"]', THEME_DARK)
+    + ':root, :root[data-theme="light"]{color-scheme:light}'
+    + ':root[data-theme="dark"]{color-scheme:dark}'
+    + 'input::placeholder,textarea::placeholder{color:var(--c-textLight)}';
   document.head.appendChild(el);
 }
 

@@ -3,6 +3,7 @@ import { T, F } from "./theme.js";
 export const inputBase = {
   width: "100%", padding: "8px 12px",
   border: "1px solid " + T.border, borderRadius: 6,
+  background: T.surface, color: T.text,
   fontSize: 13, fontFamily: F, outline: "none", boxSizing: "border-box",
 };
 
@@ -11,6 +12,7 @@ export const fieldLabel = { fontSize: 12, color: T.textMuted, display: "block", 
 export const adminAddField = {
   width: "100%", height: 34, padding: "0 10px",
   border: "1px solid " + T.border, borderRadius: 4,
+  background: T.surface, color: T.text,
   fontSize: 13, fontFamily: F, outline: "none", boxSizing: "border-box",
 };
 

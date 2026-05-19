@@ -111,6 +111,7 @@ export const adminDeleteDiscipline = (idDiscipline) =>
   api.delete(`/admin/disciplines/${idDiscipline}`);
 
 export const adminListLlmPrompts = () => api.get('/admin/llm-prompts/');
+export const adminListLlmLogs = () => api.get('/admin/llm-prompts/logs');
 export const adminUpdateLlmPrompt = (idPrompt, data) =>
   api.patch(`/admin/llm-prompts/${idPrompt}`, data);
 
@@ -199,6 +200,8 @@ export const uploadDocument = (rpdId, file) => {
 };
 export const getDocuments = (rpdId) => api.get(`/upload/${rpdId}`);
 export const deleteDocument = (docId) => api.delete(`/upload/${docId}`);
+export const getDocumentSections = (docId) => api.get(`/upload/doc/${docId}/sections`);
+export const deleteDocumentSection = (chunkId) => api.delete(`/upload/section/${chunkId}`);
 
 export const exportPdf = (rpdId, bdId) =>
   api.get(`/export/${rpdId}/pdf`, {

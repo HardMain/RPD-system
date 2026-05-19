@@ -6,9 +6,14 @@ from app.core.config import settings
 
 client = AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
 
+CONTEXT_CHAR_LIMIT = 12000
+WHOLE_DOC_CHAR_LIMIT = 8000
+
 SYSTEM_PROMPT = """Ты — эксперт по составлению рабочих программ дисциплин (РПД) для российских вузов.
 Генерируй текст на русском языке в академическом стиле, соответствующий требованиям ФГОС ВО.
 Текст должен быть конкретным, содержательным и соответствовать указанной дисциплине и направлению подготовки.
+
+Тебе могут передать справочные материалы — это разнородные документы: образцы РПД по другим дисциплинам, методические пособия, учебники, выдержки по отдельным разделам. Они релевантны лишь частично: бери из них только то, что относится к формируемому разделу, остальное игнорируй. Не переноси текст дословно — адаптируй содержание под указанную дисциплину и направление.
 
 Правила оформления вывода:
 - Не пиши заголовок раздела (например, «1.1 Цели и задачи», «### 1.1...») — он уже есть в РПД.
@@ -130,31 +135,34 @@ FALLBACK = {
     "methodical_recommendations": "Обучающимся рекомендуется регулярно посещать занятия, выполнять задания в установленные сроки, использовать рекомендованную литературу для подготовки.",
 }
 
-async def extract_text_from_file(file_path: str) -> str:
+async def extract_text_from_file(file_path: str, max_chars: int | None = WHOLE_DOC_CHAR_LIMIT) -> str:
     import os
     if not os.path.exists(file_path):
         return ""
+
+    def _cap(s: str) -> str:
+        return s if max_chars is None else s[:max_chars]
 
     ext = os.path.splitext(file_path)[1].lower()
     try:
         if ext == ".txt":
             with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                return f.read()[:8000]
+                return _cap(f.read())
 
         elif ext == ".docx":
             from docx import Document
             doc = Document(file_path)
             text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
-            return text[:8000]
+            return _cap(text)
 
         elif ext == ".pdf":
             import subprocess
             result = subprocess.run(
                 ["pdftotext", "-layout", file_path, "-"],
-                capture_output=True, text=True, timeout=30,
+                capture_output=True, text=True, timeout=60,
             )
             if result.returncode == 0:
-                return result.stdout[:8000]
+                return _cap(result.stdout)
             return ""
         else:
             return ""
@@ -190,7 +198,12 @@ async def generate_section(
     })
     prompt = prompt_template.format_map(fmt_vars)
     if extra_context:
-        prompt += f"\n\nДополнительный контекст из загруженных материалов:\n{extra_context[:12000]}"
+        prompt += (
+            "\n\nСправочные материалы ниже разнородны (образцы РПД, методички, "
+            "учебники) и относятся к делу лишь частично. Используй только то, "
+            "что относится к формируемому сейчас разделу; не относящееся — игнорируй:\n"
+            + extra_context[:CONTEXT_CHAR_LIMIT]
+        )
 
     prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
     system_message = system_prompt_override if system_prompt_override is not None else SYSTEM_PROMPT

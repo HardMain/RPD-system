@@ -66,13 +66,24 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         reviewed_at=a.reviewed_at,
         created_at=a.created_at,
     ) for a in r.approvals]
-    docs = [UploadedDocumentOut(
-        id_document=doc.id_document,
-        filename=doc.filename,
-        file_type=doc.file_type,
-        file_size=doc.file_size,
-        uploaded_at=doc.uploaded_at,
-    ) for doc in r.uploaded_documents]
+    docs = []
+    for doc in r.uploaded_documents:
+        chunks = doc.section_chunks or []
+        by_key: dict[str, int] = {}
+        for ch in chunks:
+            if ch.section_key not in by_key:
+                by_key[ch.section_key] = len(ch.content or "")
+        parsed = [{"section_key": k, "chars": n} for k, n in by_key.items()]
+        docs.append(UploadedDocumentOut(
+            id_document=doc.id_document,
+            filename=doc.filename,
+            file_type=doc.file_type,
+            file_size=doc.file_size,
+            uploaded_at=doc.uploaded_at,
+            parse_mode="sections" if parsed else "full",
+            parsed_sections=parsed,
+            parsed_chars=sum(by_key.values()),
+        ))
     route = [ApprovalRouteStepOut(
         id_route=s.id_route,
         step_order=s.step_order,
@@ -189,7 +200,7 @@ def _rpd_select_options():
         selectinload(Rpd.learning_outcomes).selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency),
         selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
         selectinload(Rpd.fos_files).selectinload(RpdFosFile.file),
-        selectinload(Rpd.uploaded_documents),
+        selectinload(Rpd.uploaded_documents).selectinload(UploadedDocument.section_chunks),
         selectinload(Rpd.approvals).selectinload(ApprovalStage.reviewer),
         selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer),
     ]
@@ -1295,11 +1306,20 @@ async def remove_developer(dev_id: int, db: AsyncSession = Depends(get_db), user
         await db.delete(dev)
         await db.commit()
 
+def _rpd_label(rpd: Rpd) -> str:
+    name = (rpd.discipline.name if rpd.discipline else None) or "дисциплина"
+    year = rpd.academic_year
+    return f"«{name}»" + (f" ({year})" if year else "")
+
 @router.post("/{rpd_id}/send-approval", status_code=200)
 async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
-        .options(selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer))
+        .options(
+            selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer),
+            selectinload(Rpd.discipline),
+            selectinload(Rpd.author),
+        )
     )
     rpd = result.scalar_one_or_none()
     if not rpd:
@@ -1324,14 +1344,15 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
         stage=first.reviewer.full_name if first.reviewer else "Согласующий",
         status="Ожидание",
     ))
+    label = _rpd_label(rpd)
     db.add(Notification(
         id_user=user.id_user, id_rpd=rpd_id,
-        message="РПД отправлена на согласование",
+        message=f"РПД {label} отправлена на согласование",
     ))
     if first.id_reviewer != user.id_user:
         db.add(Notification(
             id_user=first.id_reviewer, id_rpd=rpd_id,
-            message="Вам на согласование поступила РПД",
+            message=f"РПД {label} поступила вам на согласование (этап 1 из {len(route)}). Автор: {rpd.author.full_name}",
         ))
     await db.commit()
     return {"detail": "РПД отправлена на согласование"}
@@ -1345,7 +1366,10 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
 
     result = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
-        .options(selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer))
+        .options(
+            selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer),
+            selectinload(Rpd.discipline),
+        )
     )
     rpd = result.scalar_one_or_none()
     if not rpd:
@@ -1362,6 +1386,7 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
     current.reviewed_at = now
     current.comment = data.comment
     stage_name = current.reviewer.full_name if current.reviewer else "Согласующий"
+    label = _rpd_label(rpd)
 
     just_approved = False
     if data.action == "approve":
@@ -1376,7 +1401,7 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
             ))
             db.add(Notification(
                 id_user=next_step.id_reviewer, id_rpd=rpd_id,
-                message="Вам на согласование поступила РПД",
+                message=f"РПД {label} поступила вам на согласование (этап {route.index(next_step) + 1} из {len(route)}, предыдущий согласовал {user.full_name})",
             ))
         else:
             rpd.status = "Согласовано"
@@ -1391,10 +1416,15 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
         comment=data.comment, reviewed_at=now,
     ))
 
-    status_text = "согласована" if data.action == "approve" else "возвращена на доработку"
-    msg = f"РПД {status_text}"
+    if data.action == "approve":
+        if just_approved:
+            msg = f"РПД {label} полностью согласована"
+        else:
+            msg = f"Этап согласования РПД {label} пройден ({user.full_name}), ожидается следующий согласующий"
+    else:
+        msg = f"РПД {label} возвращена на доработку ({user.full_name})"
     if data.comment:
-        msg += f": {data.comment}"
+        msg += f". Комментарий: {data.comment}"
     db.add(Notification(id_user=rpd.id_author, id_rpd=rpd_id, message=msg))
     if just_approved:
         from app.services.dictionary_service import harvest_rpd
@@ -1407,7 +1437,9 @@ async def set_approval_route(
     rpd_id: int, data: ApprovalRouteUpdate,
     db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user),
 ):
-    result = await db.execute(select(Rpd).where(Rpd.id_rpd == rpd_id))
+    result = await db.execute(
+        select(Rpd).where(Rpd.id_rpd == rpd_id).options(selectinload(Rpd.discipline))
+    )
     rpd = result.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404)
@@ -1442,7 +1474,7 @@ async def set_approval_route(
             ))
             db.add(Notification(
                 id_user=first.id_reviewer, id_rpd=rpd_id,
-                message="Маршрут согласования был изменён, РПД ожидает вашего согласования",
+                message=f"Маршрут согласования изменён — РПД {_rpd_label(rpd)} ожидает вашего согласования",
             ))
 
     await db.commit()

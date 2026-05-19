@@ -154,9 +154,9 @@ export function DirectionsContent() {
         style={adminSearch(360)}
       />
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        <FilterChip label="Все" count={counts.all} active={profileFilter === "all"} onClick={() => setProfileFilter("all")} />
-        <FilterChip label="С профилем" count={counts.with} active={profileFilter === "with"} onClick={() => setProfileFilter(prev => prev === "with" ? "all" : "with")} />
-        <FilterChip label="Без профиля" count={counts.without} active={profileFilter === "without"} onClick={() => setProfileFilter(prev => prev === "without" ? "all" : "without")} />
+        <FilterChip label="Все" count={loading ? undefined : counts.all} active={profileFilter === "all"} onClick={() => setProfileFilter("all")} />
+        <FilterChip label="С профилем" count={loading ? undefined : counts.with} active={profileFilter === "with"} onClick={() => setProfileFilter(prev => prev === "with" ? "all" : "with")} />
+        <FilterChip label="Без профиля" count={loading ? undefined : counts.without} active={profileFilter === "without"} onClick={() => setProfileFilter(prev => prev === "without" ? "all" : "without")} />
       </div>
       <span style={{ marginLeft: "auto", fontSize: 12, color: T.textMuted }}>
         {filtered.length} {filtered.length === items.length ? "" : `из ${items.length}`}

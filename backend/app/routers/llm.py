@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
@@ -11,7 +11,8 @@ from app.models import (
     RpdLearningOutcome, CompetencyIndicator,
 )
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
-from app.services.llm_service import generate_section, extract_text_from_file
+from app.services.llm_service import generate_section, extract_text_from_file, CONTEXT_CHAR_LIMIT
+from app.services.approved_context import approved_rpd_example
 from app.services.structured_generation import (
     parse_json_array,
     apply_content_sections,
@@ -76,11 +77,13 @@ async def generate(
                     lines.append(f"  {code} ({comp_code}): {desc}")
             extra_context = "\n".join(lines) + "\n\n" + extra_context
 
+    context_sources: list[str] = []
+
     sections_res = await db.execute(
         select(UploadedDocumentSection, UploadedDocument)
         .join(UploadedDocument, UploadedDocument.id_document == UploadedDocumentSection.id_document)
         .where(UploadedDocumentSection.section_key == data.section)
-        .where(or_(UploadedDocument.id_rpd == rpd_id, UploadedDocument.id_rpd.is_(None)))
+        .where(UploadedDocument.id_rpd == rpd_id)
         .order_by(UploadedDocumentSection.created_at.desc())
         .limit(5)
     )
@@ -90,21 +93,25 @@ async def generate(
         examples = []
         for chunk, doc in section_rows:
             examples.append(f"--- Пример этого же раздела из «{doc.filename}» ---\n{chunk.content}")
-        extra_context += "\n\n" + "\n\n".join(examples)
+            context_sources.append(f"Документ: {doc.filename} (раздел)")
+        extra_context += ("\n\n" if extra_context.strip() else "") + "\n\n".join(examples)
     else:
         docs_to_use = list(rpd.uploaded_documents or [])
-        global_docs_res = await db.execute(
-            select(UploadedDocument).where(UploadedDocument.id_rpd.is_(None))
-        )
-        docs_to_use.extend(global_docs_res.scalars().all())
         if docs_to_use:
             doc_texts = []
             for doc in docs_to_use[:5]:
                 text = await extract_text_from_file(doc.file_path)
                 if text:
                     doc_texts.append(f"--- {doc.filename} ---\n{text}")
+                    context_sources.append(f"Документ: {doc.filename} (целиком)")
             if doc_texts:
-                extra_context += "\n\n" + "\n\n".join(doc_texts)
+                extra_context += ("\n\n" if extra_context.strip() else "") + "\n\n".join(doc_texts)
+
+    approved = await approved_rpd_example(db, rpd, data.section)
+    if approved:
+        approved_block, approved_src = approved
+        extra_context += ("\n\n" if extra_context.strip() else "") + approved_block
+        context_sources.append(approved_src)
 
     prompt_row = (await db.execute(
         select(LlmPrompt).where(LlmPrompt.section_key == data.section)
@@ -173,6 +180,7 @@ async def generate(
         model_name=gen["model"],
         tokens_used=gen["tokens_used"],
         generation_time_ms=gen["generation_time_ms"],
+        context_sources="\n".join(context_sources) or None,
     )
     db.add(log)
     await db.commit()
@@ -215,6 +223,9 @@ async def generate(
         model=gen["model"],
         tokens_used=gen["tokens_used"],
         structural_created=structural_created,
+        context_chars=min(len(extra_context), CONTEXT_CHAR_LIMIT),
+        context_limit=CONTEXT_CHAR_LIMIT,
+        context_sources=context_sources,
     )
 
 

@@ -1,5 +1,5 @@
 import { T, F } from "../../styles/index.js";
-import { EyeIcon, PencilIcon, SplitIcon, SparkleIcon } from "../../components/icons.jsx";
+import { EyeIcon, PencilIcon, SplitIcon, SparkleIcon, UploadIcon } from "../../components/icons.jsx";
 import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from "./constants.js";
 
 export const SIDEBAR_COLLAPSED_W = 38;
@@ -11,6 +11,7 @@ export function Sidebar({
   isCollapsed,
   generating,
   onToggleMode, onOpenPair, onGoTo, onOpenMeta, onAutoFillAll,
+  onOpenDocs, docsCount = 0,
   onExpand,
 }) {
 
@@ -113,7 +114,22 @@ export function Sidebar({
       </button>;
     })}</div>
 
-    {onAutoFillAll && isEdit && canEdit && <div style={{ padding: 10, borderTop: "1px solid " + T.border, flexShrink: 0 }}>
+    {onAutoFillAll && isEdit && canEdit && <div style={{ padding: 10, borderTop: "1px solid " + T.border, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
+      {onOpenDocs && <button
+        onClick={onOpenDocs}
+        title="Документы-контекст для автогенерации (в печатную форму не попадают)"
+        style={{
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+          width: "100%", padding: "7px 12px",
+          border: "1px solid " + T.border,
+          borderRadius: 5,
+          background: T.surface,
+          color: T.text,
+          fontSize: 12, fontWeight: 600, fontFamily: F,
+          cursor: "pointer",
+          whiteSpace: "nowrap",
+        }}
+      ><UploadIcon /> Документы для LLM{docsCount > 0 ? ` (${docsCount})` : ""}</button>}
       <button
         onClick={onAutoFillAll}
         disabled={!!generating}
