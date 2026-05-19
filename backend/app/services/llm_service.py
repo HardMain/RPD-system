@@ -181,6 +181,7 @@ async def generate_section(
     self_study_hours: int = 0,
     extra_context: str = "",
     semesters_plan: str = "",
+    assessment_tools: str = "",
     user_prompt_template_override: str | None = None,
     system_prompt_override: str | None = None,
 ) -> dict:
@@ -195,6 +196,7 @@ async def generate_section(
         "practice_hours": practice_hours, "lab_hours": lab_hours,
         "self_study_hours": self_study_hours,
         "semesters_plan": semesters_plan,
+        "assessment_tools": assessment_tools,
     })
     prompt = prompt_template.format_map(fmt_vars)
     if extra_context:

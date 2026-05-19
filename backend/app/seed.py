@@ -17,6 +17,7 @@ from app.models import (
 from app.models.dictionary import DictionaryEntry
 from app.services.bup_parser import parse_bup_xls
 from app.services.bup_importer import import_parsed_bup
+from app.routers.rpd import _autofill_outcomes_from_bup_disciplines, _backfill_outcome_snapshots
 
 SEED_BUPS_DIR = Path(__file__).resolve().parent.parent / "seed_data" / "bups"
 SEED_BUP_FILES = [
@@ -151,10 +152,27 @@ DEFAULT_LLM_PROMPTS: list[dict] = [
         "order_index": 4,
         "description": "JSON: результаты обучения, привязанные к индикаторам компетенций.",
         "user_prompt_template": (
-            "Сгенерируй результаты обучения по дисциплине, привязанные к индикаторам компетенций.\n"
+            "Сгенерируй раздел «Планируемые результаты обучения по дисциплине» — "
+            "результаты, привязанные к индикаторам достижения компетенций.\n"
             "Дисциплина: {discipline}\nНаправление: {direction}\n\n"
-            "Если в дополнительных материалах есть пример того же раздела по другой дисциплине — "
-            "повтори его стиль формулировок и подбор средств оценки. Подставляй содержание под новую дисциплину.\n\n"
+            "Приоритет источников:\n"
+            "1. Если в дополнительных материалах есть пример этого же раздела (загруженный документ) — "
+            "повтори его структуру, стиль формулировок и подбор средств оценки, подставив содержание под эту дисциплину.\n"
+            "2. Иначе — используй пример из согласованной РПД-образца, если он передан.\n"
+            "3. Если ни того, ни другого нет — действуй строго по правилам ниже: в реальных РПД "
+            "(а значит и в загруженных/архивных) именно такая структура.\n\n"
+            "Правила структуры (обязательны при отсутствии примера):\n"
+            "- Если в справочных материалах перечислены индикаторы компетенций дисциплины — заполни "
+            "КАЖДЫЙ из них, по одному объекту JSON на индикатор, сохраняя его indicator_code "
+            "точь-в-точь. Не пропускай, не объединяй и не добавляй лишних.\n"
+            "- Если индикаторы не заданы — сам подбери компетенции, подходящие по смыслу дисциплины и "
+            "направления, и для КАЖДОЙ компетенции сформируй ровно 3 индикатора: "
+            "ИД-1<КОД> «Знает…», ИД-2<КОД> «Умеет…», ИД-3<КОД> «Владеет…».\n"
+            "- outcome_text — конкретная формулировка под эту дисциплину: для ИД-1 начинается со "
+            "слова «Знает», для ИД-2 — «Умеет», для ИД-3 — «Владеет».\n"
+            "- assessment_tool выбирай ТОЛЬКО из списка ниже. Свою формулировку допускается писать "
+            "лишь если ни одно средство из списка не подходит по смыслу.\n\n"
+            "Доступные средства оценки: {assessment_tools}\n\n"
             "Формат ответа — строго JSON массив без пояснений до/после:\n"
             "[{{\"indicator_code\": \"ИД-1ОК-1\", \"outcome_text\": \"...\", \"assessment_tool\": \"...\"}}]"
         ),
@@ -431,6 +449,7 @@ _CATALOG_MARKERS: dict[str, str] = {
     "software": "Операционные системы",
     "databases": "Полнотекстовая",
     "literature_electronic": "ЭБС «Лань»",
+    "learning_outcomes": "ровно 3 индикатора",
 }
 
 
@@ -1224,6 +1243,18 @@ async def _seed_demo_data():
                          message=f"РПД «{d_kg.name}» ({rpd2.academic_year}) возвращена на доработку ({head.full_name})", is_read=True),
         ])
 
+        await db.flush()
+        for r, bd in rpd_bd_pairs:
+            await _autofill_outcomes_from_bup_disciplines(r, [bd.id_bup_discipline], db)
+
+        await db.flush()
+        seed_los = (await db.execute(
+            select(RpdLearningOutcome)
+            .where(RpdLearningOutcome.id_rpd.in_([r.id_rpd for r, _ in rpd_bd_pairs]))
+            .options(selectinload(RpdLearningOutcome.indicator).selectinload(CompetencyIndicator.competency))
+        )).scalars().all()
+        _backfill_outcome_snapshots(seed_los)
+
         await db.commit()
         print("✅ Seed data created successfully")
 
@@ -1302,6 +1333,7 @@ async def seed_test_samples():
             return len(bd.semesters_data or [])
 
         new_rpds: list[Rpd] = []
+        outcome_targets: list[tuple[Rpd, list[int]]] = []
 
         for bup in bups_full:
             single = next((bd for bd in bup.disciplines if sem_count(bd) == 1), None)
@@ -1320,6 +1352,7 @@ async def seed_test_samples():
                 _fill_rpd_link_snapshot(link, single)
                 db.add(link)
                 new_rpds.append(rpd)
+                outcome_targets.append((rpd, [single.id_bup_discipline]))
             if multi:
                 rpd = Rpd(
                     id_discipline=multi.id_discipline,
@@ -1334,6 +1367,7 @@ async def seed_test_samples():
                 _fill_rpd_link_snapshot(link, multi)
                 db.add(link)
                 new_rpds.append(rpd)
+                outcome_targets.append((rpd, [multi.id_bup_discipline]))
 
         disc_to_bds: dict[int, list[BupDiscipline]] = defaultdict(list)
         for bup in bups_full:
@@ -1357,6 +1391,7 @@ async def seed_test_samples():
                 _fill_rpd_link_snapshot(link, bd)
                 db.add(link)
             new_rpds.append(rpd)
+            outcome_targets.append((rpd, [bd.id_bup_discipline for bd in cross_bd_list]))
 
         manual_disc_one = await _get_or_create_discipline_by_name(db, "Тестовая ручная дисциплина (1 семестр)")
         rpd_manual_one = Rpd(
@@ -1425,6 +1460,10 @@ async def seed_test_samples():
                 db.add(RpdApprovalRoute(
                     id_rpd=rpd.id_rpd, step_order=0, id_reviewer=head_uid, status="waiting",
                 ))
+
+        await db.flush()
+        for rpd, bd_ids in outcome_targets:
+            await _autofill_outcomes_from_bup_disciplines(rpd, bd_ids, db)
 
         await db.commit()
         print(f"✅ Seeded {len(new_rpds)} test RPD samples + {len(bups_full)} BUPs")

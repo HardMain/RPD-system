@@ -334,7 +334,9 @@ async def apply_material_tech(db: AsyncSession, rpd_id: int, items: list[dict]) 
     return created
 
 
-async def apply_learning_outcomes(db: AsyncSession, rpd_id: int, items: list[dict]) -> int:
+async def apply_learning_outcomes(
+    db: AsyncSession, rpd_id: int, items: list[dict], structural: bool = True
+) -> int:
     candidate_codes = [
         (it, it["indicator_code"].strip())
         for it in items
@@ -356,6 +358,39 @@ async def apply_learning_outcomes(db: AsyncSession, rpd_id: int, items: list[dic
 
     if not resolved:
         return 0
+
+    if not structural:
+        existing_res = await db.execute(
+            select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id)
+        )
+        existing = existing_res.scalars().all()
+        by_ind_id = {lo.id_indicator: lo for lo in existing if lo.id_indicator is not None}
+        by_code: dict[str, RpdLearningOutcome] = {}
+        for lo in existing:
+            c = (lo.indicator_code or "").strip().lower()
+            if c and c not in by_code:
+                by_code[c] = lo
+        updated = 0
+        for item, indicator in resolved:
+            lo = by_ind_id.get(indicator.id_indicator) or by_code.get(
+                (indicator.code or "").strip().lower()
+            )
+            if lo is None:
+                continue
+            text = (item.get("outcome_text") or "").strip()
+            tool = (item.get("assessment_tool") or "").strip()
+            changed = False
+            if text and text != lo.outcome_text:
+                lo.outcome_text = text
+                changed = True
+            if tool and tool != lo.assessment_tool:
+                lo.assessment_tool = tool
+                changed = True
+            if changed:
+                updated += 1
+        if updated:
+            await db.commit()
+        return updated
 
     await db.execute(delete(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id))
     await db.flush()

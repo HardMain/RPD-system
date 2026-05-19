@@ -178,9 +178,40 @@ def build_context(rpd, bd=None, link=None) -> dict:
         "semesters": workload_semesters,
     }
 
+    def _bd_indicator_ids(bdisc) -> set[int]:
+        out: set[int] = set()
+        for bdc in (bdisc.competencies or []):
+            comp = bdc.competency
+            if comp:
+                for ci in (comp.indicators or []):
+                    out.add(ci.id_indicator)
+        return out
+
+    bound_bds = [
+        l.bup_discipline for l in (rpd.bup_links or [])
+        if l.bup_discipline is not None
+    ]
+    selected_inds: set[int] | None = None
+    all_bound_inds: set[int] = set()
+    if bd is not None and len(bound_bds) > 1:
+        selected_inds = _bd_indicator_ids(bd)
+        for b in bound_bds:
+            all_bound_inds |= _bd_indicator_ids(b)
+
+    def _lo_visible(lo) -> bool:
+        if selected_inds is None:
+            return True
+        if lo.id_indicator is None:
+            return True
+        if lo.id_indicator in selected_inds:
+            return True
+        return lo.id_indicator not in all_bound_inds
+
     learning_outcomes = []
     seen_keys: set[tuple] = set()
     for lo in (rpd.learning_outcomes or []):
+        if not _lo_visible(lo):
+            continue
         ind = lo.indicator if lo.id_indicator is not None else None
         comp = ind.competency if ind else None
         if lo.id_indicator is not None:

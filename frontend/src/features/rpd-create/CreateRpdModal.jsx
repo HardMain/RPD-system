@@ -459,12 +459,11 @@ export function CreateRpdModal({ onClose, onCreated }) {
             Дисциплина <span style={{ color: T.red }}>*</span>
           </label>
           <div key={errorPulse} className={flashField("bupDiscipline") ? "err-flash" : ""} style={{ borderRadius: 4 }} title="Обязательное поле">
-            <Dropdown
-              value={discId ?? ""}
-              options={disciplines.map(d => ({ value: d.id_discipline, label: d.name }))}
-              onChange={v => setDiscId(v === "" ? null : v)}
-              placeholder="— не указано —"
-              clearLabel="— не указано —"
+            <DiscSearchSelect
+              disciplines={disciplines}
+              value={discId}
+              onChange={v => setDiscId(v ?? null)}
+              placeholder="Начните вводить название дисциплины"
             />
           </div>
           {disciplines.length === 0 && (
@@ -762,6 +761,97 @@ export function CreateRpdModal({ onClose, onCreated }) {
       onConfirm={() => { const idx = pendingDeleteSemIdx; setPendingDeleteSemIdx(null); performRemoveSemester(idx); }}
     />}
   </Modal>;
+}
+
+function DiscSearchSelect({ disciplines, value, onChange, placeholder }) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+
+  const selected = useMemo(
+    () => disciplines.find(d => d.id_discipline === value) || null,
+    [disciplines, value]
+  );
+
+  useEffect(() => {
+    if (selected) setQuery(prev => prev || selected.name);
+  }, [selected]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDocClick = (e) => {
+      if (wrapRef.current && wrapRef.current.contains(e.target)) return;
+      setOpen(false);
+    };
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return disciplines;
+    return disciplines.filter(d => (d.name || "").toLowerCase().includes(q));
+  }, [disciplines, query]);
+
+  const inputStyle = { width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6, fontSize: 13, fontFamily: F, boxSizing: "border-box", outline: "none" };
+
+  function pick(d) {
+    onChange(d.id_discipline);
+    setQuery(d.name);
+    setOpen(false);
+  }
+  function onType(v) {
+    setQuery(v);
+    if (value != null) onChange(null);
+    setOpen(true);
+  }
+
+  return <div ref={wrapRef} style={{ position: "relative" }}>
+    <input
+      value={query}
+      onChange={e => onType(e.target.value)}
+      onFocus={() => setOpen(true)}
+      placeholder={placeholder}
+      title="Обязательное поле"
+      style={inputStyle}
+    />
+    {open && (
+      <div style={{ position: "absolute", left: 0, right: 0, top: "100%", marginTop: 2, zIndex: 10, border: "1px solid " + T.border, borderRadius: 6, background: T.surface, boxShadow: "0 4px 14px rgba(0,0,0,.10)", maxHeight: 220, overflow: "auto" }}>
+        {value != null && (
+          <button
+            type="button"
+            onClick={() => { onChange(null); setQuery(""); setOpen(false); }}
+            style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 12px", border: "none", borderBottom: "1px solid " + T.borderLight, background: "transparent", cursor: "pointer", fontFamily: F, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}
+            onMouseEnter={e => e.currentTarget.style.background = T.bg}
+            onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+          >
+            — не указано —
+          </button>
+        )}
+        {filtered.length === 0 ? (
+          <div style={{ padding: 12, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>Ничего не найдено</div>
+        ) : filtered.map(d => {
+          const picked = d.id_discipline === value;
+          return <button
+            key={d.id_discipline}
+            type="button"
+            onClick={() => pick(d)}
+            style={{
+              display: "block", width: "100%", textAlign: "left",
+              padding: "8px 12px", border: "none", borderBottom: "1px solid " + T.borderLight,
+              background: picked ? T.accentLight : "transparent",
+              cursor: "pointer", fontFamily: F, fontSize: 13,
+              color: picked ? T.accent : T.text, fontWeight: picked ? 600 : 400,
+            }}
+            onMouseEnter={e => { if (!picked) e.currentTarget.style.background = T.bg; }}
+            onMouseLeave={e => { if (!picked) e.currentTarget.style.background = "transparent"; }}
+          >
+            {d.name}
+          </button>;
+        })}
+      </div>
+    )}
+  </div>;
 }
 
 function ModeButton({ active, onClick, children }) {

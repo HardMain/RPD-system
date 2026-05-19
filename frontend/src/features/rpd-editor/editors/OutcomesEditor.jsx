@@ -49,7 +49,7 @@ function compareOutcomeRows(a, b) {
 }
 
 export function OutcomesEditor() {
-  const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
+  const { rpd, rpdId, isEdit, canEdit, canManageSources, reload, setOutcomesVisibleIds } = useRpdEditor();
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -69,14 +69,18 @@ export function OutcomesEditor() {
   const reloadRows = useCallback(async () => {
     try {
       const r = await api.getOutcomesTable(rpdId, currentBdId);
-      setRows([...(r.data || [])].sort(compareOutcomeRows));
+      const data = [...(r.data || [])].sort(compareOutcomeRows);
+      setRows(data);
+      setOutcomesVisibleIds?.(data.map(x => x.id_outcome).filter(Boolean));
       setLoaded(true);
     } catch { setLoaded(true); }
-  }, [rpdId, currentBdId]);
+  }, [rpdId, currentBdId, setOutcomesVisibleIds]);
 
   useEffect(() => {
     reloadRows();
   }, [reloadRows]);
+
+  useEffect(() => () => setOutcomesVisibleIds?.(null), [setOutcomesVisibleIds]);
 
   const reloadRowsRef = useRef(reloadRows);
   useEffect(() => { reloadRowsRef.current = reloadRows; }, [reloadRows]);
@@ -183,6 +187,7 @@ export function OutcomesEditor() {
 
   const currentBd = bds.find(b => b.id_bup_discipline === currentBdId) || bds[0];
   const editable = isEdit && canEdit;
+  const structuralEditing = editable && (isManual || canManageSources);
 
   const wrap = { wordBreak: "normal", overflowWrap: "break-word" };
   return <div>
@@ -207,7 +212,9 @@ export function OutcomesEditor() {
 
     {rows.length === 0 && !isManual && (
       <div style={{ padding: 12, background: T.bg, borderRadius: 6, fontSize: 13, color: T.textMuted, lineHeight: 1.5 }}>
-        У выбранной БУП-дисциплины ({currentBd.code || "—"}, БУП «{currentBd.bup_name || "—"}») в базе нет привязанных компетенций или у её компетенций не заполнены индикаторы.{editable ? " Добавьте строки вручную или из базы кнопкой ниже." : ""}
+        В разделе 2 нет ни одной строки.{structuralEditing
+          ? " Добавьте компетенции из базы кнопкой ниже."
+          : " Состав компетенций подтягивается из БУП и редактируется сотрудниками УМУ."}
       </div>
     )}
 
@@ -233,10 +240,10 @@ export function OutcomesEditor() {
       <tbody ref={tbodyRef}>
         {rows.map((r, idx) => {
           const fromBase = !!r.id_indicator;
-          const codeEditable = editable && !fromBase;
+          const codeEditable = editable && (!fromBase || canManageSources);
           const descIsPlaceholder = isPlaceholderDescription(r.indicator_description);
           const descEditable = editable && (codeEditable || descIsPlaceholder);
-          const trProps = (editable && r.id_outcome)
+          const trProps = (structuralEditing && r.id_outcome)
             ? { "data-trash-row": "", "data-trash-id": String(r.id_outcome) }
             : {};
           return <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`} {...trProps}>
@@ -281,15 +288,21 @@ export function OutcomesEditor() {
       </tbody>
     </table>
     </div>
-    {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={deleteById} title="Удалить строку" />}
+    {structuralEditing && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={deleteById} title="Удалить строку" />}
     </div>
     )}
 
-    {editable && (
+    {structuralEditing && (
       <div style={{ marginTop: 8 }}>
         <CompetencyAdder
           onAdd={addManualRow}
+          bdId={currentBdId}
           existingIndicatorIds={new Set(rows.map(r => r.id_indicator).filter(Boolean))}
+          existingKeys={new Set(
+            rows
+              .map(r => `${(r.competency_code || "").trim().toLowerCase()}|${(r.indicator_code || "").trim().toLowerCase()}`)
+              .filter(k => k !== "|")
+          )}
         />
       </div>
     )}
@@ -337,16 +350,18 @@ function SnapshotTextarea({ value, onSave, placeholder, parent }) {
   />;
 }
 
-function CompetencyAdder({ onAdd, existingIndicatorIds }) {
+function CompetencyAdder({ onAdd, existingIndicatorIds, existingKeys, bdId }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [comps, setComps] = useState([]);
   const wrapRef = useRef(null);
   const existing = existingIndicatorIds || new Set();
+  const existingKeySet = existingKeys || new Set();
 
   useEffect(() => {
-    api.getCompetencies().then(r => setComps(r.data || [])).catch(() => setComps([]));
-  }, []);
+    const p = bdId ? api.getCompetenciesByBupDiscipline(bdId) : api.getCompetencies();
+    p.then(r => setComps(r.data || [])).catch(() => setComps([]));
+  }, [bdId]);
 
   useEffect(() => {
     if (!open) return;
@@ -357,8 +372,12 @@ function CompetencyAdder({ onAdd, existingIndicatorIds }) {
 
   const flat = useMemo(() => {
     const out = [];
+    const seen = new Set();
     for (const c of comps) {
       for (const ind of (c.indicators || [])) {
+        const key = `${(c.code || "").trim().toLowerCase()}|${(ind.code || "").trim().toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         out.push({
           id_indicator: ind.id_indicator,
           competency_code: c.code,
@@ -402,7 +421,8 @@ function CompetencyAdder({ onAdd, existingIndicatorIds }) {
             <div style={{ padding: 8, fontSize: 11, color: T.textMuted, fontStyle: "italic" }}>В базе ничего не нашлось.</div>
           )}
           {filtered.map(it => {
-            const already = existing.has(it.id_indicator);
+            const already = existing.has(it.id_indicator)
+              || existingKeySet.has(`${(it.competency_code || "").trim().toLowerCase()}|${(it.indicator_code || "").trim().toLowerCase()}`);
             return <button
               key={`${it.competency_code}|${it.id_indicator}`}
               type="button"

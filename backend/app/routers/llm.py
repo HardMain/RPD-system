@@ -4,11 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, user_can
 from app.models import (
     User, Rpd, Discipline, Direction, Bup, BupDiscipline, LlmGenerationLog,
     UploadedDocument, UploadedDocumentSection, RpdBupDiscipline, LlmPrompt,
-    RpdLearningOutcome, CompetencyIndicator,
+    RpdLearningOutcome, CompetencyIndicator, AssessmentTool,
 )
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
 from app.services.llm_service import generate_section, extract_text_from_file, CONTEXT_CHAR_LIMIT
@@ -58,6 +58,7 @@ async def generate(
     direc = bd.bup.direction if bd and bd.bup else None
 
     extra_context = data.context or ""
+    assessment_tools_str = ""
 
     if data.section == "learning_outcomes":
         lo_res = await db.execute(
@@ -76,6 +77,23 @@ async def generate(
                 if code:
                     lines.append(f"  {code} ({comp_code}): {desc}")
             extra_context = "\n".join(lines) + "\n\n" + extra_context
+
+        catalog = (await db.execute(
+            select(AssessmentTool.name).order_by(AssessmentTool.name)
+        )).scalars().all()
+        used = [
+            (lo.assessment_tool or "").strip()
+            for lo in lo_list
+            if (lo.assessment_tool or "").strip()
+        ]
+        seen: set[str] = set()
+        tools: list[str] = []
+        for name in [*(c.strip() for c in catalog if c), *used]:
+            key = name.lower()
+            if name and key not in seen:
+                seen.add(key)
+                tools.append(name)
+        assessment_tools_str = "; ".join(tools)
 
     context_sources: list[str] = []
 
@@ -169,6 +187,7 @@ async def generate(
         self_study_hours=(bd.self_study_hours if bd else 0) or 0,
         extra_context=extra_context,
         semesters_plan=semesters_plan_text,
+        assessment_tools=assessment_tools_str,
         user_prompt_template_override=prompt_row.user_prompt_template if prompt_row else None,
         system_prompt_override=prompt_row.system_prompt if prompt_row else None,
     )
@@ -211,7 +230,13 @@ async def generate(
             elif data.section == "material_tech":
                 structural_created = await apply_material_tech(db, rpd_id, items)
             elif data.section == "learning_outcomes":
-                structural_created = await apply_learning_outcomes(db, rpd_id, items)
+                outcomes_structural = (
+                    any(getattr(l, "is_manual", False) for l in rpd.bup_links)
+                    or user_can(user, "sources.manage")
+                )
+                structural_created = await apply_learning_outcomes(
+                    db, rpd_id, items, outcomes_structural
+                )
                 if structural_created:
                     from datetime import datetime, timezone
                     rpd.updated_at = datetime.now(timezone.utc)

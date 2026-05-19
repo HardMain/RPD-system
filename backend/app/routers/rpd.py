@@ -425,6 +425,27 @@ def _fill_outcome_snapshot(lo: RpdLearningOutcome, ind: CompetencyIndicator) -> 
     lo.competency_code = comp.code if comp else None
     lo.competency_name = comp.name if comp else None
 
+def _backfill_outcome_snapshots(outcomes) -> bool:
+    changed = False
+    for lo in outcomes:
+        ind = lo.indicator
+        if ind is None:
+            continue
+        comp = ind.competency
+        if not lo.indicator_code and ind.code:
+            lo.indicator_code = ind.code
+            changed = True
+        if not lo.indicator_description and ind.description:
+            lo.indicator_description = ind.description
+            changed = True
+        if not lo.competency_code and comp and comp.code:
+            lo.competency_code = comp.code
+            changed = True
+        if not lo.competency_name and comp and comp.name:
+            lo.competency_name = comp.name
+            changed = True
+    return changed
+
 async def _attach_rpd_to_bup_disciplines(
     rpd: Rpd, db: AsyncSession, *, bup_discipline_ids: list[int] | None = None,
 ) -> None:
@@ -1187,6 +1208,38 @@ async def get_outcomes_table(
     if not rpd:
         raise HTTPException(status_code=404)
 
+    snapshots_backfilled = _backfill_outcome_snapshots(rpd.learning_outcomes)
+
+    bind_res = await db.execute(
+        select(RpdBupDiscipline.id_bup_discipline)
+        .where(RpdBupDiscipline.id_rpd == rpd_id)
+        .where(RpdBupDiscipline.id_bup_discipline.is_not(None))
+    )
+    bound_bd_ids = [b for (b,) in bind_res.all()]
+
+    selected_inds: set[int] | None = None
+    all_bound_inds: set[int] = set()
+    if bd_id is not None and len(bound_bd_ids) > 1:
+        async def _binding_indicators(ids):
+            r = await db.execute(
+                select(CompetencyIndicator.id_indicator)
+                .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
+                .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+                .where(BupDisciplineCompetency.id_bup_discipline.in_(ids))
+            )
+            return {i for (i,) in r.all()}
+        selected_inds = await _binding_indicators([bd_id])
+        all_bound_inds = await _binding_indicators(bound_bd_ids)
+
+    def _visible(lo) -> bool:
+        if selected_inds is None:
+            return True
+        if lo.id_indicator is None:
+            return True
+        if lo.id_indicator in selected_inds:
+            return True
+        return lo.id_indicator not in all_bound_inds
+
     rows: list[OutcomeRowOut] = []
     seen_keys: set[tuple] = set()
     sorted_outcomes = sorted(
@@ -1197,6 +1250,8 @@ async def get_outcomes_table(
         ),
     )
     for lo in sorted_outcomes:
+        if not _visible(lo):
+            continue
         ind = lo.indicator
         comp = ind.competency if ind else None
         if lo.id_indicator is not None:
@@ -1218,6 +1273,8 @@ async def get_outcomes_table(
             outcome_text=lo.outcome_text,
             assessment_tool=lo.assessment_tool,
         ))
+    if snapshots_backfilled:
+        await db.commit()
     return rows
 
 @router.post("/{rpd_id}/outcomes/upsert", response_model=LearningOutcomeOut)
@@ -1267,8 +1324,7 @@ async def upsert_outcome(
     )
     lo = res.scalar_one()
     ind = lo.indicator
-    if ind is not None:
-        _fill_outcome_snapshot(lo, ind)
+    _backfill_outcome_snapshots([lo])
     rpd_row = await db.get(Rpd, rpd_id)
     if rpd_row:
         rpd_row.updated_at = datetime.now(timezone.utc)

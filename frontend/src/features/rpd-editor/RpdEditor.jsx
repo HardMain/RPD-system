@@ -142,6 +142,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const [pdfStale, setPdfStale] = useState(false);
 
   const [pdfBdId, setPdfBdId] = useState(null);
+  const [outcomesVisibleIds, setOutcomesVisibleIds] = useState(null);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1.1);
@@ -783,10 +784,21 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     literature_methodical_self_study: "Учебно-методическое обеспечение самостоятельной работы студента",
   };
   const _TEXT_CLEAR = new Set(["goals", "objects", "requirements", "educational_tech", "methodical_recommendations"]);
+  const canManageSources = api.userCan(user, "sources.manage");
+  const outcomesStructural = (rpd.bup_disciplines || []).some(b => b.is_manual) || canManageSources;
 
   function _clearOps(key) {
     const lit = rpd.literature || [];
-    if (key === "learning_outcomes") return (rpd.learning_outcomes || []).map(o => () => api.deleteOutcome(o.id_outcome));
+    if (key === "learning_outcomes") {
+      const allLos = rpd.learning_outcomes || [];
+      const los = outcomesVisibleIds
+        ? allLos.filter(o => outcomesVisibleIds.includes(o.id_outcome))
+        : allLos;
+      if (outcomesStructural) return los.map(o => () => api.deleteOutcome(o.id_outcome));
+      return los
+        .filter(o => (o.outcome_text || "").trim() || (o.assessment_tool || "").trim())
+        .map(o => () => api.upsertOutcome(rpdId, { id_outcome: o.id_outcome, id_indicator: o.id_indicator || null, outcome_text: "", assessment_tool: "" }));
+    }
     if (key === "content") return (rpd.sections || []).map(s => () => api.deleteSection(s.id_section));
     if (key === "topics_practice") return (rpd.topics || []).filter(t => t.topic_type === "practice").map(t => () => api.deleteTopic(t.id_topic));
     if (key === "topics_lab") return (rpd.topics || []).filter(t => t.topic_type === "lab").map(t => () => api.deleteTopic(t.id_topic));
@@ -850,7 +862,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     requestAnimationFrame(() => requestAnimationFrame(() => { sidebarLockRef.current = false; }));
   }
 
-  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField, clearSection, clearCount };
+  const ctxValue = { rpd, rpdId, isEdit, canEdit, canManageSources, generating, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField, clearSection, clearCount, setOutcomesVisibleIds };
 
   return <RpdEditorProvider value={ctxValue}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
