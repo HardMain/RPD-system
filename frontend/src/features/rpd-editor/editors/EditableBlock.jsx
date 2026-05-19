@@ -4,12 +4,14 @@ import { Btn } from "../../../components/Btn.jsx";
 import { ChevronDownIcon, ChevronUpIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { ClearSectionBtn } from "../ClearSectionBtn.jsx";
+import { GenPlaque } from "../GenPlaque.jsx";
+import { GenButton } from "../GenButton.jsx";
 
 const COLLAPSED_HEIGHT = 110;
 const DEFAULT_PLACEHOLDER = "Введите текст для заполнения раздела…";
 
 export function EditableBlock({ skey, label, fieldKey, placeholder }) {
-  const { isEdit, canEdit, generating, autoFill, editTexts, setEditTexts, saveField } = useRpdEditor();
+  const { isEdit, canEdit, generating, genResult, genBusy, autoFill, editTexts, setEditTexts, saveField } = useRpdEditor();
   const val = editTexts[fieldKey] || "";
   const editable = isEdit && canEdit;
   const ph = placeholder || DEFAULT_PLACEHOLDER;
@@ -29,7 +31,7 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
     } else {
       el.style.height = "";
     }
-  }, [expanded, val, editable, generating]);
+  }, [expanded, val, editable, generating, genResult]);
 
   useLayoutEffect(() => {
     if (expanded) { setOverflows(true); return; }
@@ -40,7 +42,7 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
     const ro = new ResizeObserver(recompute);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [val, expanded, editable, generating]);
+  }, [val, expanded, editable, generating, genResult]);
 
   const showToggle = overflows && generating !== skey;
 
@@ -50,17 +52,12 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
       {editable && (
         <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
           <ClearSectionBtn skey={skey} />
-          <Btn small primary onClick={() => autoFill(skey)} disabled={!!generating}>
-            {generating === skey ? "Генерация..." : "Сгенерировать"}
-          </Btn>
+          <GenButton skey={skey} />
         </div>
       )}
     </div>
-    {generating === skey ? (
-      <div style={{ padding: 20, textAlign: "center", color: T.accent, fontSize: 13, border: "1px dashed " + T.accent, borderRadius: 6, background: T.accentLight }}>
-        Генерация содержания с помощью LLM...
-      </div>
-    ) : editable ? (
+    <GenPlaque skey={skey}>
+    {editable ? (
       <div style={{ position: "relative" }}>
         <textarea
           ref={taRef}
@@ -116,6 +113,7 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
         {showToggle && <CornerToggleButton expanded={expanded} onClick={() => setExpanded(e => !e)} />}
       </div>
     )}
+    </GenPlaque>
   </div>;
 }
 

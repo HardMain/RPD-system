@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -35,6 +35,7 @@ _TOPIC_SECTION_KEYS = {"topics_practice": "practice", "topics_lab": "lab"}
 async def generate(
     rpd_id: int,
     data: LlmGenerateRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -205,7 +206,8 @@ async def generate(
     await db.commit()
 
     structural_created = 0
-    if gen["model"] != "fallback":
+    cancelled = await request.is_disconnected()
+    if gen["model"] != "fallback" and not cancelled:
         items = parse_json_array(gen["generated_text"])
         if items:
             if data.section == "content":

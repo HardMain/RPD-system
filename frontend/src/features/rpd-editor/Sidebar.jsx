@@ -1,6 +1,7 @@
 import { T, F } from "../../styles/index.js";
 import { EyeIcon, PencilIcon, SplitIcon, SparkleIcon, UploadIcon } from "../../components/icons.jsx";
-import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION } from "./constants.js";
+import { SIDEBAR_KEYS, SUB_KEYS, SEC_LABELS, NON_PDF_KEYS, PARENT_SECTION, GEN_SEC_KEY } from "./constants.js";
+import { Spinner } from "../../components/Spinner.jsx";
 
 export const SIDEBAR_COLLAPSED_W = 38;
 
@@ -9,7 +10,7 @@ export function Sidebar({
   validationErrors, activeSec,
   hasLabTopics, hasPracticeTopics,
   isCollapsed,
-  generating,
+  generating, genBusy, genBatch, onCancelGen,
   onToggleMode, onOpenPair, onGoTo, onOpenMeta, onAutoFillAll,
   onOpenDocs, docsCount = 0,
   onExpand,
@@ -81,7 +82,7 @@ export function Sidebar({
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >ⓘ Свойства РПД</button>}
 
-    <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{SIDEBAR_KEYS.map(k => {
+    <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{(() => { const genSec = generating ? GEN_SEC_KEY[generating] : null; return SIDEBAR_KEYS.map(k => {
 
       if (!isEdit && NON_PDF_KEYS.has(k)) return null;
 
@@ -93,26 +94,29 @@ export function Sidebar({
       const parentKey = PARENT_SECTION[k];
       const parentCollapsed = isEdit && parentKey && isCollapsed && isCollapsed(parentKey);
       const isActive = activeSec === k;
-      const baseBg = isActive ? T.accentLight : (parentCollapsed ? T.bg : "transparent");
-      const baseColor = hasErr ? T.red : isActive ? T.accent : parentCollapsed ? T.textMuted : isSub ? T.textMuted : T.text;
-      return <button key={k} onClick={() => onGoTo(k)} style={{
+      const isGen = !!genSec && genSec === k;
+      const accentLeft = hasErr ? "3px solid " + T.red : (isGen || isActive) ? "3px solid " + T.accent : "3px solid transparent";
+      const baseBg = isGen ? T.accentLight : isActive ? T.accentLight : (parentCollapsed ? T.bg : "transparent");
+      const baseColor = hasErr ? T.red : (isGen || isActive) ? T.accent : parentCollapsed ? T.textMuted : isSub ? T.textMuted : T.text;
+      return <button key={k} onClick={() => onGoTo(k)} title={isGen ? "Идёт генерация этого раздела…" : undefined} style={{
         display: "flex", width: "100%",
         padding: isSub ? "6px 12px 6px 28px" : "8px 12px",
         border: "none",
-        borderLeft: hasErr ? "3px solid " + T.red : isActive ? "3px solid " + T.accent : "3px solid transparent",
+        borderLeft: accentLeft,
         background: baseBg,
         cursor: "pointer", fontSize: isSub ? 10 : 11, fontFamily: F,
         fontStyle: isSub ? "italic" : "normal",
-        fontWeight: isActive ? 700 : 400,
+        fontWeight: (isGen || isActive) ? 700 : 400,
         color: baseColor,
         alignItems: "center", gap: 6, boxSizing: "border-box", textAlign: "left",
       }}>
         {isSub && <span style={{ color: T.textLight, flexShrink: 0 }}>›</span>}
         <span style={{ flex: 1, textAlign: "left", lineHeight: 1.3, wordBreak: "break-word" }}>{SEC_LABELS[k]}</span>
-        {parentCollapsed && !hasErr && <span title="Раздел свёрнут — кликните, чтобы раскрыть" style={{ fontSize: 9, color: T.textLight, flexShrink: 0 }}>▸</span>}
-        {hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
+        {isGen && <Spinner size={11} />}
+        {!isGen && parentCollapsed && !hasErr && <span title="Раздел свёрнут — кликните, чтобы раскрыть" style={{ fontSize: 9, color: T.textLight, flexShrink: 0 }}>▸</span>}
+        {!isGen && hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
       </button>;
-    })}</div>
+    }); })()}</div>
 
     {onAutoFillAll && isEdit && canEdit && <div style={{ padding: 10, borderTop: "1px solid " + T.border, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
       {onOpenDocs && <button
@@ -130,22 +134,40 @@ export function Sidebar({
           whiteSpace: "nowrap",
         }}
       ><UploadIcon /> Документы для LLM{docsCount > 0 ? ` (${docsCount})` : ""}</button>}
-      <button
-        onClick={onAutoFillAll}
-        disabled={!!generating}
-        title="Последовательно сгенерировать содержание всех поддерживаемых разделов через LLM"
-        style={{
-          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-          width: "100%", padding: "7px 12px",
-          border: "1px solid transparent",
-          borderRadius: 5,
-          background: generating ? T.borderLight : T.accent,
-          color: generating ? T.textMuted : "#fff",
-          fontSize: 12, fontWeight: 600, fontFamily: F,
-          cursor: generating ? "default" : "pointer",
-          whiteSpace: "nowrap",
-        }}
-      ><SparkleIcon /> {generating ? "Генерация..." : "Сгенерировать всё"}</button>
+      {genBatch ? (
+        <button
+          onClick={onCancelGen}
+          title="Прекратить генерацию всех разделов: текущий раздел оборвётся, следующие не пойдут"
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            width: "100%", padding: "7px 12px",
+            border: "1px solid " + T.red,
+            borderRadius: 5,
+            background: T.surface,
+            color: T.red,
+            fontSize: 12, fontWeight: 600, fontFamily: F,
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+        >✕ Отменить генерацию</button>
+      ) : (
+        <button
+          onClick={onAutoFillAll}
+          disabled={genBusy}
+          title={genBusy ? "Идёт генерация раздела — дождитесь или отмените её" : "Последовательно сгенерировать содержание всех поддерживаемых разделов через LLM"}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+            width: "100%", padding: "7px 12px",
+            border: "1px solid transparent",
+            borderRadius: 5,
+            background: genBusy ? T.borderLight : T.accent,
+            color: genBusy ? T.textMuted : "#fff",
+            fontSize: 12, fontWeight: 600, fontFamily: F,
+            cursor: genBusy ? "default" : "pointer",
+            whiteSpace: "nowrap",
+          }}
+        ><SparkleIcon /> Сгенерировать всё</button>
+      )}
     </div>}
   </div>;
 }

@@ -38,6 +38,37 @@ export const SIDEBAR_KEYS = [...SEC_KEYS];
 
 export const NON_PDF_KEYS = new Set();
 
+export const LITERATURE_PRINTED_KEYS = [
+  "literature_printed_main",
+  "literature_printed_additional",
+  "literature_periodicals",
+  "literature_normative",
+  "literature_methodical_students",
+  "literature_methodical_self_study",
+];
+
+export const GEN_SEC_KEY = {
+  goals: "1.1",
+  objects: "1.2",
+  requirements: "1.3",
+  learning_outcomes: "2",
+  content: "4",
+  topics_practice: "4.1",
+  topics_lab: "4.2",
+  educational_tech: "5.1",
+  methodical_recommendations: "5.2",
+  literature_printed_main: "6.1",
+  literature_printed_additional: "6.1",
+  literature_periodicals: "6.1",
+  literature_normative: "6.1",
+  literature_methodical_students: "6.1",
+  literature_methodical_self_study: "6.1",
+  literature_electronic: "6.2",
+  databases: "6.3",
+  software: "6.4",
+  material_tech: "7",
+};
+
 export const PARENT_SECTION = {
   "1.1": "1", "1.2": "1", "1.3": "1",
   "2": "2",

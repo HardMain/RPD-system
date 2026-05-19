@@ -9,6 +9,7 @@ import { Btn } from "../../../components/Btn.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../EditorModals.jsx";
+import { GenPlaque } from "../GenPlaque.jsx";
 
 const fetchAssessmentToolSuggestions = async (q) => {
   const r = await api.getSuggestions("assessment_tool", { q });
@@ -190,7 +191,7 @@ export function OutcomesEditor() {
   const structuralEditing = editable && (isManual || canManageSources);
 
   const wrap = { wordBreak: "normal", overflowWrap: "break-word" };
-  return <div>
+  return <GenPlaque skey="learning_outcomes"><div>
     {bds.length > 1 && (
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <span style={{ fontSize: 12, color: T.textMuted, flexShrink: 0 }}>Дисциплина:</span>
@@ -314,7 +315,7 @@ export function OutcomesEditor() {
       onConfirm={async () => { const r = pendingDelete; setPendingDelete(null); await performDelete(r); }}
     />}
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
-  </div>;
+  </div></GenPlaque>;
 }
 
 async function fetchKind(kind, q, source_type) {

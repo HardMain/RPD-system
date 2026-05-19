@@ -1,10 +1,13 @@
 import re
 import time
+import asyncio
 import hashlib
 from openai import AsyncOpenAI
 from app.core.config import settings
 
 client = AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
+
+_llm_semaphore = asyncio.Semaphore(max(1, settings.LLM_MAX_CONCURRENCY))
 
 CONTEXT_CHAR_LIMIT = 12000
 WHOLE_DOC_CHAR_LIMIT = 8000
@@ -15,16 +18,33 @@ SYSTEM_PROMPT = """Ты — эксперт по составлению рабо�
 
 Тебе могут передать справочные материалы — это разнородные документы: образцы РПД по другим дисциплинам, методические пособия, учебники, выдержки по отдельным разделам. Они релевантны лишь частично: бери из них только то, что относится к формируемому разделу, остальное игнорируй. Не переноси текст дословно — адаптируй содержание под указанную дисциплину и направление.
 
-Правила оформления вывода:
-- Не пиши заголовок раздела (например, «1.1 Цели и задачи», «### 1.1...») — он уже есть в РПД.
-- Не используй markdown-разметку: ни «#», ни «**», ни обратных кавычек.
+Правила оформления вывода (КРИТИЧНО — соблюдай всегда, любая модель):
+- Вывод вставляется ДОСЛОВНО в готовый шаблон Word. Всё оформление (шрифт, размер, жирность, заголовки, отступы) уже задано в шаблоне. Возвращай ТОЛЬКО простой текст.
+- Категорически запрещена любая markdown-разметка и спецсимволы оформления: «#», «*», «**», «***», «_», «__», «~~», обратные кавычки «`», «>», таблицы «|». Не выделяй текст жирным или курсивом — весь текст одинаковый, обычный.
+- Маркированный список: каждый пункт с новой строки, начинается с «- » (дефис и пробел). Никаких «*», «•», «‣» в качестве маркера.
+- Нумерованный список — только если важен порядок: «1. », «2. »; иначе используй дефисы.
+- Не пиши заголовок раздела (например, «1.1 Цели и задачи», «### 1.1...») — он уже есть в РПД. Подзаголовки внутри текста, если нужны, — обычной строкой без символов разметки.
 - Не добавляй итоговый абзац-резюме («Таким образом, ...», «В заключение, ...»).
-- Если в дополнительных материалах есть пример этого же раздела для другой дисциплины — строго копируй его структуру: те же подзаголовки, тот же тип списка (маркированный/нумерованный/вложенный), та же средняя длина. Подставляй только содержание, релевантное новой дисциплине.
+- Если в дополнительных материалах есть пример этого же раздела для другой дисциплины — копируй его структуру (тот же тип списка через «- », та же средняя длина), подставляя содержание под новую дисциплину.
 - Если примера в материалах нет — используй стандартную для РПД структуру."""
 
 
 _MD_HEADER_RE = re.compile(r"^\s*#{1,6}\s+.+$", re.MULTILINE)
 _BOLD_LINE_RE = re.compile(r"^\s*\*{2,3}[^*\n]{1,120}\*{2,3}\s*$", re.MULTILINE)
+
+
+def _strip_markdown(text: str) -> str:
+    text = re.sub(r"(?m)^\s{0,3}#{1,6}\s*", "", text)
+    text = re.sub(r"\*\*\*([^*\n]+?)\*\*\*", r"\1", text)
+    text = re.sub(r"\*\*([^*\n]+?)\*\*", r"\1", text)
+    text = re.sub(r"___([^_\n]+?)___", r"\1", text)
+    text = re.sub(r"__([^_\n]+?)__", r"\1", text)
+    text = re.sub(r"~~([^~\n]+?)~~", r"\1", text)
+    text = re.sub(r"`([^`\n]+?)`", r"\1", text)
+    text = re.sub(r"(?m)^(\s*)[*+•‣–—]\s+", r"\1- ", text)
+    text = re.sub(r"(?m)^(\s*)-\s+", r"\1- ", text)
+    text = text.replace("**", "").replace("__", "").replace("***", "")
+    return text
 
 
 def _clean_llm_output(text: str) -> str:
@@ -44,7 +64,7 @@ def _clean_llm_output(text: str) -> str:
             text = rest.lstrip()
             continue
         break
-    text = re.sub(r"^#{1,6}\s+", "", text, flags=re.MULTILINE)
+    text = _strip_markdown(text)
     return text.strip()
 
 SECTION_PROMPTS = {
@@ -215,18 +235,24 @@ async def generate_section(
         if settings.LLM_API_KEY == "demo":
             raise Exception("Demo mode — using fallback")
 
-        response = await client.chat.completions.create(
-            model=settings.LLM_MODEL,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.7,
-            max_tokens=2000,
-        )
+        _fallbacks = [m.strip() for m in (settings.LLM_FALLBACK_MODELS or "").split(",") if m.strip()]
+        _models = list(dict.fromkeys([settings.LLM_MODEL, *_fallbacks]))
+        _extra = {"extra_body": {"models": _models}} if len(_models) > 1 else {}
+
+        async with _llm_semaphore:
+            response = await client.chat.completions.create(
+                model=settings.LLM_MODEL,
+                messages=[
+                    {"role": "system", "content": system_message},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.7,
+                max_tokens=2000,
+                **_extra,
+            )
         text = _clean_llm_output(response.choices[0].message.content)
         tokens = response.usage.total_tokens if response.usage else 0
-        model = settings.LLM_MODEL
+        model = getattr(response, "model", None) or settings.LLM_MODEL
     except Exception:
         fallback_tmpl = FALLBACK.get(section, "Раздел «{discipline}» — текст для заполнения.")
         text = fallback_tmpl.format(discipline=discipline, direction=direction)

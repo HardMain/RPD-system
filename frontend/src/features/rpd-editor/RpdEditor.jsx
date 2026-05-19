@@ -8,6 +8,8 @@ import { Spinner } from "../../components/Spinner.jsx";
 import { DownloadIcon } from "../../components/icons.jsx";
 
 import { SEC_KEYS, SIDEBAR_KEYS, PARENT_SECTION } from "./constants.js";
+import { GenPlaque } from "./GenPlaque.jsx";
+import { GenButton } from "./GenButton.jsx";
 import { PDF_PAGE_MAP_FALLBACK, scanPdfForSections } from "./pdfMap.js";
 import { RpdEditorProvider } from "./RpdEditorContext.jsx";
 import { Sidebar, SIDEBAR_COLLAPSED_W } from "./Sidebar.jsx";
@@ -115,6 +117,14 @@ function pdfRelevantSnapshot(r) {
 export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey = 0, onAfterSave, onOpenPair, user, onCloseTab, onExportPdf, onToggleMode, onBack, isActive = true }) {
   const [rpd, setRpd] = useState(null); const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(null);
+  const [genResult, setGenResult] = useState(null);
+  const [genAll, setGenAll] = useState(false);
+  const [genBatch, setGenBatch] = useState(false);
+  const genCancelRef = useRef(false);
+  const genSeqRef = useRef(0);
+  const genBatchRef = useRef(0);
+  const genAbortRef = useRef(null);
+  const genKeyRef = useRef(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
   const [showMeta, setShowMeta] = useState(false);
@@ -645,29 +655,129 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (ok && onAfterSave) onAfterSave();
   }
 
-  async function autoFill(key) {
-    setGenerating(key);
+  const GEN_RESULT_MS = 1300;
+  const GEN_MAX_ATTEMPTS = 3;
+  const GEN_RETRY_MS = 1200;
+  const _TEXT_FIELD_MAP = { goals: "goals", objects: "objects", requirements: "requirements", educational_tech: "educational_tech", methodical_recommendations: "methodical_recommendations" };
+
+  const _owns = (seq) => genSeqRef.current === seq;
+
+  function cancelGeneration() {
+    genCancelRef.current = true;
+    genSeqRef.current++;
+    genBatchRef.current++;
+    if (genAbortRef.current) { try { genAbortRef.current.abort(); } catch { } }
+    const k = genKeyRef.current;
+    setGenerating(null);
+    setGenAll(false);
+    setGenBatch(false);
+    if (k) {
+      setGenResult({ key: k, ok: false, reason: "cancelled" });
+      setTimeout(() => setGenResult(r => (r && r.key === k && r.reason === "cancelled" ? null : r)), 1400);
+    }
+  }
+
+  async function _attemptGenerate(key, seq) {
+    const controller = new AbortController();
+    genAbortRef.current = controller;
     try {
-      const res = await api.generateSection(rpdId, { section: key });
-      const text = res.data.generated_text;
-      const fieldMap = { goals: "goals", objects: "objects", requirements: "requirements", educational_tech: "educational_tech", methodical_recommendations: "methodical_recommendations" };
-      if (fieldMap[key]) {
-        setEditTexts(p => ({ ...p, [fieldMap[key]]: text }));
-        setTimeout(() => saveFieldFromValue(fieldMap[key], text), 0);
-      } else {
+      const res = await api.generateSection(rpdId, { section: key }, { signal: controller.signal });
+      if (genCancelRef.current || !_owns(seq)) return { ok: false, reason: "cancelled" };
+      const data = res.data || {};
+      const notFallback = data.model !== "fallback";
+      const fieldKey = _TEXT_FIELD_MAP[key];
+      if (fieldKey) {
+        const text = (data.generated_text || "").trim();
+        if (notFallback && text.length > 0) {
+          setEditTexts(p => ({ ...p, [fieldKey]: text }));
+          await saveFieldFromValue(fieldKey, text);
+          return { ok: true };
+        }
+        return { ok: false, reason: notFallback ? "empty" : "llm" };
+      }
+      if (notFallback && (data.structural_created || 0) > 0) {
         await load(true);
         if (savedTimeoutRef.current) clearTimeout(savedTimeoutRef.current);
         setSavedTick(t => t + 1);
         savedTimeoutRef.current = setTimeout(() => setSavedTick(0), 1500);
         if (onAfterSave) onAfterSave();
+        return { ok: true };
       }
-    } catch { } setGenerating(null);
+      return { ok: false, reason: notFallback ? "empty" : "llm" };
+    } catch {
+      return { ok: false, reason: genCancelRef.current ? "cancelled" : "llm" };
+    } finally {
+      if (genAbortRef.current === controller) genAbortRef.current = null;
+    }
+  }
+
+  async function runGenerate(key) {
+    const mySeq = ++genSeqRef.current;
+    genKeyRef.current = key;
+    setGenResult(null);
+    setGenerating(key);
+    let res = { ok: false, reason: "llm" };
+    for (let attempt = 1; attempt <= GEN_MAX_ATTEMPTS; attempt++) {
+      if (genCancelRef.current || !_owns(mySeq)) { res = { ok: false, reason: "cancelled" }; break; }
+      res = await _attemptGenerate(key, mySeq);
+      if (res.ok || res.reason === "cancelled" || !_owns(mySeq)) break;
+      if (attempt < GEN_MAX_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, GEN_RETRY_MS));
+        if (genCancelRef.current || !_owns(mySeq)) { res = { ok: false, reason: "cancelled" }; break; }
+      }
+    }
+    if (_owns(mySeq)) {
+      setGenerating(null);
+      setGenResult({ key, ok: res.ok, reason: res.reason });
+      await new Promise(r => setTimeout(r, GEN_RESULT_MS));
+      if (_owns(mySeq)) setGenResult(r => (r && r.key === key ? null : r));
+    }
+    return res;
+  }
+
+  async function autoFill(key) {
+    const myBatch = ++genBatchRef.current;
+    genCancelRef.current = false;
+    setGenAll(true);
+    try { await runGenerate(key); }
+    finally {
+      if (genBatchRef.current === myBatch) { setGenAll(false); genCancelRef.current = false; }
+    }
   }
 
   async function autoFillAll() {
-    const keys = ["goals", "objects", "requirements", "educational_tech", "methodical_recommendations"];
-    for (const k of keys) {
-      await autoFill(k);
+    const myBatch = ++genBatchRef.current;
+    genCancelRef.current = false;
+    setGenAll(true);
+    setGenBatch(true);
+    try {
+      const keys = ["goals", "objects", "requirements", "learning_outcomes", "content"];
+      if (practiceHoursTotal > 0) keys.push("topics_practice");
+      if (labHoursTotal > 0) keys.push("topics_lab");
+      keys.push("educational_tech", "methodical_recommendations", "literature_printed_main");
+      const lit = rpd.literature || [];
+      const optionalPrinted = [
+        "literature_printed_additional", "literature_periodicals", "literature_normative",
+        "literature_methodical_students", "literature_methodical_self_study",
+      ];
+      for (const sk of optionalPrinted) {
+        const st = _PRINTED_TYPE[sk];
+        if (st && lit.some(l => !l.url && l.source_type === st)) keys.push(sk);
+      }
+      if (electronicLiteratureCount > 0) keys.push("literature_electronic");
+      keys.push("databases", "software", "material_tech");
+      for (const k of keys) {
+        if (genCancelRef.current || genBatchRef.current !== myBatch) break;
+        let r = { reason: "" };
+        try { r = await runGenerate(k); } catch { }
+        if (genCancelRef.current || genBatchRef.current !== myBatch || (r && r.reason === "cancelled")) break;
+      }
+    } finally {
+      if (genBatchRef.current === myBatch) {
+        setGenAll(false);
+        setGenBatch(false);
+        genCancelRef.current = false;
+      }
     }
   }
 
@@ -742,6 +852,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   if (!rpd) return <div style={{ flex: 1, padding: 40, textAlign: "center", background: T.bg }}>РПД не найдена</div>;
 
   const canEdit = rpd.status === "Черновик" || rpd.status === "На доработке";
+  const genBusy = !!generating || genAll;
 
   const labHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.lab_hours || 0), 0);
   const practiceHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.practice_hours || 0), 0);
@@ -862,7 +973,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     requestAnimationFrame(() => requestAnimationFrame(() => { sidebarLockRef.current = false; }));
   }
 
-  const ctxValue = { rpd, rpdId, isEdit, canEdit, canManageSources, generating, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField, clearSection, clearCount, setOutcomesVisibleIds };
+  const ctxValue = { rpd, rpdId, isEdit, canEdit, canManageSources, generating, genResult, genBusy, genBatch, cancelGeneration, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField, clearSection, clearCount, setOutcomesVisibleIds };
 
   return <RpdEditorProvider value={ctxValue}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -878,6 +989,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           hasPracticeTopics={hasPracticeTopics}
           isCollapsed={isCollapsed}
           generating={generating}
+          genBusy={genBusy}
+          genBatch={genBatch}
+          onCancelGen={cancelGeneration}
           onToggleMode={onToggleMode}
           onOpenPair={onOpenPair}
           onGoTo={goTo}
@@ -1012,7 +1126,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ flex: 1 }}>
                     <SectionHeading title="2. Планируемые результаты обучения по дисциплине" collapsed={isCollapsed("2")} onToggle={() => toggleCollapse("2")} marginBottom={0} />
                   </div>
-                  {!isCollapsed("2") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="learning_outcomes" /><Btn small primary onClick={() => autoFill("learning_outcomes")} disabled={!!generating}>{generating === "learning_outcomes" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                  {!isCollapsed("2") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="learning_outcomes" /><GenButton skey="learning_outcomes" /></span>}
                 </div>
                 {!isCollapsed("2") && <OutcomesEditor />}
               </div>
@@ -1036,26 +1150,26 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ flex: 1 }}>
                     <SectionHeading title="4. Содержание дисциплины" collapsed={isCollapsed("4")} onToggle={() => toggleCollapse("4")} marginBottom={0} />
                   </div>
-                  {!isCollapsed("4") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="content" /><Btn small primary onClick={() => autoFill("content")} disabled={!!generating}>{generating === "content" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                  {!isCollapsed("4") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="content" /><GenButton skey="content" /></span>}
                 </div>
-                {!isCollapsed("4") && <SectionEditor />}
+                {!isCollapsed("4") && <GenPlaque skey="content"><SectionEditor /></GenPlaque>}
                 {!isCollapsed("4") && <div style={{ marginTop: 32 }}>
                   <HR />
 
                   <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>Тематика примерных практических занятий</div>
-                      {isEdit && canEdit && practiceHoursTotal > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="topics_practice" /><Btn small primary onClick={() => autoFill("topics_practice")} disabled={!!generating}>{generating === "topics_practice" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                      {isEdit && canEdit && practiceHoursTotal > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="topics_practice" /><GenButton skey="topics_practice" /></span>}
                     </div>
-                    <TopicsEditor kind="practice" />
+                    <GenPlaque skey="topics_practice"><TopicsEditor kind="practice" /></GenPlaque>
                   </div>
                   <HR />
                   <div ref={refs["4.2"]} style={{ marginBottom: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>Тематика примерных лабораторных работ</div>
-                      {isEdit && canEdit && labHoursTotal > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="topics_lab" /><Btn small primary onClick={() => autoFill("topics_lab")} disabled={!!generating}>{generating === "topics_lab" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                      {isEdit && canEdit && labHoursTotal > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="topics_lab" /><GenButton skey="topics_lab" /></span>}
                     </div>
-                    <TopicsEditor kind="lab" />
+                    <GenPlaque skey="topics_lab"><TopicsEditor kind="lab" /></GenPlaque>
                   </div>
                 </div>}
               </div>
@@ -1086,26 +1200,26 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div ref={refs["6.2"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>6.2. Электронная учебно-методическая литература</div>
-                      {isEdit && canEdit && electronicLiteratureCount > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="literature_electronic" /><Btn small primary onClick={() => autoFill("literature_electronic")} disabled={!!generating}>{generating === "literature_electronic" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                      {isEdit && canEdit && electronicLiteratureCount > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="literature_electronic" /><GenButton skey="literature_electronic" /></span>}
                     </div>
-                    <LiteratureEditor kind="electronic" />
+                    <GenPlaque skey="literature_electronic"><LiteratureEditor kind="electronic" /></GenPlaque>
                   </div>
                   <HR />
 
                   <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.3. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
-                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="databases" /><Btn small primary onClick={() => autoFill("databases")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "databases" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="databases" /><GenButton skey="databases" /></span>}
                     </div>
-                    <DatabasesEditor />
+                    <GenPlaque skey="databases"><DatabasesEditor /></GenPlaque>
                   </div>
                   <HR />
                   <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.4. Лицензионное и свободно распространяемое программное обеспечение, используемое при осуществлении образовательного процесса по дисциплине</div>
-                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="software" /><Btn small primary onClick={() => autoFill("software")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "software" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="software" /><GenButton skey="software" /></span>}
                     </div>
-                    <SoftwareEditor />
+                    <GenPlaque skey="software"><SoftwareEditor /></GenPlaque>
                   </div>
                 </>}
               </div>
@@ -1116,9 +1230,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ flex: 1 }}>
                     <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса по дисциплине" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} marginBottom={0} />
                   </div>
-                  {!isCollapsed("7") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="material_tech" /><Btn small primary onClick={() => autoFill("material_tech")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "material_tech" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
+                  {!isCollapsed("7") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="material_tech" /><GenButton skey="material_tech" /></span>}
                 </div>
-                {!isCollapsed("7") && <MtechEditor />}
+                {!isCollapsed("7") && <GenPlaque skey="material_tech"><MtechEditor /></GenPlaque>}
               </div>
               <HR />
 

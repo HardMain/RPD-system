@@ -4,13 +4,13 @@ import { useRpdEditor } from "./RpdEditorContext.jsx";
 import { ConfirmDeleteModal } from "./EditorModals.jsx";
 
 export function ClearSectionBtn({ skey }) {
-  const { clearSection, clearCount, generating, isEdit, canEdit } = useRpdEditor();
+  const { clearSection, clearCount, generating, genBusy, isEdit, canEdit } = useRpdEditor();
   const [ask, setAsk] = useState(false);
   const [busy, setBusy] = useState(false);
 
   if (!isEdit || !canEdit) return null;
 
-  const disabled = !!generating || busy || clearCount(skey) === 0;
+  const disabled = !!generating || genBusy || busy || clearCount(skey) === 0;
 
   return <>
     <Btn small danger disabled={disabled} onClick={() => setAsk(true)}>

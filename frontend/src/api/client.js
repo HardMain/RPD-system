@@ -190,7 +190,7 @@ export const removeDeveloper = (devId) => api.delete(`/rpd/developers/${devId}`)
 export const getCompetencies = (directionId) => api.get('/competencies/', { params: { direction_id: directionId } });
 export const getCompetenciesByDiscipline = (disciplineId) => api.get(`/competencies/by-discipline/${disciplineId}`);
 
-export const generateSection = (rpdId, data) => api.post(`/llm/${rpdId}/generate`, data);
+export const generateSection = (rpdId, data, config) => api.post(`/llm/${rpdId}/generate`, data, config);
 export const getLlmLogs = (rpdId) => api.get(`/llm/${rpdId}/logs`);
 
 export const uploadDocument = (rpdId, file) => {

@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     LLM_API_KEY: str = "demo"
     LLM_BASE_URL: str = "https://api.openai.com/v1"
     LLM_MODEL: str = "gpt-4o-mini"
+    LLM_FALLBACK_MODELS: str = "deepseek/deepseek-chat,meta-llama/llama-3.3-70b-instruct"
+    LLM_MAX_CONCURRENCY: int = 3
     UPLOAD_DIR: str = "/app/uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
 

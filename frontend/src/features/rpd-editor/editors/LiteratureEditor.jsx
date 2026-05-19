@@ -11,6 +11,8 @@ import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { LITERATURE_TYPES, ELS_OPTIONS } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 import { ClearSectionBtn } from "../ClearSectionBtn.jsx";
+import { GenPlaque } from "../GenPlaque.jsx";
+import { GenButton } from "../GenButton.jsx";
 
 async function fetchLiteratureSuggestions(mode, sourceType, q) {
   const params = { q, mode };
@@ -20,7 +22,7 @@ async function fetchLiteratureSuggestions(mode, sourceType, q) {
 }
 
 export function LiteratureEditor({ kind }) {
-  const { rpd, rpdId, isEdit, canEdit, reload, autoFill, generating } = useRpdEditor();
+  const { rpd, rpdId, isEdit, canEdit, reload, autoFill, generating, genBusy } = useRpdEditor();
   const editable = isEdit && canEdit;
   const isElectronic = kind === "electronic";
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -88,6 +90,7 @@ export function LiteratureEditor({ kind }) {
       editable={editable}
       autoFill={autoFill}
       generating={generating}
+      genBusy={genBusy}
       onAdd={addRow}
       onDelete={delRow}
       onSave={saveField}
@@ -122,7 +125,7 @@ const PRINTED_SECTIONS = [
 
 const PRINTED_TYPES = PRINTED_SECTIONS.flatMap(s => s.groups.map(g => g.source_type));
 
-function PrintedTable({ items, editable, autoFill, generating, onAdd, onDelete, onSave }) {
+function PrintedTable({ items, editable, autoFill, generating, genBusy, onAdd, onDelete, onSave }) {
 
   const grouped = Object.fromEntries(PRINTED_TYPES.map(t => [t, []]));
   for (const it of items) {
@@ -139,6 +142,7 @@ function PrintedTable({ items, editable, autoFill, generating, onAdd, onDelete, 
       editable={editable}
       autoFill={autoFill}
       generating={generating}
+      genBusy={genBusy}
       required={g.source_type === "Учебные и научные издания"}
       onAdd={onAdd}
       onDelete={onDelete}
@@ -163,9 +167,7 @@ function PrintedTable({ items, editable, autoFill, generating, onAdd, onDelete, 
         titleSlot = (
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid " + T.borderLight }}>
             <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{section.title}</div>
-            {showBtn && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey={g.genKey} /><Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
-              {generating === g.genKey ? "Генерация..." : "Сгенерировать"}
-            </Btn></span>}
+            {showBtn && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey={g.genKey} /><GenButton skey={g.genKey} /></span>}
           </div>
         );
       }
@@ -177,7 +179,7 @@ function PrintedTable({ items, editable, autoFill, generating, onAdd, onDelete, 
   </div>;
 }
 
-function PrintedGroup({ g, rows, editable, required = false, autoFill, generating, onAdd, onDelete, onSave }) {
+function PrintedGroup({ g, rows, editable, required = false, autoFill, generating, genBusy, onAdd, onDelete, onSave }) {
   const tbodyRef = useRef(null);
   function delById(id) {
     const item = rows.find(it => String(it.id_literature) === String(id));
@@ -189,11 +191,10 @@ function PrintedGroup({ g, rows, editable, required = false, autoFill, generatin
     {g.subtitle && (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{g.subtitle}</div>
-        {showBtn && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey={g.genKey} /><Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
-          {generating === g.genKey ? "Генерация..." : "Сгенерировать"}
-        </Btn></span>}
+        {showBtn && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey={g.genKey} /><GenButton skey={g.genKey} /></span>}
       </div>
     )}
+    <GenPlaque skey={g.genKey}>
     {showTable ? (
       <div style={{ position: "relative" }}>
       <div className="table-scroll">
@@ -237,6 +238,7 @@ function PrintedGroup({ g, rows, editable, required = false, autoFill, generatin
         <Btn small onClick={() => onAdd(g.source_type)}><PlusIcon /> Добавить запись</Btn>
       </div>
     )}
+    </GenPlaque>
   </div>;
 }
 
