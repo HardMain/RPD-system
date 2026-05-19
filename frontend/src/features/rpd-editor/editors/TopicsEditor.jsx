@@ -141,7 +141,7 @@ function TopicRow({ topic, index, editable, deletable, onSave }) {
       <ExpandableTextarea
         value={local}
         onChange={e => setLocal(e.target.value)}
-        onBlur={() => onSave(local)}
+        onBlur={() => { const t = local.trim(); if (t !== local) setLocal(t); onSave(t); }}
         placeholder="Название темы"
         collapsedMaxHeight={64}
         style={inlineTextarea}

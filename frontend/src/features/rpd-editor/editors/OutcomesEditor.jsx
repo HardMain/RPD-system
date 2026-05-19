@@ -444,7 +444,7 @@ function OutcomeTextarea({ value, disabled, onSave }) {
   return <ExpandableTextarea
     value={local}
     onChange={e => setLocal(e.target.value)}
-    onBlur={() => { if (local !== value) onSave(local); }}
+    onBlur={() => { const t = local.trim(); if (t !== local) setLocal(t); if (t !== value) onSave(t); }}
     placeholder="Знать… / Уметь… / Владеть…"
     collapsedMaxHeight={72}
     style={{ width: "100%", minHeight: 56, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none" }}

@@ -4,6 +4,7 @@ import { T, F, hdr, tcell, dataTable, adminToolbar, adminAddLabel, pageContainer
 import { Btn } from "../components/Btn.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { formatDateTimeRu } from "../utils/format.js";
+import { useStickyState } from "../hooks/useStickyState.js";
 import { AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
 const miniLabel = adminAddLabel;
@@ -27,7 +28,7 @@ const SUBS = [
 ];
 
 export function AdminLlmPage() {
-  const [sub, setSub] = useState("prompts");
+  const [sub, setSub] = useStickyState("adminLlm.sub.v1", "prompts");
   return <div style={pageContainer}>
     <div style={pageToolbar}>
       {SUBS.map(s => (

@@ -3,6 +3,7 @@ import { T, F } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { ChevronDownIcon, ChevronUpIcon } from "../../../components/icons.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
+import { ClearSectionBtn } from "../ClearSectionBtn.jsx";
 
 const COLLAPSED_HEIGHT = 110;
 const DEFAULT_PLACEHOLDER = "Введите текст для заполнения раздела…";
@@ -22,8 +23,12 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
     if (!editable) return;
     const el = taRef.current;
     if (!el) return;
-    if (expanded) el.style.height = el.scrollHeight + "px";
-    else el.style.height = "";
+    if (expanded) {
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    } else {
+      el.style.height = "";
+    }
   }, [expanded, val, editable, generating]);
 
   useLayoutEffect(() => {
@@ -43,9 +48,12 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
       <div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div>
       {editable && (
-        <Btn small primary onClick={() => autoFill(skey)} disabled={!!generating}>
-          {generating === skey ? "Генерация..." : "Сгенерировать"}
-        </Btn>
+        <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+          <ClearSectionBtn skey={skey} />
+          <Btn small primary onClick={() => autoFill(skey)} disabled={!!generating}>
+            {generating === skey ? "Генерация..." : "Сгенерировать"}
+          </Btn>
+        </div>
       )}
     </div>
     {generating === skey ? (

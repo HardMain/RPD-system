@@ -18,8 +18,12 @@ export const ExpandableTextarea = forwardRef(function ExpandableTextarea(
   useLayoutEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    if (expanded) el.style.height = el.scrollHeight + "px";
-    else el.style.height = "";
+    if (expanded) {
+      el.style.height = "auto";
+      el.style.height = el.scrollHeight + "px";
+    } else {
+      el.style.height = "";
+    }
   }, [expanded, value]);
 
   useLayoutEffect(() => {

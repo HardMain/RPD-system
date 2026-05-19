@@ -11,12 +11,13 @@ import { SEC_KEYS, SIDEBAR_KEYS, PARENT_SECTION } from "./constants.js";
 import { PDF_PAGE_MAP_FALLBACK, scanPdfForSections } from "./pdfMap.js";
 import { RpdEditorProvider } from "./RpdEditorContext.jsx";
 import { Sidebar, SIDEBAR_COLLAPSED_W } from "./Sidebar.jsx";
+import { ClearSectionBtn } from "./ClearSectionBtn.jsx";
 import { BottomBar } from "./BottomBar.jsx";
 import { SentModal, ErrorModal, ApprovedModal, RejectModal, ValidationModal, StalePdfDownloadModal } from "./EditorModals.jsx";
 import { BupDropdown } from "./BupDropdown.jsx";
 
 import { EditableBlock } from "./editors/EditableBlock.jsx";
-import { SectionEditor } from "./editors/SectionEditor.jsx";
+import { SectionEditor, computePlanSemesters } from "./editors/SectionEditor.jsx";
 import { LiteratureEditor } from "./editors/LiteratureEditor.jsx";
 import { SoftwareEditor } from "./editors/SoftwareEditor.jsx";
 import { OutcomesEditor } from "./editors/OutcomesEditor.jsx";
@@ -619,7 +620,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   }
 
   async function saveField(fieldKey) {
-    const value = editTexts[fieldKey] || "";
+    const value = (editTexts[fieldKey] || "").trim();
+    setEditTexts(p => (p[fieldKey] === value ? p : { ...p, [fieldKey]: value }));
 
     if (value === _expectedValue(fieldKey, rpd)) return;
     const patch = _payloadForField(fieldKey, value);
@@ -669,6 +671,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   }
 
   async function saveFieldFromValue(fieldKey, value) {
+    value = (value || "").trim();
+    setEditTexts(p => (p[fieldKey] === value ? p : { ...p, [fieldKey]: value }));
     if (value === _expectedValue(fieldKey, rpd)) return;
     const patch = _payloadForField(fieldKey, value);
     if (!patch) return;
@@ -770,7 +774,83 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     savedTimeoutRef.current = setTimeout(() => setSavedTick(0), 1500);
     if (onAfterSave) onAfterSave();
   };
-  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField };
+  const _PRINTED_TYPE = {
+    literature_printed_main: "Учебные и научные издания",
+    literature_printed_additional: "Учебные и научные издания (дополнительные)",
+    literature_periodicals: "Периодические издания",
+    literature_normative: "Нормативно-технические издания",
+    literature_methodical_students: "Методические указания для студентов по освоению дисциплины",
+    literature_methodical_self_study: "Учебно-методическое обеспечение самостоятельной работы студента",
+  };
+  const _TEXT_CLEAR = new Set(["goals", "objects", "requirements", "educational_tech", "methodical_recommendations"]);
+
+  function _clearOps(key) {
+    const lit = rpd.literature || [];
+    if (key === "learning_outcomes") return (rpd.learning_outcomes || []).map(o => () => api.deleteOutcome(o.id_outcome));
+    if (key === "content") return (rpd.sections || []).map(s => () => api.deleteSection(s.id_section));
+    if (key === "topics_practice") return (rpd.topics || []).filter(t => t.topic_type === "practice").map(t => () => api.deleteTopic(t.id_topic));
+    if (key === "topics_lab") return (rpd.topics || []).filter(t => t.topic_type === "lab").map(t => () => api.deleteTopic(t.id_topic));
+    if (key === "literature_electronic") return lit.filter(l => l.url).map(l => () => api.deleteLiterature(l.id_literature));
+    if (key === "software") return (rpd.software || []).map(s => () => api.deleteSoftware(s.id_software));
+    if (key === "databases") return (rpd.databases || []).map(d => () => api.deleteDatabase(d.id_database));
+    if (key === "material_tech") return (rpd.material_tech || []).map(m => () => api.deleteMaterialTech(m.id_material_tech));
+    const st = _PRINTED_TYPE[key];
+    if (st) return lit.filter(l => !l.url && l.source_type === st).map(l => () => api.deleteLiterature(l.id_literature));
+    return [];
+  }
+
+  function _planSemList() {
+    const sems = computePlanSemesters(rpd);
+    return sems.length > 1 ? sems : [null];
+  }
+
+  async function _readdMinimal(key) {
+    if (key === "content") {
+      let n = 1;
+      for (const sem of _planSemList()) {
+        try { await api.addSection(rpdId, { section_number: n++, title: "", brief_content: "", lecture_hours: 0, practice_hours: 0, lab_hours: 0, self_study_hours: 0, semester: sem }); } catch { }
+      }
+      return;
+    }
+    if (key === "topics_practice") { try { await api.addTopic(rpdId, { topic_type: "practice", title: "" }); } catch { } return; }
+    if (key === "topics_lab") { try { await api.addTopic(rpdId, { topic_type: "lab", title: "" }); } catch { } return; }
+    if (key === "literature_printed_main") { try { await api.addLiterature(rpdId, { source_type: _PRINTED_TYPE.literature_printed_main, title: "", copies_count: 0 }); } catch { } }
+  }
+
+  function clearCount(key) {
+    if (_TEXT_CLEAR.has(key)) return (editTexts[key] || "").trim() ? 1 : 0;
+    if (key === "content") {
+      const secs = rpd.sections || [];
+      const meaningful = secs.filter(s => (s.title || "").trim() || (s.brief_content || "").trim() || s.lecture_hours || s.practice_hours || s.lab_hours || s.self_study_hours).length;
+      return Math.max(meaningful, secs.length - _planSemList().length);
+    }
+    if (key === "topics_practice" || key === "topics_lab") {
+      const tt = key === "topics_practice" ? "practice" : "lab";
+      const ts = (rpd.topics || []).filter(t => t.topic_type === tt);
+      return Math.max(ts.filter(t => (t.title || "").trim()).length, ts.length - 1);
+    }
+    if (key === "literature_printed_main") {
+      const rows = (rpd.literature || []).filter(l => !l.url && l.source_type === _PRINTED_TYPE.literature_printed_main);
+      return Math.max(rows.filter(l => (l.title || "").trim() || l.copies_count).length, rows.length - 1);
+    }
+    return _clearOps(key).length;
+  }
+
+  async function clearSection(key) {
+    if (_TEXT_CLEAR.has(key)) {
+      await saveFieldFromValue(key, "");
+      return;
+    }
+    if (clearCount(key) <= 0) return;
+    const ops = _clearOps(key);
+    sidebarLockRef.current = true;
+    for (const op of ops) { try { await op(); } catch { } }
+    await _readdMinimal(key);
+    await reloadAndNotify();
+    requestAnimationFrame(() => requestAnimationFrame(() => { sidebarLockRef.current = false; }));
+  }
+
+  const ctxValue = { rpd, rpdId, isEdit, canEdit, generating, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField, clearSection, clearCount };
 
   return <RpdEditorProvider value={ctxValue}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -920,7 +1000,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ flex: 1 }}>
                     <SectionHeading title="2. Планируемые результаты обучения по дисциплине" collapsed={isCollapsed("2")} onToggle={() => toggleCollapse("2")} marginBottom={0} />
                   </div>
-                  {!isCollapsed("2") && isEdit && canEdit && <Btn small primary onClick={() => autoFill("learning_outcomes")} disabled={!!generating}>{generating === "learning_outcomes" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                  {!isCollapsed("2") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="learning_outcomes" /><Btn small primary onClick={() => autoFill("learning_outcomes")} disabled={!!generating}>{generating === "learning_outcomes" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                 </div>
                 {!isCollapsed("2") && <OutcomesEditor />}
               </div>
@@ -944,7 +1024,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ flex: 1 }}>
                     <SectionHeading title="4. Содержание дисциплины" collapsed={isCollapsed("4")} onToggle={() => toggleCollapse("4")} marginBottom={0} />
                   </div>
-                  {!isCollapsed("4") && isEdit && canEdit && <Btn small primary onClick={() => autoFill("content")} disabled={!!generating}>{generating === "content" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                  {!isCollapsed("4") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="content" /><Btn small primary onClick={() => autoFill("content")} disabled={!!generating}>{generating === "content" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                 </div>
                 {!isCollapsed("4") && <SectionEditor />}
                 {!isCollapsed("4") && <div style={{ marginTop: 32 }}>
@@ -953,7 +1033,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div ref={refs["4.1"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>Тематика примерных практических занятий</div>
-                      {isEdit && canEdit && practiceHoursTotal > 0 && <Btn small primary onClick={() => autoFill("topics_practice")} disabled={!!generating}>{generating === "topics_practice" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                      {isEdit && canEdit && practiceHoursTotal > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="topics_practice" /><Btn small primary onClick={() => autoFill("topics_practice")} disabled={!!generating}>{generating === "topics_practice" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                     </div>
                     <TopicsEditor kind="practice" />
                   </div>
@@ -961,7 +1041,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div ref={refs["4.2"]} style={{ marginBottom: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>Тематика примерных лабораторных работ</div>
-                      {isEdit && canEdit && labHoursTotal > 0 && <Btn small primary onClick={() => autoFill("topics_lab")} disabled={!!generating}>{generating === "topics_lab" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                      {isEdit && canEdit && labHoursTotal > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="topics_lab" /><Btn small primary onClick={() => autoFill("topics_lab")} disabled={!!generating}>{generating === "topics_lab" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                     </div>
                     <TopicsEditor kind="lab" />
                   </div>
@@ -994,7 +1074,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div ref={refs["6.2"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>6.2. Электронная учебно-методическая литература</div>
-                      {isEdit && canEdit && electronicLiteratureCount > 0 && <Btn small primary onClick={() => autoFill("literature_electronic")} disabled={!!generating}>{generating === "literature_electronic" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                      {isEdit && canEdit && electronicLiteratureCount > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="literature_electronic" /><Btn small primary onClick={() => autoFill("literature_electronic")} disabled={!!generating}>{generating === "literature_electronic" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                     </div>
                     <LiteratureEditor kind="electronic" />
                   </div>
@@ -1003,7 +1083,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.3. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
-                      {isEdit && canEdit && <Btn small primary onClick={() => autoFill("databases")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "databases" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="databases" /><Btn small primary onClick={() => autoFill("databases")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "databases" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                     </div>
                     <DatabasesEditor />
                   </div>
@@ -1011,7 +1091,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.4. Лицензионное и свободно распространяемое программное обеспечение, используемое при осуществлении образовательного процесса по дисциплине</div>
-                      {isEdit && canEdit && <Btn small primary onClick={() => autoFill("software")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "software" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="software" /><Btn small primary onClick={() => autoFill("software")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "software" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                     </div>
                     <SoftwareEditor />
                   </div>
@@ -1024,7 +1104,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ flex: 1 }}>
                     <SectionHeading title="7. Материально-техническое обеспечение образовательного процесса по дисциплине" collapsed={isCollapsed("7")} onToggle={() => toggleCollapse("7")} marginBottom={0} />
                   </div>
-                  {!isCollapsed("7") && isEdit && canEdit && <Btn small primary onClick={() => autoFill("material_tech")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "material_tech" ? "Генерация..." : "Сгенерировать"}</Btn>}
+                  {!isCollapsed("7") && isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="material_tech" /><Btn small primary onClick={() => autoFill("material_tech")} disabled={!!generating} style={{ flexShrink: 0 }}>{generating === "material_tech" ? "Генерация..." : "Сгенерировать"}</Btn></span>}
                 </div>
                 {!isCollapsed("7") && <MtechEditor />}
               </div>

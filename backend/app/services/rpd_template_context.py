@@ -3,6 +3,16 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+def split_paragraphs(text: Any) -> list[str]:
+    if not text:
+        return [""]
+    out = [raw.strip() for raw in str(text).splitlines()]
+    while out and out[0] == "":
+        out.pop(0)
+    while out and out[-1] == "":
+        out.pop()
+    return out or [""]
+
 def _safe(value: Any, default: Any = "") -> Any:
     if value is None:
         return default
@@ -359,9 +369,9 @@ def build_context(rpd, bd=None, link=None) -> dict:
         "program_name": bup_profile or direction_profile or (direction.profile if direction else None) or direction_name or "",
         "publish_year": (rpd.academic_year or str(datetime.now().year))[:4],
 
-        "goals_text": _safe(rpd.goals_text, ""),
-        "objects_text": _safe(rpd.objects_text, ""),
-        "requirements_text": _safe(rpd.requirements_text, ""),
+        "goals_text": split_paragraphs(_safe(rpd.goals_text, "")),
+        "objects_text": split_paragraphs(_safe(rpd.objects_text, "")),
+        "requirements_text": split_paragraphs(_safe(rpd.requirements_text, "")),
 
         "learning_outcomes": learning_outcomes,
         "workload": workload,
@@ -371,8 +381,8 @@ def build_context(rpd, bd=None, link=None) -> dict:
         "practical_topics": practical_topics,
         "lab_topics": lab_topics_list,
 
-        "educational_tech": _safe(rpd.educational_tech, ""),
-        "methodical_recommendations": _safe(rpd.methodical_recommendations, ""),
+        "educational_tech": split_paragraphs(_safe(rpd.educational_tech, "")),
+        "methodical_recommendations": split_paragraphs(_safe(rpd.methodical_recommendations, "")),
 
         "literature_main": buckets["main"] or empty_printed,
         "literature_additional_study": buckets["additional_study"] or empty_printed,

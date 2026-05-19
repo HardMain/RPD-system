@@ -10,6 +10,7 @@ import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { LITERATURE_TYPES, ELS_OPTIONS } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
+import { ClearSectionBtn } from "../ClearSectionBtn.jsx";
 
 async function fetchLiteratureSuggestions(mode, sourceType, q) {
   const params = { q, mode };
@@ -162,9 +163,9 @@ function PrintedTable({ items, editable, autoFill, generating, onAdd, onDelete, 
         titleSlot = (
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 10, paddingBottom: 6, borderBottom: "1px solid " + T.borderLight }}>
             <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>{section.title}</div>
-            {showBtn && <Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
+            {showBtn && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey={g.genKey} /><Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
               {generating === g.genKey ? "Генерация..." : "Сгенерировать"}
-            </Btn>}
+            </Btn></span>}
           </div>
         );
       }
@@ -188,9 +189,9 @@ function PrintedGroup({ g, rows, editable, required = false, autoFill, generatin
     {g.subtitle && (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
         <div style={{ fontSize: 13, fontWeight: 600 }}>{g.subtitle}</div>
-        {showBtn && <Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
+        {showBtn && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey={g.genKey} /><Btn small primary onClick={() => autoFill(g.genKey)} disabled={!!generating} style={{ flexShrink: 0 }}>
           {generating === g.genKey ? "Генерация..." : "Сгенерировать"}
-        </Btn>}
+        </Btn></span>}
       </div>
     )}
     {showTable ? (

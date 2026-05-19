@@ -222,7 +222,7 @@ export function SectionEditor() {
   </div>;
 }
 
-function computePlanSemesters(rpd) {
+export function computePlanSemesters(rpd) {
   const set = new Set();
   for (const bd of (rpd?.bup_disciplines || [])) {
     if (bd.semesters_data && bd.semesters_data.length > 0) {
@@ -256,7 +256,8 @@ function SectionRow({ section, number, editable, deletable, onSave }) {
 
   function patch(k, v) { setLocal(p => ({ ...p, [k]: v })); }
   function commitField(k) {
-    const cur = local[k] ?? "";
+    const cur = (local[k] ?? "").trim();
+    if (cur !== (local[k] ?? "")) patch(k, cur);
     const orig = section[k] ?? "";
     if (cur === orig) return;
     onSave({ [k]: cur });
@@ -302,6 +303,7 @@ function SectionRow({ section, number, editable, deletable, onSave }) {
         onBlur={() => commitField("brief_content")}
         placeholder="Краткое содержание (необязательно)"
         collapsedMaxHeight={64}
+        wrapperStyle={{ marginTop: 4 }}
         style={inlineTextarea}
       />
     </td>
@@ -345,7 +347,6 @@ const inlineInput = {
 
 const inlineTextarea = {
   width: "100%",
-  marginTop: 4,
   padding: "4px 6px",
   border: "1px solid " + T.borderLight,
   borderRadius: 4,

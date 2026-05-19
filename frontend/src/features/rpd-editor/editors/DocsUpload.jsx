@@ -113,19 +113,23 @@ export function DocsUpload() {
       perSection[s.section_key] = (perSection[s.section_key] || 0) + s.chars;
     }
   }
-  const perSectionRows = Object.entries(perSection).sort((a, b) => secOrder(a[0]) - secOrder(b[0]));
+  const anySectionFilled = Object.keys(perSection).length > 0;
+  const budgetRows = [...new Set([...SEC_ORDER, ...Object.keys(perSection)])]
+    .map(key => [key, perSection[key] || 0])
+    .sort((a, b) => secOrder(a[0]) - secOrder(b[0]));
 
   return <div>
     {docs.length > 0 && <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6, padding: "10px 14px", marginBottom: 12, background: T.bg }}>
       <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
         Бюджет контекста: лимит {fmt(CONTEXT_LIMIT)} симв. на генерацию одного раздела
       </div>
-      {perSectionRows.length > 0 ? <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-        {perSectionRows.map(([key, chars]) => {
+      {anySectionFilled ? <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        {budgetRows.map(([key, chars]) => {
           const pct = Math.min(100, Math.round((chars / CONTEXT_LIMIT) * 100));
           const over = chars >= CONTEXT_LIMIT;
+          const empty = chars === 0;
           const color = over ? T.red : pct >= 70 ? T.orange : T.green;
-          return <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          return <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, opacity: empty ? 0.55 : 1 }}>
             <span style={{ fontSize: 11, width: 170, flexShrink: 0, color: T.text }}>{secLabel(key)}</span>
             <span style={{ flex: 1, height: 6, background: T.borderLight, borderRadius: 3, overflow: "hidden" }}>
               <span style={{ display: "block", width: pct + "%", height: "100%", background: color }} />
