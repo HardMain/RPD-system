@@ -13,7 +13,7 @@ const SEC_ORDER = [
   "topics_practice", "topics_lab", "educational_tech", "methodical_recommendations",
   "literature_printed_main", "literature_printed_additional", "literature_additional_books",
   "literature_periodicals", "literature_normative", "literature_methodical_students", "literature_methodical_self_study",
-  "literature_electronic", "databases", "software", "material_tech",
+  "literature_electronic", "software", "databases", "material_tech",
 ];
 const secOrder = (k) => { const i = SEC_ORDER.indexOf(k); return i < 0 ? 999 : i; };
 
@@ -35,8 +35,8 @@ const SEC_LABELS = {
   literature_methodical_students: "6.1 Метод. указания (освоение)",
   literature_methodical_self_study: "6.1 Метод. обеспечение СРС",
   literature_electronic: "6.2 Электронная литература",
-  databases: "6.3 БД и ИСС",
-  software: "6.4 ПО",
+  software: "6.3 ПО",
+  databases: "6.4 БД и ИСС",
   material_tech: "7. МТО",
 };
 const secLabel = (k) => SEC_LABELS[k] || k;

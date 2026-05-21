@@ -1208,18 +1208,18 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
                   <div ref={refs["6.3"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.3. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
-                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="databases" /><GenButton skey="databases" /></span>}
+                      <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.3. Лицензионное и свободно распространяемое программное обеспечение, используемое при осуществлении образовательного процесса по дисциплине</div>
+                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="software" /><GenButton skey="software" /></span>}
                     </div>
-                    <GenPlaque skey="databases"><DatabasesEditor /></GenPlaque>
+                    <GenPlaque skey="software"><SoftwareEditor /></GenPlaque>
                   </div>
                   <HR />
                   <div ref={refs["6.4"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.4. Лицензионное и свободно распространяемое программное обеспечение, используемое при осуществлении образовательного процесса по дисциплине</div>
-                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="software" /><GenButton skey="software" /></span>}
+                      <div style={{ fontSize: 14, fontWeight: 700, flex: 1 }}>6.4. Современные профессиональные базы данных и информационные справочные системы, используемые при осуществлении образовательного процесса по дисциплине</div>
+                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="databases" /><GenButton skey="databases" /></span>}
                     </div>
-                    <GenPlaque skey="software"><SoftwareEditor /></GenPlaque>
+                    <GenPlaque skey="databases"><DatabasesEditor /></GenPlaque>
                   </div>
                 </>}
               </div>

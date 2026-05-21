@@ -367,11 +367,11 @@ def build_context(rpd, bd=None, link=None) -> dict:
 
     databases = []
     for db in (rpd.databases or []):
-        db_type = (db.db_type or "").strip()
         name = (db.name or "").strip()
-        if not db_type and not name:
+        url = (db.url or "").strip()
+        if not name and not url:
             continue
-        databases.append({"db_type": db_type, "url": name})
+        databases.append({"db_type": name, "url": url})
     if not databases:
         databases = [{"db_type": "", "url": ""}]
 

@@ -432,55 +432,34 @@ DEFAULT_LLM_PROMPTS: list[dict] = [
         "section_label": "6.2 Электронная учебно-методическая литература",
         "is_structural": True,
         "order_index": 16,
-        "description": "JSON: электронные ресурсы из ЭБС. source_type — вид литературы, availability — список ЭБС.",
+        "description": "JSON: электронные источники. source_type — вид литературы, availability — части доступа.",
         "user_prompt_template": (
-            "Предложи 3-5 электронных источников по дисциплине из ЭБС.\n"
+            "Предложи 3-5 электронных источников по дисциплине.\n"
             "Дисциплина: {discipline}\nНаправление: {direction}\n\n"
             "Приоритет источников:\n"
             "1. Если в дополнительных материалах есть пример раздела по электронной литературе "
-            "(загруженный документ) — повтори стиль и набор ЭБС.\n"
+            "(загруженный документ) — повтори стиль и набор источников.\n"
             "2. Иначе — используй пример из согласованной РПД-образца, если он передан.\n"
             "3. Если ни того, ни другого нет — действуй по правилам ниже (в реальных РПД именно так).\n\n"
             "Правила (соблюдать всегда):\n"
-            "- ТОЛЬКО реально существующие издания. URL должен указывать на действительный ресурс. При сомнении — пропусти.\n\n"
-            "Поле source_type — вид литературы, одно из: «Учебные и научные издания», «Периодические издания», "
-            "«Нормативно-технические издания», «Методические указания для студентов по освоению дисциплины», "
+            "- ТОЛЬКО реально существующие издания. URL должен указывать на действительный ресурс. При сомнении — пропусти.\n"
+            "- Поле title записывай в формате «Автор И.О. Заглавие [Электронный ресурс]: вид издания / полное описание авторов. - Город: Издательство, год.» — как в реальных РПД.\n\n"
+            "Поле source_type — вид литературы, одно из: "
+            "«Основная литература», «Дополнительная литература», "
+            "«Методические указания для студентов по освоению дисциплины», "
             "«Учебно-методическое обеспечение самостоятельной работы студента».\n\n"
-            "Поле availability — массив из одной или нескольких строк, строго из списка: "
-            "«ЭБС «Лань»», «ЭБС «Юрайт»», «ЭБС IPRsmart», «ЭБС «Znanium.com»», "
-            "«ЭБС «Консультант студента»», «ЭБС «Университетская библиотека online»», "
-            "«Научная библиотека ПНИПУ», «НЭБ eLIBRARY.RU», «Локальная сеть», «Свободный доступ».\n\n"
+            "Поле availability — массив строк: одна из «сеть Интернет» / «локальная сеть» (где доступен) "
+            "и одна из «свободный доступ» / «авторизованный доступ» (как доступен). "
+            "Обычно две строки, например: [\"локальная сеть\", \"свободный доступ\"].\n\n"
             "Формат ответа — строго JSON массив без пояснений до/после:\n"
-            "[{{\"source_type\": \"...\", \"title\": \"...\", \"url\": \"https://...\", \"availability\": [\"ЭБС ...\"]}}]"
-        ),
-    },
-    {
-        "section_key": "databases",
-        "section_label": "6.3 БД и информационно-справочные системы",
-        "is_structural": True,
-        "order_index": 17,
-        "description": "JSON: профессиональные БД и ИСС. db_type строго из каталога.",
-        "user_prompt_template": (
-            "Предложи 3-5 профессиональных баз данных и информационных справочных систем по дисциплине.\n"
-            "Дисциплина: {discipline}\nНаправление: {direction}\n\n"
-            "Приоритет источников:\n"
-            "1. Если в дополнительных материалах есть пример раздела «БД и ИСС» (загруженный документ) — "
-            "ориентируйся на тот же набор систем.\n"
-            "2. Иначе — используй пример из согласованной РПД-образца, если он передан.\n"
-            "3. Если ни того, ни другого нет — действуй по правилам ниже (в реальных РПД именно так).\n\n"
-            "Правила (соблюдать всегда):\n"
-            "- Включай только реально существующие БД.\n"
-            "- Поле db_type должно быть строго одним из: "
-            "«ЭБС», «Полнотекстовая», «Реферативная», «Информационно-справочная», «Нормативно-техническая», «Прочая».\n\n"
-            "Формат ответа — строго JSON массив без пояснений до/после:\n"
-            "[{{\"db_type\": \"...\", \"name\": \"...\", \"url\": \"https://...\"}}]"
+            "[{{\"source_type\": \"...\", \"title\": \"...\", \"url\": \"https://...\", \"availability\": [\"...\", \"...\"]}}]"
         ),
     },
     {
         "section_key": "software",
-        "section_label": "6.4 Программное обеспечение",
+        "section_label": "6.3 Программное обеспечение",
         "is_structural": True,
-        "order_index": 18,
+        "order_index": 17,
         "description": "JSON: ПО для проведения занятий. license_type — вид ПО из каталога.",
         "user_prompt_template": (
             "Предложи 3-6 программных продуктов для проведения занятий по дисциплине.\n"
@@ -493,11 +472,37 @@ DEFAULT_LLM_PROMPTS: list[dict] = [
             "Правила (соблюдать всегда):\n"
             "- Только реально существующее ПО.\n"
             "- Поле license_type — вид ПО, строго одно из: "
-            "«Операционные системы», «Офисные приложения», «Среды разработки», "
-            "«Системы компьютерной математики», «Графические пакеты», «СУБД», "
-            "«Антивирусное ПО», «Сетевое ПО», «Прочее прикладное ПО».\n\n"
+            "«Операционные системы», «Офисные приложения», "
+            "«Среды разработки, тестирования и отладки», "
+            "«ПО для обработки изображений», «Системы управления проектами», "
+            "«Прикладное программное обеспечение общего назначения».\n\n"
             "Формат ответа — строго JSON массив без пояснений до/после:\n"
             "[{{\"license_type\": \"...\", \"name\": \"...\"}}]"
+        ),
+    },
+    {
+        "section_key": "databases",
+        "section_label": "6.4 БД и информационно-справочные системы",
+        "is_structural": True,
+        "order_index": 18,
+        "description": "JSON: профессиональные БД и ИСС. Только name и url.",
+        "user_prompt_template": (
+            "Предложи 3-5 профессиональных баз данных и информационных справочных систем по дисциплине.\n"
+            "Дисциплина: {discipline}\nНаправление: {direction}\n\n"
+            "Приоритет источников:\n"
+            "1. Если в дополнительных материалах есть пример раздела «БД и ИСС» (загруженный документ) — "
+            "ориентируйся на тот же набор систем.\n"
+            "2. Иначе — используй пример из согласованной РПД-образца, если он передан.\n"
+            "3. Если ни того, ни другого нет — действуй по правилам ниже (в реальных РПД именно так).\n\n"
+            "Правила (соблюдать всегда):\n"
+            "- Включай только реально существующие БД и ИСС.\n"
+            "- name — полное наименование ресурса (например «Электронно-библиотечная система Лань», "
+            "«База данных научной электронной библиотеки (eLIBRARY.RU)», "
+            "«Информационные ресурсы Сети КонсультантПлюс»).\n"
+            "- url — действующая ссылка на ресурс. Для ресурсов без публичного URL допускается "
+            "значение «локальная сеть».\n\n"
+            "Формат ответа — строго JSON массив без пояснений до/после:\n"
+            "[{{\"name\": \"...\", \"url\": \"https://...\"}}]"
         ),
     },
     {
@@ -544,9 +549,9 @@ REFERENCE_AWARE_MARKER = "Если в дополнительных матери�
 PRIORITY_LADDER_MARKER = "Приоритет источников:"
 SEMESTERS_PLAN_MARKER = "{semesters_plan}"
 _CATALOG_MARKERS: dict[str, str] = {
-    "software": "Операционные системы",
-    "databases": "Полнотекстовая",
-    "literature_electronic": "ЭБС «Лань»",
+    "software": "Среды разработки, тестирования и отладки",
+    "databases": "действующая ссылка",
+    "literature_electronic": "свободный доступ",
     "learning_outcomes": "ровно 3 индикатора",
 }
 
@@ -572,15 +577,25 @@ async def upgrade_llm_prompts_to_reference_aware():
         rows = result.scalars().all()
         upgraded = 0
         for row in rows:
-            if not _prompt_needs_upgrade(row):
-                continue
             spec = defaults_by_key.get(row.section_key)
             if not spec:
                 continue
-            row.user_prompt_template = spec["user_prompt_template"]
-            row.description = spec.get("description") or row.description
-            row.is_structural = spec.get("is_structural", row.is_structural)
-            upgraded += 1
+            changed = False
+            if _prompt_needs_upgrade(row):
+                row.user_prompt_template = spec["user_prompt_template"]
+                row.description = spec.get("description") or row.description
+                row.is_structural = spec.get("is_structural", row.is_structural)
+                changed = True
+            spec_label = spec.get("section_label")
+            if spec_label and row.section_label != spec_label:
+                row.section_label = spec_label
+                changed = True
+            spec_order = spec.get("order_index")
+            if spec_order is not None and row.order_index != spec_order:
+                row.order_index = spec_order
+                changed = True
+            if changed:
+                upgraded += 1
         if upgraded:
             await db.commit()
             print(f"✅ LLM prompts upgraded ({upgraded} updated)")
@@ -1251,27 +1266,28 @@ async def _seed_demo_data():
             RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
                           title="C/C++. Структурное и объектно-ориентированное программирование: практикум (Павловская Т.А., Щупак Ю.А., Питер, 2011)",
                           copies_count=14),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
-                          title="Язык программирования C (Керниган Б.В., 2017)",
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Дополнительная литература",
+                          title="Керниган Б.В. Язык программирования C [Электронный ресурс]",
                           url="http://www.iprbookshop.ru/73736.html",
-                          availability=["IPRsmart"]),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
-                          title="Язык программирования C++ для профессионалов (Страуструп Б., 2017)",
+                          availability=["локальная сеть", "свободный доступ"]),
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Дополнительная литература",
+                          title="Страуструп Б. Язык программирования C++ для профессионалов [Электронный ресурс]",
                           url="http://www.iprbookshop.ru/73737.html",
-                          availability=["IPRsmart"]),
-            RpdLiterature(id_rpd=rpd4.id_rpd, source_type=UCH,
-                          title="Информатика. Базовый курс: учебное пособие (Денисова Э.В., 2017)",
+                          availability=["локальная сеть", "свободный доступ"]),
+            RpdLiterature(id_rpd=rpd4.id_rpd, source_type="Основная литература",
+                          title="Денисова Э.В. Информатика. Базовый курс [Электронный ресурс]: учебное пособие",
                           url="http://www.iprbookshop.ru/66475.html",
-                          availability=["IPRsmart"]),
+                          availability=["локальная сеть", "свободный доступ"]),
         ])
 
         db.add_all([
             RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Операционные системы", name="Debian (GNU GPL)"),
             RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Операционные системы", name="Windows 10 (Azure Dev Tools for Teaching)"),
             RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Офисные приложения", name="LibreOffice 6.2.4 (OpenSource)"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Среды разработки", name="Microsoft Visual Studio (Azure Dev Tools for Teaching)"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Среды разработки", name="MS Visual Studio 2019 Community (Free)"),
-            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="СУБД", name="PostgreSQL (PostgreSQL License)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Системы управления проектами", name="Protege"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Среды разработки, тестирования и отладки", name="Microsoft Visual Studio (Azure Dev Tools for Teaching)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Среды разработки, тестирования и отладки", name="MS Visual Studio 2019 Community (Free)"),
+            RpdSoftware(id_rpd=rpd4.id_rpd, license_type="Среды разработки, тестирования и отладки", name="PostgreSQL (PostgreSQL License)"),
         ])
 
         db.add_all([
@@ -1280,14 +1296,14 @@ async def _seed_demo_data():
         ])
 
         db.add_all([
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Полнотекстовая", name="Elsevier «Freedom Collection»"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Полнотекстовая", name="Springer Nature e-books"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Реферативная", name="Научная электронная библиотека (eLIBRARY.RU)"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="ЭБС", name="Научная библиотека ПНИПУ"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="ЭБС", name="ЭБС «Лань»"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="ЭБС", name="ЭБС IPRsmart"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Информационно-справочная", name="КонсультантПлюс"),
-            RpdDatabase(id_rpd=rpd4.id_rpd, db_type="Информационно-справочная", name="Техэксперт: нормы, правила, стандарты и законодательства России"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="База данных Elsevier «Freedom Collection»", url="https://www.elsevier.com/"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="База данных Springer Nature e-books", url="http://link.springer.com/"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="База данных научной электронной библиотеки (eLIBRARY.RU)", url="https://elibrary.ru/"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="Научная библиотека Пермского национального исследовательского политехнического университета", url="https://elib.pstu.ru/"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="Электронно-библиотечная система Лань", url="https://e.lanbook.com/"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="Электронно-библиотечная система IPRsmart", url="http://www.iprbookshop.ru/"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="Информационные ресурсы Сети КонсультантПлюс", url="локальная сеть"),
+            RpdDatabase(id_rpd=rpd4.id_rpd, name="Информационно-справочная система «Техэксперт: нормы, правила, стандарты и законодательства России»", url="http://325290.inkip.ru/docs"),
         ])
 
         db.add_all([
@@ -1312,8 +1328,8 @@ async def _seed_demo_data():
         ])
 
         db.add_all([
-            RpdSoftware(id_rpd=rpd2.id_rpd, name="Visual Studio Code", license_type="Свободное ПО"),
-            RpdSoftware(id_rpd=rpd2.id_rpd, name="Blender", license_type="GPL"),
+            RpdSoftware(id_rpd=rpd2.id_rpd, name="Visual Studio Code", license_type="Среды разработки, тестирования и отладки"),
+            RpdSoftware(id_rpd=rpd2.id_rpd, name="Blender", license_type="ПО для обработки изображений"),
         ])
 
         db.add_all([

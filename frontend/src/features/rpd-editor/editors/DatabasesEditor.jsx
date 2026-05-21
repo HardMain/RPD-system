@@ -1,13 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
-import { Dropdown } from "../../../components/Dropdown.jsx";
 import { Combobox } from "../../../components/Combobox.jsx";
+import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
-import { DATABASE_TYPES } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
 const fetchDatabaseSuggestions = async (q, id_discipline) => {
@@ -25,14 +24,14 @@ export function DatabasesEditor() {
   const [pendingDelete, setPendingDelete] = useState(null);
 
   async function addRow() {
-    try { await api.addDatabase(rpdId, { name: "", db_type: null }); await reload(); } catch {}
+    try { await api.addDatabase(rpdId, { name: "", url: "" }); await reload(); } catch {}
   }
   async function performDelete(item) {
     if (!item) return;
     try { await api.deleteDatabase(item.id_database); await reload(); } catch {}
   }
   function delRow(item) {
-    const filled = (item.name || "").trim() || (item.db_type || "").trim();
+    const filled = (item.name || "").trim() || (item.url || "").trim();
     if (filled) { setPendingDelete(item); return; }
     performDelete(item);
   }
@@ -44,7 +43,7 @@ export function DatabasesEditor() {
     try {
       await api.updateDatabase(item.id_database, {
         name: patch.name ?? item.name ?? "",
-        db_type: patch.db_type !== undefined ? patch.db_type : (item.db_type ?? null),
+        url: patch.url !== undefined ? patch.url : (item.url ?? ""),
       });
       await reload();
     } catch {}
@@ -56,13 +55,13 @@ export function DatabasesEditor() {
       <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <colgroup>
-          <col style={{ width: "35%" }} />
+          <col style={{ width: "55%" }} />
           <col />
         </colgroup>
         <thead>
           <tr>
-            <th style={th}>Вид БД</th>
-            <th style={th}>Наименование БД</th>
+            <th style={th}>Наименование</th>
+            <th style={th}>Ссылка на информационный ресурс</th>
           </tr>
         </thead>
         <tbody ref={tbodyRef}>
@@ -100,43 +99,56 @@ export function DatabasesEditor() {
 }
 
 function DatabaseRow({ item, editable, onSave, disciplineId }) {
+  const [url, setUrl] = useState(item.url || "");
+  const urlRef = useRef(item.url || "");
+  useEffect(() => {
+    const next = item.url || "";
+    if (url === urlRef.current) setUrl(next);
+    urlRef.current = next;
+  }, [item.url]);
+
   function commitName(v) {
     if (v === (item.name || "")) return;
     onSave({ name: v });
   }
-  function changeType(v) {
-    if ((v || null) === (item.db_type || null)) return;
-    onSave({ db_type: v || null });
+  function commitUrl() {
+    if (url === (item.url || "")) return;
+    onSave({ url: url });
   }
 
   if (!editable) {
+    const cleanUrl = (item.url || "").trim();
+    const isLink = /^https?:\/\//i.test(cleanUrl);
     return <tr>
-      <td style={td}>{item.db_type || ""}</td>
       <td style={td}>{item.name || ""}</td>
+      <td style={{ ...td, wordBreak: "break-all" }}>
+        {isLink
+          ? <a href={cleanUrl} target="_blank" rel="noreferrer" style={{ color: T.accent }}>{cleanUrl}</a>
+          : (cleanUrl || "")}
+      </td>
     </tr>;
   }
 
-  const typeOptions = DATABASE_TYPES.map(s => ({ value: s, label: s }));
-
   return <tr data-trash-row data-trash-id={item.id_database}>
-    <td style={{ ...td, padding: 4 }}>
-      <Dropdown
-        value={item.db_type || ""}
-        options={typeOptions}
-        onChange={changeType}
-        placeholder="Выбрать вид БД"
-        clearLabel="Не выбрано"
-      />
-    </td>
     <td style={{ ...td, padding: 4 }}>
       <Combobox
         value={item.name || ""}
         onCommit={commitName}
         fetchSuggestions={(q) => fetchDatabaseSuggestions(q, disciplineId)}
-        placeholder="Например, eLIBRARY.RU"
+        placeholder="Например: Электронно-библиотечная система Лань"
         textarea
         collapsedMaxHeight={64}
         style={inlineTextarea}
+      />
+    </td>
+    <td style={{ ...td, padding: 4 }}>
+      <ExpandableTextarea
+        value={url}
+        onChange={e => setUrl(e.target.value)}
+        onBlur={commitUrl}
+        placeholder="https://… или «локальная сеть»"
+        collapsedMaxHeight={64}
+        style={{ ...inlineTextarea, wordBreak: "break-all" }}
       />
     </td>
   </tr>;

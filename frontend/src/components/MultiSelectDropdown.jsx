@@ -14,13 +14,28 @@ function _measure(s) {
   return _measureCtx ? _measureCtx.measureText(s || "").width : (s || "").length * 7;
 }
 
-export function MultiSelectDropdown({ value, onChange, options, placeholder = "Не выбрано", disabled = false, title }) {
+export function MultiSelectDropdown({ value, onChange, options, placeholder = "Не выбрано", disabled = false, title, separator = ", ", maxHeight = null, searchable = true }) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const wrapRef = useRef(null);
   const popupRef = useRef(null);
+  const searchRef = useRef(null);
 
-  useDismiss(open, () => setOpen(false), [wrapRef, popupRef]);
+  useDismiss(open, () => { setOpen(false); setQuery(""); }, [wrapRef, popupRef]);
   const coords = useDropdownAnchor(wrapRef, open);
+
+  const showSearch = searchable && (options || []).length > 3;
+  const filteredOptions = showSearch && query.trim()
+    ? (options || []).filter(o => (o || "").toLowerCase().includes(query.trim().toLowerCase()))
+    : (options || []);
+
+  useEffect(() => {
+    if (open && showSearch) {
+      const t = setTimeout(() => searchRef.current?.focus(), 0);
+      return () => clearTimeout(t);
+    }
+    if (!open) setQuery("");
+  }, [open, showSearch]);
 
   const propValue = Array.isArray(value) ? value : [];
   const propKey = propValue.join("|");
@@ -45,7 +60,7 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "�
     onChange(next);
   }
 
-  const display = localSelected.length === 0 ? "" : localSelected.join(", ");
+  const display = localSelected.length === 0 ? "" : localSelected.join(separator);
   const empty = !display;
 
   const popupContentWidth = (options || []).reduce(
@@ -53,19 +68,42 @@ export function MultiSelectDropdown({ value, onChange, options, placeholder = "�
     0,
   ) + 16 + 8 + 20 + 14;
 
+  const triggerStyle = dropdownTrigger({ disabled, empty, wrap: true });
+  const labelStyle = maxHeight != null ? {
+    display: "block",
+    maxHeight,
+    overflowY: "auto",
+    paddingRight: 4,
+  } : null;
+
   return <div ref={wrapRef} style={{ position: "relative", width: "100%" }} title={title}>
     <button
       type="button"
       disabled={disabled}
       onClick={() => { if (!disabled) setOpen(o => !o); }}
-      style={dropdownTrigger({ disabled, empty, wrap: false })}
+      style={triggerStyle}
     >
-      {display || placeholder}
+      <span style={labelStyle || undefined}>{display || placeholder}</span>
       {!disabled && <span style={dropdownChevron(16)}>▾</span>}
     </button>
     {open && coords && createPortal(
       <div ref={popupRef} style={dropdownPopup({ left: coords.left, top: coords.top, width: Math.max(coords.width, popupContentWidth), maxHeight: 280, padding: "4px 0" })}>
-        {(options || []).map(opt => {
+        {showSearch && (
+          <div style={{ padding: 6, borderBottom: "1px solid " + T.borderLight, background: T.surface, position: "sticky", top: 0 }}>
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder="Поиск…"
+              style={{ width: "100%", padding: "5px 8px", border: "1px solid " + T.border, borderRadius: 4, fontSize: 12, fontFamily: F, boxSizing: "border-box", outline: "none" }}
+            />
+          </div>
+        )}
+        {filteredOptions.length === 0 ? (
+          <div style={{ padding: "8px 10px", fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>
+            {query.trim() ? "Ничего не найдено" : "Нет вариантов"}
+          </div>
+        ) : filteredOptions.map(opt => {
           const checked = localSelected.includes(opt);
           return <label
             key={opt}

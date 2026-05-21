@@ -432,16 +432,16 @@ def _backfill_outcome_snapshots(outcomes) -> bool:
         if ind is None:
             continue
         comp = ind.competency
-        if not lo.indicator_code and ind.code:
+        if lo.indicator_code is None and ind.code:
             lo.indicator_code = ind.code
             changed = True
-        if not lo.indicator_description and ind.description:
+        if lo.indicator_description is None and ind.description:
             lo.indicator_description = ind.description
             changed = True
-        if not lo.competency_code and comp and comp.code:
+        if lo.competency_code is None and comp and comp.code:
             lo.competency_code = comp.code
             changed = True
-        if not lo.competency_name and comp and comp.name:
+        if lo.competency_name is None and comp and comp.name:
             lo.competency_name = comp.name
             changed = True
     return changed
@@ -1099,11 +1099,14 @@ async def patch_outcome_snapshot(
     if not lo:
         raise HTTPException(status_code=404)
     payload = data.model_dump(exclude_unset=True)
+    SNAPSHOT_FIELDS = {"competency_code", "competency_name", "indicator_code", "indicator_description"}
     for field in ("competency_code", "competency_name", "indicator_code", "indicator_description", "outcome_text", "assessment_tool"):
         if field in payload:
             v = payload[field]
             if isinstance(v, str):
-                v = v.strip() or None
+                v = v.strip()
+                if not v and field not in SNAPSHOT_FIELDS:
+                    v = None
             setattr(lo, field, v)
     rpd_row = await db.get(Rpd, lo.id_rpd)
     if rpd_row:
@@ -1265,10 +1268,10 @@ async def get_outcomes_table(
         seen_keys.add(key)
         rows.append(OutcomeRowOut(
             id_indicator=lo.id_indicator,
-            indicator_code=lo.indicator_code or (ind.code if ind else "") or "",
-            indicator_description=lo.indicator_description or (ind.description if ind else "") or "",
-            competency_code=lo.competency_code or (comp.code if comp else "") or "",
-            competency_name=lo.competency_name or (comp.name if comp else "") or "",
+            indicator_code=lo.indicator_code if lo.indicator_code is not None else ((ind.code if ind else "") or ""),
+            indicator_description=lo.indicator_description if lo.indicator_description is not None else ((ind.description if ind else "") or ""),
+            competency_code=lo.competency_code if lo.competency_code is not None else ((comp.code if comp else "") or ""),
+            competency_name=lo.competency_name if lo.competency_name is not None else ((comp.name if comp else "") or ""),
             id_outcome=lo.id_outcome,
             outcome_text=lo.outcome_text,
             assessment_tool=lo.assessment_tool,

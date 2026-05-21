@@ -243,7 +243,7 @@ export function OutcomesEditor() {
           const fromBase = !!r.id_indicator;
           const codeEditable = editable && (!fromBase || canManageSources);
           const descIsPlaceholder = isPlaceholderDescription(r.indicator_description);
-          const descEditable = editable && (codeEditable || descIsPlaceholder);
+          const descEditable = editable;
           const trProps = (structuralEditing && r.id_outcome)
             ? { "data-trash-row": "", "data-trash-id": String(r.id_outcome) }
             : {};

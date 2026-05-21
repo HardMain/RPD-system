@@ -8,15 +8,16 @@ import { Combobox } from "../../../components/Combobox.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
-import { LITERATURE_TYPES, ELS_OPTIONS } from "../catalogs.js";
+import { LITERATURE_TYPES, ELECTRONIC_LITERATURE_TYPES, AVAILABILITY_OPTIONS } from "../catalogs.js";
+import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 import { ClearSectionBtn } from "../ClearSectionBtn.jsx";
 import { GenPlaque } from "../GenPlaque.jsx";
 import { GenButton } from "../GenButton.jsx";
 
 async function fetchLiteratureSuggestions(mode, sourceType, q, id_discipline) {
-  const params = { q, mode };
-  if (sourceType) params.source_type = sourceType;
+  if (!sourceType) return [];
+  const params = { q, mode, source_type: sourceType };
   if (id_discipline) params.id_discipline = id_discipline;
   const r = await api.getSuggestions("literature_title", params);
   return r.data?.items || [];
@@ -321,10 +322,10 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave, disciplineI
         </colgroup>
         <thead>
           <tr>
-            <th style={th}>Вид литературы ЭБС</th>
+            <th style={th}>Вид литературы</th>
             <th style={th}>Наименование разработки</th>
             <th style={th}>Ссылка на информационный ресурс</th>
-            <th style={th}>Доступность ЭБС (сеть Интернет / локальная сеть; авторизованный / свободный доступ)</th>
+            <th style={th}>Доступность (сеть Интернет / локальная сеть; авторизованный / свободный доступ)</th>
           </tr>
         </thead>
         <tbody ref={tbodyRef}>
@@ -393,13 +394,11 @@ function ElectronicRow({ item, editable, onSave, disciplineId }) {
           ? <a href={cleanUrl} target="_blank" rel="noreferrer" style={{ color: T.accent }}>{cleanUrl}</a>
           : ""}
       </td>
-      <td style={td}>{avail.length ? avail.join(", ") : ""}</td>
+      <td style={td}>{avail.length ? avail.join("; ") : ""}</td>
     </tr>;
   }
 
-  const typeOptions = LITERATURE_TYPES
-    .filter(t => t !== ADDITIONAL_MAIN_TYPE)
-    .map(t => ({ value: t, label: t }));
+  const typeOptions = ELECTRONIC_LITERATURE_TYPES.map(t => ({ value: t, label: t }));
 
   return <tr data-trash-row data-trash-id={item.id_literature}>
     <td style={{ ...td, padding: 4 }}>
@@ -416,28 +415,30 @@ function ElectronicRow({ item, editable, onSave, disciplineId }) {
         value={item.title || ""}
         onCommit={commitTitle}
         fetchSuggestions={(q) => fetchLiteratureSuggestions("electronic", item.source_type, q, disciplineId)}
-        placeholder="Например: Информатика. Базовый курс (Денисова Э.В., 2017)"
+        placeholder="Например: Денисова Э.В. Информатика. Базовый курс [Электронный ресурс]: учебное пособие"
         textarea
         collapsedMaxHeight={70}
         style={inlineTextarea}
       />
     </td>
     <td style={{ ...td, padding: 4 }}>
-      <input
-        type="url"
+      <ExpandableTextarea
         value={url}
         onChange={e => setUrl(e.target.value)}
         onBlur={commitUrl}
         placeholder="https://…"
-        style={inlineInput}
+        collapsedMaxHeight={70}
+        style={{ ...inlineTextarea, wordBreak: "break-all" }}
       />
     </td>
     <td style={{ ...td, padding: 4 }}>
       <MultiSelectDropdown
         value={Array.isArray(item.availability) ? item.availability : []}
-        options={ELS_OPTIONS}
+        options={AVAILABILITY_OPTIONS}
         onChange={changeAvail}
-        placeholder="Выбрать ЭБС"
+        placeholder="Выбрать доступность"
+        separator="; "
+        maxHeight={48}
       />
     </td>
   </tr>;

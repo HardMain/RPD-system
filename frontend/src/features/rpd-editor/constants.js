@@ -24,8 +24,8 @@ export const SEC_LABELS = {
   "5.2": "5.2 Методические указания",
   "6.1": "6.1 Печатная литература",
   "6.2": "6.2 Электронная литература",
-  "6.3": "6.3 БД и ИСС",
-  "6.4": "6.4 ПО",
+  "6.3": "6.3 ПО",
+  "6.4": "6.4 БД и ИСС",
   "7":   "7. МТО",
   "8":   "8. ФОС",
 };
@@ -64,8 +64,8 @@ export const GEN_SEC_KEY = {
   literature_methodical_students: "6.1",
   literature_methodical_self_study: "6.1",
   literature_electronic: "6.2",
-  databases: "6.3",
-  software: "6.4",
+  software: "6.3",
+  databases: "6.4",
   material_tech: "7",
 };
 

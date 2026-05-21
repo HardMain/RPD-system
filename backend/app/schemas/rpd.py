@@ -200,6 +200,7 @@ class MaterialTechOut(BaseModel):
 class DatabaseCreate(BaseModel):
     name: str
     db_type: str | None = None
+    url: str | None = None
 
 class DatabaseOut(BaseModel):
     id_database: int

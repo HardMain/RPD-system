@@ -11,7 +11,7 @@ import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { useSort, SortTh } from "../components/sortable.jsx";
 import { useStickyState } from "../hooks/useStickyState.js";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
-import { LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
+import { LITERATURE_TYPES, ELECTRONIC_LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
 import { BupsContent } from "./AdminBupsPage.jsx";
 import { DirectionsContent } from "./AdminDirectionsPage.jsx";
 import { DepartmentsContent } from "./AdminDepartmentsPage.jsx";
@@ -115,7 +115,9 @@ const MODE_OPTIONS = [
   { value: "printed", label: "Печатная" },
   { value: "electronic", label: "Электронная" },
 ];
-const LIT_TYPE_OPTIONS = LITERATURE_TYPES.map(t => ({ value: t, label: t }));
+const LIT_TYPE_OPTIONS_PRINTED = LITERATURE_TYPES.map(t => ({ value: t, label: t }));
+const LIT_TYPE_OPTIONS_ELECTRONIC = ELECTRONIC_LITERATURE_TYPES.map(t => ({ value: t, label: t }));
+const litTypeOptions = (mode) => (mode === "electronic" ? LIT_TYPE_OPTIONS_ELECTRONIC : LIT_TYPE_OPTIONS_PRINTED);
 
 const SOURCE_LABELS = {
   manual: "Вручную",
@@ -467,16 +469,23 @@ export function AdminDictionariesPage() {
 
         {isLiterature && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            <div style={{ flex: "1 1 320px", minWidth: 240 }}>
-              <div style={miniLabel}>Подраздел <span style={{ color: T.red }}>*</span></div>
-              <Dropdown value={newSourceType} options={LIT_TYPE_OPTIONS}
-                onChange={setNewSourceType}
-                placeholder="— не указано —" clearLabel="— не указано —" />
-            </div>
             <div style={{ flex: "0 0 200px" }}>
               <div style={miniLabel}>Тип <span style={{ color: T.red }}>*</span></div>
               <Dropdown value={newMode} options={MODE_OPTIONS}
-                onChange={setNewMode} placeholder="— не указано —" clearLabel="— не указано —" />
+                onChange={(v) => {
+                  setNewMode(v);
+                  const opts = litTypeOptions(v).map(o => o.value);
+                  if (newSourceType && !opts.includes(newSourceType)) setNewSourceType("");
+                }}
+                placeholder="— не указано —" clearLabel="— не указано —" />
+            </div>
+            <div style={{ flex: "1 1 320px", minWidth: 240 }}>
+              <div style={miniLabel}>Подраздел <span style={{ color: T.red }}>*</span></div>
+              <Dropdown value={newSourceType} options={litTypeOptions(newMode)}
+                onChange={setNewSourceType}
+                disabled={!newMode}
+                placeholder={newMode ? "— не указано —" : "Сначала выберите тип"}
+                clearLabel="— не указано —" />
             </div>
             <div style={{ flex: "1 1 260px", minWidth: 240 }}>
               <div style={miniLabel}>Дисциплина <span style={{ color: T.red }}>*</span></div>
@@ -833,13 +842,21 @@ function DictEditModal({ entry, competencyOptions, directionOptions, disciplineO
       {isLiterature && (
         <>
           <div>
-            <div style={miniLabel}>Подраздел <span style={{ color: T.red }}>*</span></div>
-            <Dropdown value={sourceType} options={LIT_TYPE_OPTIONS} onChange={setSourceType}
+            <div style={miniLabel}>Тип <span style={{ color: T.red }}>*</span></div>
+            <Dropdown value={mode} options={MODE_OPTIONS}
+              onChange={(v) => {
+                setMode(v);
+                const opts = litTypeOptions(v).map(o => o.value);
+                if (sourceType && !opts.includes(sourceType)) setSourceType("");
+              }}
               placeholder="— не указано —" clearLabel="— не указано —" />
           </div>
           <div>
-            <div style={miniLabel}>Тип <span style={{ color: T.red }}>*</span></div>
-            <Dropdown value={mode} options={MODE_OPTIONS} onChange={setMode} placeholder="— не указано —" clearLabel="— не указано —" />
+            <div style={miniLabel}>Подраздел <span style={{ color: T.red }}>*</span></div>
+            <Dropdown value={sourceType} options={litTypeOptions(mode)} onChange={setSourceType}
+              disabled={!mode}
+              placeholder={mode ? "— не указано —" : "Сначала выберите тип"}
+              clearLabel="— не указано —" />
           </div>
         </>
       )}
