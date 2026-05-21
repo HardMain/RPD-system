@@ -225,11 +225,11 @@ export function OutcomesEditor() {
 
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
       <colgroup>
-        <col style={{ width: "10%" }} />
-        <col style={{ width: "13%" }} />
-        <col style={{ width: "27%" }} />
+        <col style={{ width: "14%" }} />
+        <col style={{ width: "16%" }} />
         <col style={{ width: "30%" }} />
-        <col style={{ width: "20%" }} />
+        <col style={{ width: "23%" }} />
+        <col style={{ width: "17%" }} />
       </colgroup>
       <thead><tr>
         <th style={{ ...th, ...wrap }}>Компетенция</th>
@@ -272,6 +272,7 @@ export function OutcomesEditor() {
                     onSave={v => saveRow(idx, { indicator_description: v })}
                     placeholder={placeholderHint(r.indicator_code)}
                     parent={r.indicator_code || ""}
+                    directionCode={currentBd?.direction_code || ""}
                   />
                 : (descIsPlaceholder
                     ? <span style={{ color: T.textMuted, fontStyle: "italic" }}>{placeholderHint(r.indicator_code)}</span>
@@ -318,35 +319,36 @@ export function OutcomesEditor() {
   </div></GenPlaque>;
 }
 
-async function fetchKind(kind, q, source_type) {
+async function fetchKind(kind, q, source_type, direction_code) {
   const params = { q };
   if (source_type) params.source_type = source_type;
+  if (direction_code) params.direction_code = direction_code;
   const r = await api.getSuggestions(kind, params);
   return r.data?.items || [];
 }
 
 function SnapshotInput({ value, onSave, placeholder, bold, kind, parent }) {
-  const style = { width: "100%", minHeight: 32, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontWeight: bold ? 700 : 400, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
+  const style = { width: "100%", minHeight: 48, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontWeight: bold ? 700 : 400, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
   return <Combobox
     value={value || ""}
     onCommit={v => { if (v !== (value || "")) onSave(v); }}
     fetchSuggestions={(q) => fetchKind(kind, q, parent)}
     placeholder={placeholder}
     textarea
-    collapsedMaxHeight={36}
+    collapsedMaxHeight={56}
     style={style}
   />;
 }
 
-function SnapshotTextarea({ value, onSave, placeholder, parent }) {
-  const style = { width: "100%", minHeight: 48, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
+function SnapshotTextarea({ value, onSave, placeholder, parent, directionCode }) {
+  const style = { width: "100%", minHeight: 56, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
   return <Combobox
     value={value || ""}
     onCommit={v => { if (v !== (value || "")) onSave(v); }}
-    fetchSuggestions={(q) => fetchKind("indicator_description", q, parent)}
+    fetchSuggestions={(q) => fetchKind("indicator_description", q, parent, directionCode)}
     placeholder={placeholder}
     textarea
-    collapsedMaxHeight={64}
+    collapsedMaxHeight={72}
     style={style}
   />;
 }
@@ -483,7 +485,7 @@ function AssessmentToolPicker({ value, disabled, onSave }) {
     placeholder="Средство оценки"
     title="Средство оценки"
     textarea
-    collapsedMaxHeight={64}
-    style={{ width: "100%", minHeight: 32, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
+    collapsedMaxHeight={72}
+    style={{ width: "100%", minHeight: 56, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
   />;
 }

@@ -14,6 +14,7 @@ from app.models.rpd import (
     LlmGenerationLog, LlmPrompt, ApprovalStage, RpdApprovalRoute,
 )
 from app.models.dictionary import DictionaryEntry
+from app.models.app_setting import AppSetting
 
 __all__ = [
     "Role", "Department", "User", "Notification", "Permission", "RolePermission",
@@ -26,4 +27,5 @@ __all__ = [
     "UploadedDocument", "UploadedDocumentSection",
     "LlmGenerationLog", "LlmPrompt", "ApprovalStage", "RpdApprovalRoute",
     "DictionaryEntry",
+    "AppSetting",
 ]

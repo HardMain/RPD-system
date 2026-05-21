@@ -43,7 +43,7 @@ export function ProfilePage({ user, section = "profile", onUserUpdated, onBack }
         {active === "profile" && <ProfileSection user={user} onUserUpdated={onUserUpdated} />}
         {active === "security" && <SecuritySection />}
         {active === "appearance" && <AppearanceSection user={user} onUserUpdated={onUserUpdated} />}
-        {active === "system" && <SystemSection />}
+        {active === "system" && <SystemSection user={user} />}
       </div>
     </div>
   </div>;
@@ -241,10 +241,12 @@ function AppearanceSection({ user, onUserUpdated }) {
   </div>;
 }
 
-function SystemSection() {
+function SystemSection({ user }) {
   const [h, setH] = useState(null);
   useEffect(() => { api.getHealth().then(r => setH(r.data)).catch(() => {}); }, []);
   const llmOnline = h?.llm?.mode === "online";
+  const isAdmin = api.userCan(user, "*");
+  const reloadHealth = () => api.getHealth().then(r => setH(r.data)).catch(() => {});
   const cards = [
     { title: "Статус", rows: [
       ["Сервер", h ? "online" : "…", h ? T.green : T.orange],
@@ -265,6 +267,51 @@ function SystemSection() {
           </span>
         </div>)}
       </div>)}
+      {isAdmin && <LlmModelSelector onChanged={reloadHealth} />}
     </div>
+  </div>;
+}
+
+function LlmModelSelector({ onChanged }) {
+  const [info, setInfo] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api.adminGetLlmModel().then(r => setInfo(r.data)).catch(() => setError("Не удалось загрузить список моделей"));
+  }, []);
+  async function change(model) {
+    if (!info || model === info.current) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const r = await api.adminSetLlmModel(model);
+      setInfo(r.data);
+      onChanged?.();
+    } catch (e) {
+      setError(e?.response?.data?.detail || "Не удалось сохранить");
+    }
+    setSaving(false);
+  }
+  return <div style={{ background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 16 }}>
+    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Настройки LLM</div>
+    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
+      Выбранная модель применяется при следующей генерации. Доступ к настройке — только у администратора.
+    </div>
+    {info ? <select
+      value={info.current}
+      onChange={e => change(e.target.value)}
+      disabled={saving}
+      style={{
+        width: "100%", padding: "8px 12px", border: "1px solid " + T.border, borderRadius: 6,
+        background: T.surface, fontSize: 13, fontFamily: F, color: T.text, outline: "none",
+        cursor: saving ? "wait" : "pointer",
+      }}
+    >
+      {(info.choices || []).map(c => <option key={c.id} value={c.id}>{c.label} — {c.id}</option>)}
+      {!info.choices.some(c => c.id === info.current) && (
+        <option value={info.current}>{info.current} (из .env)</option>
+      )}
+    </select> : <div style={{ fontSize: 12, color: T.textMuted }}>Загрузка…</div>}
+    {error && <div style={{ ...formErrorBox, marginTop: 10 }}>{error}</div>}
   </div>;
 }

@@ -153,6 +153,7 @@ function Hint({ children }) {
 }
 
 function BupDisciplinesTable({ bupDisciplines, disciplineName }) {
+  const [errorMsg, setErrorMsg] = useState(null);
   if (bupDisciplines.length === 0) {
     return <div style={{ padding: "10px 14px", background: T.bg, borderRadius: 4, fontSize: 13, color: T.textMuted, fontStyle: "italic" }}>
       Дисциплины БУПа не привязаны.
@@ -191,15 +192,16 @@ function BupDisciplinesTable({ bupDisciplines, disciplineName }) {
             </td>
             <td style={cell}>
               {b.fgos_file_id
-                ? <a href={api.fileUrl(b.fgos_file_id)} target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>
+                ? <button onClick={() => api.openFile(b.fgos_file_id).catch(() => setErrorMsg("Не удалось открыть файл."))} style={{ color: T.accent, fontWeight: 600, background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", textAlign: "left" }}>
                     📄 {b.fgos_file_name || "Просмотр"}
-                  </a>
+                  </button>
                 : <span style={{ color: T.textMuted, fontStyle: "italic" }}>не прикреплён</span>}
             </td>
           </tr>
         ))}
       </tbody>
     </table>
+    {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </div>;
 }
 

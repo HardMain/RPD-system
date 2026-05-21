@@ -287,7 +287,6 @@ async def apply_software(db: AsyncSession, rpd_id: int, items: list[dict]) -> in
             id_rpd=rpd_id,
             name=name[:300],
             license_type=(item.get("license_type") or "").strip() or None,
-            purpose=(item.get("purpose") or "").strip() or None,
         ))
         created += 1
     if created:

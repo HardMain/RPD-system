@@ -1312,8 +1312,8 @@ async def _seed_demo_data():
         ])
 
         db.add_all([
-            RpdSoftware(id_rpd=rpd2.id_rpd, name="Visual Studio Code", license_type="Свободное ПО", purpose="Редактор кода"),
-            RpdSoftware(id_rpd=rpd2.id_rpd, name="Blender", license_type="GPL", purpose="3D-моделирование"),
+            RpdSoftware(id_rpd=rpd2.id_rpd, name="Visual Studio Code", license_type="Свободное ПО"),
+            RpdSoftware(id_rpd=rpd2.id_rpd, name="Blender", license_type="GPL"),
         ])
 
         db.add_all([

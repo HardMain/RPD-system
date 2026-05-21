@@ -299,14 +299,45 @@ export default function App() {
   };
 
   useEffect(() => {
+    const compute = (el) => {
+      const cs = getComputedStyle(el);
+      if (parseFloat(cs.borderRightWidth) > 0 || parseFloat(cs.borderLeftWidth) > 0) {
+        if (el.dataset.scrollX) delete el.dataset.scrollX;
+        return;
+      }
+      const overflow = el.scrollWidth > el.clientWidth + 1;
+      if (!overflow) { if (el.dataset.scrollX) delete el.dataset.scrollX; return; }
+      el.style.setProperty("--scroll-left", el.scrollLeft + "px");
+      const atStart = el.scrollLeft <= 0;
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+      const next = atStart && atEnd ? "" : atStart ? "right" : atEnd ? "left" : "both";
+      if (next) el.dataset.scrollX = next;
+      else if (el.dataset.scrollX) delete el.dataset.scrollX;
+    };
+    const refresh = () => document.querySelectorAll(".table-scroll").forEach(compute);
+    const ro = new ResizeObserver(entries => entries.forEach(e => compute(e.target)));
+    const wired = new WeakSet();
+    const wire = (el) => {
+      if (wired.has(el)) return;
+      wired.add(el);
+      ro.observe(el);
+      el.addEventListener("scroll", () => compute(el), { passive: true });
+    };
+    const wireAll = () => document.querySelectorAll(".table-scroll").forEach(wire);
+    wireAll();
+    refresh();
+    const mo = new MutationObserver(() => { wireAll(); refresh(); });
+    mo.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener("resize", refresh);
+    return () => { ro.disconnect(); mo.disconnect(); window.removeEventListener("resize", refresh); };
+  }, []);
+
+  useEffect(() => {
     if (!user) return;
     const allowed = new Set(["my", "edit", "account"]);
     if (api.userCan(user, "users.manage") || api.userCan(user, "users.create")) allowed.add("adminUsers");
-    const canSources = api.userCan(user, "bups.manage")
-      || api.userCan(user, "directions.manage")
-      || api.userCan(user, "reference.manage");
-    if (canSources) allowed.add("adminSources");
-    if (api.userCan(user, "users.manage") || api.userCan(user, "sources.manage")) allowed.add("adminLlm");
+    if (api.userCan(user, "sources.manage")) allowed.add("adminSources");
+    if (api.userCan(user, "*")) allowed.add("adminLlm");
     if (!allowed.has(activeTab)) setActiveTab("my");
   }, [user, activeTab]);
 
@@ -314,10 +345,8 @@ export default function App() {
   if (!user) return <LoginPage onLogin={u => setUser(u)} />;
 
   const canManageUsers = api.userCan(user, "users.manage") || api.userCan(user, "users.create");
-  const canManageSources = api.userCan(user, "bups.manage")
-    || api.userCan(user, "directions.manage")
-    || api.userCan(user, "reference.manage");
-  const canManageLlm = api.userCan(user, "users.manage") || api.userCan(user, "sources.manage");
+  const canManageSources = api.userCan(user, "sources.manage");
+  const canManageLlm = api.userCan(user, "*");
   const navTabs = [
     { id: "my", label: `РПД (${rpds.length})` },
     canManageUsers ? { id: "adminUsers", label: "Пользователи" } : null,
@@ -326,7 +355,7 @@ export default function App() {
   ].filter(Boolean);
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>
-    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accentGhost + "}50%{box-shadow:0 0 0 2px " + T.accentGlow + "}100%{box-shadow:0 0 0 2px " + T.accentGhost + "}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}@keyframes savedFade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-2px)}}.saved-fade{animation:savedFade 1.5s ease-in-out;display:inline-block}@keyframes errFlash{0%{box-shadow:0 0 0 2px " + T.redGhost + "}50%{box-shadow:0 0 0 2px " + T.redGlow + "}100%{box-shadow:0 0 0 2px " + T.redGhost + "}}.err-flash{animation:errFlash 2.1s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}.expandable-field::-webkit-scrollbar{width:8px}.expandable-field::-webkit-scrollbar-track{background:" + T.bg + ";margin:28px 0 4px 0;border-radius:4px}.expandable-field::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:4px;border:none}.expandable-field::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.expandable-field-sm::-webkit-scrollbar{width:6px}.expandable-field-sm::-webkit-scrollbar-track{background:" + T.bg + ";margin:24px 0 2px 0;border-radius:3px}.expandable-field-sm::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:3px;border:none}.expandable-field-sm::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
+    <style>{"*{box-sizing:border-box;margin:0;padding:0}@keyframes spin{to{transform:rotate(360deg)}}@keyframes secFlash{0%{box-shadow:0 0 0 2px " + T.accentGhost + "}50%{box-shadow:0 0 0 2px " + T.accentGlow + "}100%{box-shadow:0 0 0 2px " + T.accentGhost + "}}.sec-flash{animation:secFlash 1.6s ease-in-out;border-radius:6px}@keyframes savedFade{0%{opacity:0;transform:translateY(2px)}25%{opacity:1;transform:none}75%{opacity:1;transform:none}100%{opacity:0;transform:translateY(-2px)}}.saved-fade{animation:savedFade 1.5s ease-in-out;display:inline-block}@keyframes errFlash{0%{box-shadow:0 0 0 2px " + T.redGhost + "}50%{box-shadow:0 0 0 2px " + T.redGlow + "}100%{box-shadow:0 0 0 2px " + T.redGhost + "}}.err-flash{animation:errFlash 2.1s ease-in-out;border-radius:6px}html,body{overflow:hidden;height:100%}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:" + T.bg + "}::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:5px;border:2px solid " + T.bg + "}::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.table-scroll{width:100%;overflow-x:auto;position:relative}.table-scroll[data-scroll-x=\"right\"]::after,.table-scroll[data-scroll-x=\"both\"]::after{content:\"\";position:absolute;top:0;height:calc(100% - 6px);width:1px;background:" + T.borderLight + ";left:calc(var(--scroll-left, 0px) + 100% - 1px);pointer-events:none;z-index:5}.table-scroll[data-scroll-x=\"left\"]::before,.table-scroll[data-scroll-x=\"both\"]::before{content:\"\";position:absolute;top:0;height:calc(100% - 6px);width:1px;background:" + T.borderLight + ";left:var(--scroll-left, 0px);pointer-events:none;z-index:5}.table-scroll::-webkit-scrollbar{height:6px;width:6px}.table-scroll::-webkit-scrollbar-track{background:transparent}.table-scroll::-webkit-scrollbar-thumb{background:" + T.borderLight + ";border:none;border-radius:3px}.table-scroll::-webkit-scrollbar-thumb:hover{background:" + T.border + "}.expandable-field::-webkit-scrollbar{width:8px}.expandable-field::-webkit-scrollbar-track{background:" + T.bg + ";margin:28px 0 4px 0;border-radius:4px}.expandable-field::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:4px;border:none}.expandable-field::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}.expandable-field-sm::-webkit-scrollbar{width:6px}.expandable-field-sm::-webkit-scrollbar-track{background:" + T.bg + ";margin:24px 0 2px 0;border-radius:3px}.expandable-field-sm::-webkit-scrollbar-thumb{background:" + T.border + ";border-radius:3px;border:none}.expandable-field-sm::-webkit-scrollbar-thumb:hover{background:" + T.textMuted + "}"}</style>
 
     <div style={{ flexShrink: 0, zIndex: 10 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", height: 44, background: T.headerBg, color: T.headerText }}>

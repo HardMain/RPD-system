@@ -13,6 +13,8 @@ class DictionaryEntry(Base):
     value = Column(Text, nullable=False)
     source_type = Column(String(120), nullable=True)
     mode = Column(String(20), nullable=True)
+    direction_code = Column(String(20), nullable=True, index=True)
+    id_discipline = Column(Integer, ForeignKey("disciplines.id_discipline", ondelete="SET NULL"), nullable=True, index=True)
     source = Column(String(20), nullable=False, default="manual")
     created_by = Column(Integer, ForeignKey("users.id_user"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

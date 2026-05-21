@@ -1,5 +1,5 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -36,7 +36,8 @@ class LlmPromptUpdate(BaseModel):
 
 
 def _ensure_perm(user: User) -> None:
-    ensure_permission(user, "users.manage", "sources.manage", detail="Недостаточно прав для управления промптами LLM")
+    if not user_can(user, "*"):
+        raise HTTPException(status_code=403, detail="Доступно только администратору")
 
 
 @router.get("/", response_model=list[LlmPromptOut])

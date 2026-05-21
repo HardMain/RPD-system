@@ -267,4 +267,7 @@ export const adminDownloadBupSourceUrl = (bupId) => `/api/admin/bups/${bupId}/so
 
 export const getHealth = () => api.get('/health');
 
+export const adminGetLlmModel = () => api.get('/admin/system/llm-model');
+export const adminSetLlmModel = (model) => api.patch('/admin/system/llm-model', { model });
+
 export default api;

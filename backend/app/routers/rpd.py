@@ -708,7 +708,7 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
             for sw in base.software:
                 db.add(RpdSoftware(
                     id_rpd=rpd.id_rpd, name=sw.name,
-                    license_type=sw.license_type, purpose=sw.purpose,
+                    license_type=sw.license_type,
                 ))
 
             for mt in base.material_tech:

@@ -120,7 +120,6 @@ class RpdSoftware(Base):
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
     name = Column(String(300), nullable=False)
     license_type = Column(String(100))
-    purpose = Column(String(200))
     rpd = relationship("Rpd", back_populates="software")
 
 class RpdMaterialTech(Base):

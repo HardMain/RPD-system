@@ -80,7 +80,7 @@ def _section_text(rpd: Rpd, section_key: str) -> str:
         return "\n".join(_fmt_lit(l) for l in rows).strip()
     if section_key == "software":
         return "\n".join(
-            " — ".join(p for p in [s.name, s.purpose] if p)
+            (s.name or "")
             + (f" ({s.license_type})" if s.license_type else "")
             for s in rpd.software
         ).strip()

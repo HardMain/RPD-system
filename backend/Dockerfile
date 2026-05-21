@@ -2,7 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN sed -i 's|http://deb.debian.org|https://mirror.yandex.ru|g' /etc/apt/sources.list.d/debian.sources \
+    && apt-get update && apt-get install -y --no-install-recommends \
     gcc libpq-dev poppler-utils fonts-dejavu-core fonts-liberation \
     libreoffice-writer libreoffice-core \
     && rm -rf /var/lib/apt/lists/*

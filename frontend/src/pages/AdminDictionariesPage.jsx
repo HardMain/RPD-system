@@ -51,7 +51,6 @@ const KIND_GROUPS = [
     kinds: [
       { id: "literature_title", label: "Литература", valueLabel: "Источник" },
       { id: "software_name", label: "ПО", valueLabel: "Программное обеспечение" },
-      { id: "software_purpose", label: "Назначение ПО", valueLabel: "Назначение" },
       { id: "database_name", label: "БД и ИСС", valueLabel: "База данных / ИСС" },
     ],
   },
@@ -160,15 +159,22 @@ export function AdminDictionariesPage() {
   const [newMode, setNewMode] = useState("");
   const [newCompetency, setNewCompetency] = useState("");
   const [newIndex, setNewIndex] = useState("1");
+  const [newDirectionCode, setNewDirectionCode] = useState("");
+  const [newDisciplineId, setNewDisciplineId] = useState("");
   const [adding, setAdding] = useState(false);
   const [prefixFilter, setPrefixFilter] = useState("all");
 
   const [competencyOptions, setCompetencyOptions] = useState([]);
+  const [directionOptions, setDirectionOptions] = useState([]);
+  const [disciplineOptions, setDisciplineOptions] = useState([]);
 
   const isLiterature = kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(kind);
   const isDiscipline = kind === "discipline";
   const isCustomKind = kind === "bup" || kind === "direction" || kind === "department";
+  const isDirectionScoped = kind === "indicator_description";
+  const DISCIPLINE_SCOPED_KINDS_SET = new Set(["literature_title", "software_name", "database_name"]);
+  const isDisciplineScoped = DISCIPLINE_SCOPED_KINDS_SET.has(kind);
   const activeGroupIdx = Math.max(0, KIND_GROUPS.findIndex(g => g.kinds.some(k => k.id === kind)));
   const parentMeta = PARENT_LABELS[kind] || null;
   const useGroupedView = !!parentMeta;
@@ -208,12 +214,47 @@ export function AdminDictionariesPage() {
   }, [isIndicatorKind, kind]);
 
   useEffect(() => {
+    if (!isDirectionScoped) return;
+    api.adminListDirections().then(r => {
+      const items = (r.data?.items || r.data || [])
+        .filter(d => d?.code)
+        .map(d => ({ code: d.code, name: d.name || "" }))
+        .sort((a, b) => a.code.localeCompare(b.code, "ru", { numeric: true, sensitivity: "base" }));
+      setDirectionOptions(items);
+    }).catch(() => setDirectionOptions([]));
+  }, [isDirectionScoped, kind]);
+
+  useEffect(() => {
+    if (!isDisciplineScoped) return;
+    api.adminListDisciplines().then(r => {
+      const items = (r.data || [])
+        .filter(d => d?.id_discipline && d?.name)
+        .map(d => ({ id: d.id_discipline, name: d.name }))
+        .sort((a, b) => a.name.localeCompare(b.name, "ru", { sensitivity: "base" }));
+      setDisciplineOptions(items);
+    }).catch(() => setDisciplineOptions([]));
+  }, [isDisciplineScoped, kind]);
+
+  const disciplineNameById = useMemo(() => {
+    const m = new Map();
+    for (const d of disciplineOptions) m.set(d.id, d.name);
+    return m;
+  }, [disciplineOptions]);
+  const directionNameByCode = useMemo(() => {
+    const m = new Map();
+    for (const d of directionOptions) m.set(d.code, d.name);
+    return m;
+  }, [directionOptions]);
+
+  useEffect(() => {
     setSearch("");
     setNewValue("");
     setNewSourceType("");
     setNewMode("");
     setNewCompetency("");
     setNewIndex("1");
+    setNewDirectionCode("");
+    setNewDisciplineId("");
     setPrefixFilter("all");
   }, [kind]);
 
@@ -241,14 +282,19 @@ export function AdminDictionariesPage() {
     const q = search.trim().toLowerCase();
     return items.filter(it => {
       if (q) {
-        const matches = (it.value || "").toLowerCase().includes(q)
-          || (it.source_type || "").toLowerCase().includes(q);
-        if (!matches) return false;
+        const haystack = [
+          it.value,
+          it.source_type,
+          it.direction_code,
+          directionNameByCode.get(it.direction_code),
+          disciplineNameById.get(it.id_discipline),
+        ].filter(Boolean).join(" ").toLowerCase();
+        if (!haystack.includes(q)) return false;
       }
       if (showPrefixFilter && prefixFilter !== "all" && prefixOf(it) !== prefixFilter) return false;
       return true;
     });
-  }, [items, search, showPrefixFilter, prefixFilter, kind]);
+  }, [items, search, showPrefixFilter, prefixFilter, kind, directionNameByCode, disciplineNameById]);
 
   const { sort, toggleSort, sortItems } = useSort("value", "asc", "adminDict.sort.v1");
   const sortedRows = useMemo(
@@ -279,11 +325,12 @@ export function AdminDictionariesPage() {
       if (cmp !== 0) return cmp;
       return ka[2] - kb[2];
     });
+    const rowSorter = kind === "indicator_description"
+      ? (a, b) => (a.direction_code || "").localeCompare(b.direction_code || "", "ru", { numeric: true, sensitivity: "base" })
+      : (a, b) => parseIndicatorCode(a.value).index - parseIndicatorCode(b.value).index;
     return order.map(k => ({
       parent: k,
-      rows: [...buckets.get(k)].sort(
-        (a, b) => parseIndicatorCode(a.value).index - parseIndicatorCode(b.value).index
-      ),
+      rows: [...buckets.get(k)].sort(rowSorter),
     }));
   }, [filtered, useGroupedView, kind]);
 
@@ -325,13 +372,20 @@ export function AdminDictionariesPage() {
         const desc = newValue.trim();
         if (!comp) throw new Error("Выберите компетенцию");
         if (!desc) throw new Error("Заполните описание");
-        payload = { value: desc, source_type: buildIndicatorCode(comp, newIndex) };
+        if (!newDirectionCode) throw new Error("Выберите направление");
+        payload = { value: desc, source_type: buildIndicatorCode(comp, newIndex), direction_code: newDirectionCode };
       } else if (isLiterature) {
         const v = newValue.trim();
         if (!v) throw new Error("Заполните значение");
         if (!newSourceType) throw new Error("Выберите подраздел");
         if (!newMode) throw new Error("Выберите тип");
-        payload = { value: v, source_type: newSourceType, mode: newMode };
+        if (!newDisciplineId) throw new Error("Выберите дисциплину");
+        payload = { value: v, source_type: newSourceType, mode: newMode, id_discipline: newDisciplineId };
+      } else if (isDisciplineScoped) {
+        const v = newValue.trim();
+        if (!v) throw new Error("Заполните значение");
+        if (!newDisciplineId) throw new Error("Выберите дисциплину");
+        payload = { value: v, id_discipline: newDisciplineId };
       } else {
         const v = newValue.trim();
         if (!v) throw new Error("Заполните значение");
@@ -350,10 +404,12 @@ export function AdminDictionariesPage() {
   const canAdd = kind === "indicator_code"
     ? !!newCompetency.trim()
     : kind === "indicator_description"
-      ? !!newCompetency.trim() && !!newValue.trim()
+      ? !!newCompetency.trim() && !!newValue.trim() && !!newDirectionCode
       : isLiterature
-        ? !!newValue.trim() && !!newSourceType && !!newMode
-        : !!newValue.trim();
+        ? !!newValue.trim() && !!newSourceType && !!newMode && !!newDisciplineId
+        : isDisciplineScoped
+          ? !!newValue.trim() && !!newDisciplineId
+          : !!newValue.trim();
 
   return <div style={{ flex: 1, overflow: "auto", scrollbarGutter: "stable", padding: 24, background: T.bg }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
@@ -422,6 +478,34 @@ export function AdminDictionariesPage() {
               <Dropdown value={newMode} options={MODE_OPTIONS}
                 onChange={setNewMode} placeholder="— не указано —" clearLabel="— не указано —" />
             </div>
+            <div style={{ flex: "1 1 260px", minWidth: 240 }}>
+              <div style={miniLabel}>Дисциплина <span style={{ color: T.red }}>*</span></div>
+              {disciplineOptions.length === 0
+                ? <div style={{ ...miniInput, color: T.textMuted, fontStyle: "italic" }}>Сначала добавьте дисциплины.</div>
+                : <Dropdown
+                    value={newDisciplineId ? String(newDisciplineId) : ""}
+                    options={disciplineOptions.map(d => ({ value: String(d.id), label: d.name }))}
+                    onChange={v => setNewDisciplineId(v ? Number(v) : "")}
+                    placeholder="— не указано —"
+                    clearLabel="— не указано —"
+                  />}
+            </div>
+          </div>
+        )}
+        {isDisciplineScoped && !isLiterature && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+            <div style={{ flex: "1 1 260px", minWidth: 240 }}>
+              <div style={miniLabel}>Дисциплина <span style={{ color: T.red }}>*</span></div>
+              {disciplineOptions.length === 0
+                ? <div style={{ ...miniInput, color: T.textMuted, fontStyle: "italic" }}>Сначала добавьте дисциплины.</div>
+                : <Dropdown
+                    value={newDisciplineId ? String(newDisciplineId) : ""}
+                    options={disciplineOptions.map(d => ({ value: String(d.id), label: d.name }))}
+                    onChange={v => setNewDisciplineId(v ? Number(v) : "")}
+                    placeholder="— не указано —"
+                    clearLabel="— не указано —"
+                  />}
+            </div>
           </div>
         )}
 
@@ -458,6 +542,22 @@ export function AdminDictionariesPage() {
                 }}>
                   {newCompetency ? buildIndicatorCode(newCompetency, newIndex) : "выберите компетенцию"}
                 </div>
+              </div>
+            )}
+            {isDirectionScoped && (
+              <div style={{ flex: "1 1 260px", minWidth: 240 }}>
+                <div style={miniLabel}>Направление <span style={{ color: T.red }}>*</span></div>
+                {directionOptions.length === 0
+                  ? <div style={{ ...miniInput, color: T.textMuted, fontStyle: "italic" }}>
+                      Сначала добавьте направления во вкладке «Направления».
+                    </div>
+                  : <Dropdown
+                      value={newDirectionCode}
+                      options={directionOptions.map(d => ({ value: d.code, label: `${d.code} ${d.name}` }))}
+                      onChange={setNewDirectionCode}
+                      placeholder="— не указано —"
+                      clearLabel="— не указано —"
+                    />}
               </div>
             )}
           </div>
@@ -531,6 +631,7 @@ export function AdminDictionariesPage() {
               <thead><tr style={{ background: T.surface }}>
                 {useGroupedView ? <>
                   <th style={{ ...hdr, width: 180 }}>{parentMeta.col}</th>
+                  {isDirectionScoped && <th style={{ ...hdr, width: 110 }}>Направление</th>}
                   <th style={hdr}>Значение</th>
                   <th style={{ ...hdr, width: 200 }}>Источник</th>
                   <th style={{ ...hdr, textAlign: "center", width: 80 }} />
@@ -538,6 +639,7 @@ export function AdminDictionariesPage() {
                   {isLiterature && <SortTh sortKey="sourceType" sort={sort} onSort={toggleSort} style={{ width: 240 }}>Подраздел</SortTh>}
                   <SortTh sortKey="value" sort={sort} onSort={toggleSort}>{isDiscipline ? "Название дисциплины" : "Значение"}</SortTh>
                   {isLiterature && <SortTh sortKey="mode" sort={sort} onSort={toggleSort} style={{ width: 130 }}>Тип</SortTh>}
+                  {isDisciplineScoped && <th style={{ ...hdr, width: 200 }}>Дисциплина</th>}
                   <SortTh sortKey={isDiscipline ? "usage" : "source"} sort={sort} onSort={toggleSort} style={{ width: 200 }}>{isDiscipline ? "Использование" : "Источник"}</SortTh>
                   <th style={{ ...hdr, textAlign: "center", width: 80 }} />
                 </>}
@@ -553,6 +655,11 @@ export function AdminDictionariesPage() {
                         <td rowSpan={g.rows.length}
                           style={{ ...tcell, fontWeight: 700, color: g.parent === "—" ? T.textMuted : T.text, fontStyle: g.parent === "—" ? "italic" : "normal", whiteSpace: "nowrap", verticalAlign: "middle", textAlign: "center", borderRight: "1px solid " + T.borderLight, background: T.surface }}>
                           {g.parent}
+                        </td>
+                      )}
+                      {isDirectionScoped && (
+                        <td style={{ ...tcell, fontSize: 11, color: it.direction_code ? T.text : T.textMuted, fontStyle: it.direction_code ? "normal" : "italic", whiteSpace: "nowrap" }}>
+                          {it.direction_code || "—"}
                         </td>
                       )}
                       <td style={{ ...tcell, fontWeight: 500 }}>{it.value}</td>
@@ -572,6 +679,11 @@ export function AdminDictionariesPage() {
                       {isLiterature && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic" }}>{it.source_type || "—"}</td>}
                       <td style={{ ...tcell, fontWeight: 500 }}>{it.value}</td>
                       {isLiterature && <td style={{ ...tcell, color: it.mode ? T.text : T.textMuted, fontStyle: it.mode ? "normal" : "italic" }}>{it.mode ? MODE_LABELS[it.mode] || it.mode : "—"}</td>}
+                      {isDisciplineScoped && (
+                        <td style={{ ...tcell, fontSize: 12, color: it.id_discipline ? T.text : T.textMuted, fontStyle: it.id_discipline ? "normal" : "italic" }}>
+                          {disciplineNameById.get(it.id_discipline) || "—"}
+                        </td>
+                      )}
                       <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
                         {isDiscipline
                           ? <UsageInfo bups={it.used_in_bups} rpds={it.used_in_rpds} />
@@ -603,6 +715,8 @@ export function AdminDictionariesPage() {
     {editing && <DictEditModal
       entry={editing}
       competencyOptions={competencyOptions}
+      directionOptions={directionOptions}
+      disciplineOptions={disciplineOptions}
       onClose={() => setEditing(null)}
       onSaved={() => { setEditing(null); reload(); }}
       onError={msg => setErrorMsg(msg)}
@@ -635,9 +749,11 @@ function RowActions({ onEdit, onDelete }) {
   </div>;
 }
 
-function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, onDelete }) {
+function DictEditModal({ entry, competencyOptions, directionOptions, disciplineOptions, onClose, onSaved, onError, onDelete }) {
   const isLiterature = entry.kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(entry.kind);
+  const isDirectionScoped = entry.kind === "indicator_description";
+  const isDisciplineScoped = entry.kind === "literature_title" || entry.kind === "software_name" || entry.kind === "database_name";
 
   const initialIndicatorContext = useMemo(() => {
     if (entry.kind === "indicator_code") {
@@ -656,6 +772,8 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
   const [mode, setMode] = useState(entry.mode || "");
   const [competency, setCompetency] = useState(initialIndicatorContext.competency);
   const [index, setIndex] = useState(initialIndicatorContext.index);
+  const [directionCode, setDirectionCode] = useState(entry.direction_code || "");
+  const [disciplineId, setDisciplineId] = useState(entry.id_discipline || "");
   const [saving, setSaving] = useState(false);
 
   const longText = entry.kind === "indicator_description" || entry.kind === "literature_title";
@@ -680,13 +798,20 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
         const desc = value.trim();
         if (!comp) throw new Error("Выберите компетенцию");
         if (!desc) throw new Error("Заполните описание");
-        payload = { value: desc, source_type: buildIndicatorCode(comp, index) };
+        if (!directionCode) throw new Error("Выберите направление");
+        payload = { value: desc, source_type: buildIndicatorCode(comp, index), direction_code: directionCode };
       } else if (isLiterature) {
         const v = value.trim();
         if (!v) throw new Error("Заполните значение");
         if (!sourceType) throw new Error("Выберите подраздел");
         if (!mode) throw new Error("Выберите тип");
-        payload = { value: v, source_type: sourceType, mode: mode };
+        if (!disciplineId) throw new Error("Выберите дисциплину");
+        payload = { value: v, source_type: sourceType, mode: mode, id_discipline: Number(disciplineId) };
+      } else if (isDisciplineScoped) {
+        const v = value.trim();
+        if (!v) throw new Error("Заполните значение");
+        if (!disciplineId) throw new Error("Выберите дисциплину");
+        payload = { value: v, id_discipline: Number(disciplineId) };
       } else {
         const v = value.trim();
         if (!v) throw new Error("Заполните значение");
@@ -751,6 +876,34 @@ function DictEditModal({ entry, competencyOptions, onClose, onSaved, onError, on
               </div>
             </div>
           )}
+          {isDirectionScoped && (
+            <div style={{ flex: "1 1 260px", minWidth: 240 }}>
+              <div style={miniLabel}>Направление <span style={{ color: T.red }}>*</span></div>
+              {(directionOptions || []).length === 0
+                ? <div style={{ ...miniInput, color: T.textMuted, fontStyle: "italic" }}>—</div>
+                : <Dropdown
+                    value={directionCode}
+                    options={directionOptions.map(d => ({ value: d.code, label: `${d.code} ${d.name}` }))}
+                    onChange={setDirectionCode}
+                    placeholder="— не указано —"
+                    clearLabel="— не указано —"
+                  />}
+            </div>
+          )}
+        </div>
+      )}
+      {isDisciplineScoped && (
+        <div>
+          <div style={miniLabel}>Дисциплина <span style={{ color: T.red }}>*</span></div>
+          {(disciplineOptions || []).length === 0
+            ? <div style={{ ...miniInput, color: T.textMuted, fontStyle: "italic" }}>—</div>
+            : <Dropdown
+                value={disciplineId ? String(disciplineId) : ""}
+                options={disciplineOptions.map(d => ({ value: String(d.id), label: d.name }))}
+                onChange={v => setDisciplineId(v ? Number(v) : "")}
+                placeholder="— не указано —"
+                clearLabel="— не указано —"
+              />}
         </div>
       )}
       {entry.kind === "indicator_code" ? null : (

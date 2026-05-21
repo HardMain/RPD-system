@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 from openai import AsyncOpenAI
 from app.core.config import settings
+from app.services.app_settings import get_llm_model
 
 client = AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
 
@@ -235,24 +236,20 @@ async def generate_section(
         if settings.LLM_API_KEY == "demo":
             raise Exception("Demo mode — using fallback")
 
-        _fallbacks = [m.strip() for m in (settings.LLM_FALLBACK_MODELS or "").split(",") if m.strip()]
-        _models = list(dict.fromkeys([settings.LLM_MODEL, *_fallbacks]))
-        _extra = {"extra_body": {"models": _models}} if len(_models) > 1 else {}
-
+        current_model = await get_llm_model()
         async with _llm_semaphore:
             response = await client.chat.completions.create(
-                model=settings.LLM_MODEL,
+                model=current_model,
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.7,
                 max_tokens=2000,
-                **_extra,
             )
         text = _clean_llm_output(response.choices[0].message.content)
         tokens = response.usage.total_tokens if response.usage else 0
-        model = getattr(response, "model", None) or settings.LLM_MODEL
+        model = getattr(response, "model", None) or current_model
     except Exception:
         fallback_tmpl = FALLBACK.get(section, "Раздел «{discipline}» — текст для заполнения.")
         text = fallback_tmpl.format(discipline=discipline, direction=direction)

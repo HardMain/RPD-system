@@ -62,13 +62,17 @@ function EmptyRow({ text }) {
 
 function FileRow({ link, canEdit, onChanged, asTable }) {
   const sizeMb = link.size_bytes ? (link.size_bytes / 1024 / 1024).toFixed(2) : null;
-  const url = api.fileUrl(link.id_file);
   const [confirming, setConfirming] = useState(false);
   const [errorMsg, setErrorMsg] = useState(null);
   async function performUnlink() {
     try { await api.deleteFosLink(link.id_rpd_fos); onChanged?.(); }
     catch { setErrorMsg("Не удалось открепить файл."); }
   }
+  const openLink = (e) => {
+    e.preventDefault();
+    api.openFile(link.id_file).catch(() => setErrorMsg("Не удалось открыть файл."));
+  };
+  const linkStyle = { color: T.accent, fontWeight: 600, background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit", textAlign: "left" };
   const modals = <>
     {confirming && <ConfirmDeleteModal
       title="Открепить файл от РПД?"
@@ -84,7 +88,7 @@ function FileRow({ link, canEdit, onChanged, asTable }) {
       <tr>
         <td style={cell}><b>{link.name || link.original_name}</b></td>
         <td style={cell}>{link.comment || ""}</td>
-        <td style={cell}><a href={url} target="_blank" rel="noreferrer" style={{ color: T.accent, fontWeight: 600 }}>📄 {link.original_name}</a> {sizeMb && <span style={{ color: T.textMuted, fontSize: 11 }}>({sizeMb} МБ)</span>}</td>
+        <td style={cell}><button onClick={openLink} style={linkStyle}>📄 {link.original_name}</button> {sizeMb && <span style={{ color: T.textMuted, fontSize: 11 }}>({sizeMb} МБ)</span>}</td>
         <td style={{ ...cell, textAlign: "right", whiteSpace: "nowrap" }}>
           {canEdit && <button onClick={() => setConfirming(true)} title="Открепить" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
         </td>
@@ -94,10 +98,10 @@ function FileRow({ link, canEdit, onChanged, asTable }) {
   }
   return <>
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", border: "1px solid " + T.borderLight, borderRadius: 6 }}>
-      <a href={url} target="_blank" rel="noreferrer" style={{ flex: 1, color: T.accent, fontWeight: 600, textDecoration: "none" }}>
+      <button onClick={openLink} style={{ ...linkStyle, flex: 1 }}>
         📄 {link.name || link.original_name}
         <span style={{ marginLeft: 8, color: T.textMuted, fontSize: 11, fontWeight: 400 }}>{link.original_name}{sizeMb ? ` · ${sizeMb} МБ` : ""}</span>
-      </a>
+      </button>
       {canEdit && <button onClick={() => setConfirming(true)} title="Открепить" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
     </div>
     {modals}
@@ -187,7 +191,7 @@ function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
                 {it.original_name}{it.size_bytes ? ` · ${(it.size_bytes / 1024 / 1024).toFixed(2)} МБ` : ""} · {it.role === "main" ? "Основной" : "Прочий"}
               </div>
             </div>
-            <a href={api.fileUrl(it.id_file)} target="_blank" rel="noreferrer" style={{ color: T.accent, fontSize: 12 }}>Просмотр</a>
+            <button onClick={() => api.openFile(it.id_file).catch(() => setErrorMsg("Не удалось открыть файл."))} style={{ color: T.accent, fontSize: 12, background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}>Просмотр</button>
             <Btn small primary onClick={() => pick(it)} disabled={busyId === it.id_file}>Выбрать</Btn>
           </div>
         ))}

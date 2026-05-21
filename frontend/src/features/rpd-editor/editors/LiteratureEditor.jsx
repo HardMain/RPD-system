@@ -14,9 +14,10 @@ import { ClearSectionBtn } from "../ClearSectionBtn.jsx";
 import { GenPlaque } from "../GenPlaque.jsx";
 import { GenButton } from "../GenButton.jsx";
 
-async function fetchLiteratureSuggestions(mode, sourceType, q) {
+async function fetchLiteratureSuggestions(mode, sourceType, q, id_discipline) {
   const params = { q, mode };
   if (sourceType) params.source_type = sourceType;
+  if (id_discipline) params.id_discipline = id_discipline;
   const r = await api.getSuggestions("literature_title", params);
   return r.data?.items || [];
 }
@@ -79,6 +80,7 @@ export function LiteratureEditor({ kind }) {
         onAdd={() => addRow("")}
         onDelete={delRow}
         onSave={saveField}
+        disciplineId={rpd.id_discipline}
       />
       {confirmModal}
     </>;
@@ -94,6 +96,7 @@ export function LiteratureEditor({ kind }) {
       onAdd={addRow}
       onDelete={delRow}
       onSave={saveField}
+      disciplineId={rpd.id_discipline}
     />
     {confirmModal}
   </>;
@@ -125,7 +128,7 @@ const PRINTED_SECTIONS = [
 
 const PRINTED_TYPES = PRINTED_SECTIONS.flatMap(s => s.groups.map(g => g.source_type));
 
-function PrintedTable({ items, editable, autoFill, generating, genBusy, onAdd, onDelete, onSave }) {
+function PrintedTable({ items, editable, autoFill, generating, genBusy, onAdd, onDelete, onSave, disciplineId }) {
 
   const grouped = Object.fromEntries(PRINTED_TYPES.map(t => [t, []]));
   for (const it of items) {
@@ -147,6 +150,7 @@ function PrintedTable({ items, editable, autoFill, generating, genBusy, onAdd, o
       onAdd={onAdd}
       onDelete={onDelete}
       onSave={onSave}
+      disciplineId={disciplineId}
     />;
   }
 
@@ -179,7 +183,7 @@ function PrintedTable({ items, editable, autoFill, generating, genBusy, onAdd, o
   </div>;
 }
 
-function PrintedGroup({ g, rows, editable, required = false, autoFill, generating, genBusy, onAdd, onDelete, onSave }) {
+function PrintedGroup({ g, rows, editable, required = false, autoFill, generating, genBusy, onAdd, onDelete, onSave, disciplineId }) {
   const tbodyRef = useRef(null);
   function delById(id) {
     const item = rows.find(it => String(it.id_literature) === String(id));
@@ -221,6 +225,7 @@ function PrintedGroup({ g, rows, editable, required = false, autoFill, generatin
               deletable={!required || rows.length > 1}
               sourceType={g.source_type}
               onSave={(patch) => onSave(item, patch)}
+              disciplineId={disciplineId}
             />
           ))}
         </tbody>
@@ -242,7 +247,7 @@ function PrintedGroup({ g, rows, editable, required = false, autoFill, generatin
   </div>;
 }
 
-function PrintedRow({ item, index, editable, deletable = true, sourceType, onSave }) {
+function PrintedRow({ item, index, editable, deletable = true, sourceType, onSave, disciplineId }) {
   const [copies, setCopies] = useState(item.copies_count ?? 0);
   const copiesRef = useRef(item.copies_count ?? 0);
   useEffect(() => {
@@ -277,7 +282,7 @@ function PrintedRow({ item, index, editable, deletable = true, sourceType, onSav
       <Combobox
         value={item.title || ""}
         onCommit={commitTitle}
-        fetchSuggestions={(q) => fetchLiteratureSuggestions("printed", sourceType, q)}
+        fetchSuggestions={(q) => fetchLiteratureSuggestions("printed", sourceType, q, disciplineId)}
         placeholder="Например: Курс физики (Трофимова Т.И., Академия, 2019, 560 с.)"
         textarea
         collapsedMaxHeight={70}
@@ -297,7 +302,7 @@ function PrintedRow({ item, index, editable, deletable = true, sourceType, onSav
   </tr>;
 }
 
-function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
+function ElectronicTable({ items, editable, onAdd, onDelete, onSave, disciplineId }) {
   const tbodyRef = useRef(null);
   function delById(id) {
     const item = items.find(it => String(it.id_literature) === String(id));
@@ -329,6 +334,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
               item={item}
               editable={editable}
               onSave={(patch) => onSave(item, patch)}
+              disciplineId={disciplineId}
             />
           ))}
         </tbody>
@@ -349,7 +355,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave }) {
   </div>;
 }
 
-function ElectronicRow({ item, editable, onSave }) {
+function ElectronicRow({ item, editable, onSave, disciplineId }) {
   const [url, setUrl] = useState(((item.url || "").trim() ? item.url : ""));
   const urlRef = useRef((item.url || "").trim() ? item.url : "");
   useEffect(() => {
@@ -409,7 +415,7 @@ function ElectronicRow({ item, editable, onSave }) {
       <Combobox
         value={item.title || ""}
         onCommit={commitTitle}
-        fetchSuggestions={(q) => fetchLiteratureSuggestions("electronic", item.source_type, q)}
+        fetchSuggestions={(q) => fetchLiteratureSuggestions("electronic", item.source_type, q, disciplineId)}
         placeholder="Например: Информатика. Базовый курс (Денисова Э.В., 2017)"
         textarea
         collapsedMaxHeight={70}

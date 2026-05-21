@@ -9,7 +9,7 @@ from app.models import User, DictionaryEntry
 router = APIRouter(prefix="/api/suggestions", tags=["suggestions"])
 
 ALLOWED_KINDS = {
-    "software_name", "software_purpose",
+    "software_name",
     "database_name",
     "equipment", "room_type",
     "literature_title",
@@ -17,6 +17,7 @@ ALLOWED_KINDS = {
     "competency_code", "indicator_code", "indicator_description",
 }
 SCOPED_KINDS = {"literature_title", "indicator_code", "indicator_description"}
+DISCIPLINE_SCOPED_KINDS = {"literature_title", "software_name", "database_name"}
 
 
 @router.get("/{kind}")
@@ -25,6 +26,8 @@ async def list_suggestions(
     q: str | None = Query(default=None),
     source_type: str | None = Query(default=None),
     mode: str | None = Query(default=None),
+    direction_code: str | None = Query(default=None),
+    id_discipline: int | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -43,6 +46,10 @@ async def list_suggestions(
         stmt = stmt.where(DictionaryEntry.mode == mode)
     if kind == "indicator_description":
         stmt = stmt.where(~DictionaryEntry.value.ilike("%требуется заполнение%"))
+        if direction_code:
+            stmt = stmt.where(DictionaryEntry.direction_code == direction_code.strip())
+    if kind in DISCIPLINE_SCOPED_KINDS and id_discipline:
+        stmt = stmt.where(DictionaryEntry.id_discipline == id_discipline)
     if q:
         stmt = stmt.where(DictionaryEntry.value.ilike(f"%{q.strip()}%"))
     stmt = (

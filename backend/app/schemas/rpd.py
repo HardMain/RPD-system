@@ -179,7 +179,6 @@ class SoftwareOut(BaseModel):
     id_software: int
     name: str
     license_type: str | None = None
-    purpose: str | None = None
 
     class Config:
         from_attributes = True

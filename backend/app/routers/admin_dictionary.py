@@ -12,7 +12,7 @@ from app.models import User, DictionaryEntry
 router = APIRouter(prefix="/api/admin/dictionary", tags=["admin-dictionary"])
 
 ALLOWED_KINDS = {
-    "software_name", "software_purpose",
+    "software_name",
     "database_name",
     "equipment", "room_type",
     "literature_title",
@@ -21,6 +21,8 @@ ALLOWED_KINDS = {
     "faculty", "employee_title",
 }
 SCOPED_KINDS = {"literature_title", "indicator_code", "indicator_description"}
+DIRECTION_SCOPED_KINDS = {"indicator_description"}
+DISCIPLINE_SCOPED_KINDS = {"literature_title", "software_name", "database_name"}
 
 LITERATURE_MODES = {"printed", "electronic"}
 
@@ -31,6 +33,8 @@ class DictionaryEntryOut(BaseModel):
     value: str
     source_type: str | None = None
     mode: str | None = None
+    direction_code: str | None = None
+    id_discipline: int | None = None
     source: str
     created_at: datetime | None = None
 
@@ -42,12 +46,16 @@ class DictionaryEntryCreate(BaseModel):
     value: str
     source_type: str | None = None
     mode: str | None = None
+    direction_code: str | None = None
+    id_discipline: int | None = None
 
 
 class DictionaryEntryUpdate(BaseModel):
     value: str | None = None
     source_type: str | None = None
     mode: str | None = None
+    direction_code: str | None = None
+    id_discipline: int | None = None
 
 
 def _ensure_perm(user: User) -> None:
@@ -60,6 +68,8 @@ async def list_entries(
     q: str | None = Query(default=None),
     source_type: str | None = Query(default=None),
     mode: str | None = Query(default=None),
+    direction_code: str | None = Query(default=None),
+    id_discipline: int | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -71,6 +81,10 @@ async def list_entries(
         stmt = stmt.where(DictionaryEntry.source_type == source_type)
     if kind == "literature_title" and mode in LITERATURE_MODES:
         stmt = stmt.where(DictionaryEntry.mode == mode)
+    if kind in DIRECTION_SCOPED_KINDS and direction_code:
+        stmt = stmt.where(DictionaryEntry.direction_code == direction_code.strip())
+    if kind in DISCIPLINE_SCOPED_KINDS and id_discipline:
+        stmt = stmt.where(DictionaryEntry.id_discipline == id_discipline)
     if q:
         stmt = stmt.where(DictionaryEntry.value.ilike(f"%{q.strip()}%"))
     stmt = stmt.order_by(func.lower(DictionaryEntry.value).asc())
@@ -94,6 +108,7 @@ async def create_entry(
 
     source_type = (data.source_type or "").strip() or None
     mode = (data.mode or "").strip() or None
+    direction_code = (data.direction_code or "").strip() or None
     if kind == "literature_title":
         if mode and mode not in LITERATURE_MODES:
             raise HTTPException(status_code=400, detail="mode должен быть printed/electronic")
@@ -102,6 +117,13 @@ async def create_entry(
     else:
         source_type = None
         mode = None
+    if kind not in DIRECTION_SCOPED_KINDS:
+        direction_code = None
+    elif not direction_code:
+        raise HTTPException(status_code=400, detail="Не выбрано направление")
+    discipline_id = data.id_discipline if kind in DISCIPLINE_SCOPED_KINDS else None
+    if kind in DISCIPLINE_SCOPED_KINDS and not discipline_id:
+        raise HTTPException(status_code=400, detail="Не выбрана дисциплина")
 
     dup_stmt = select(DictionaryEntry).where(
         DictionaryEntry.kind == kind,
@@ -117,13 +139,18 @@ async def create_entry(
             dup_stmt = dup_stmt.where(DictionaryEntry.mode.is_(None))
         else:
             dup_stmt = dup_stmt.where(DictionaryEntry.mode == mode)
+    if kind in DIRECTION_SCOPED_KINDS:
+        dup_stmt = dup_stmt.where(DictionaryEntry.direction_code == direction_code)
+    if kind in DISCIPLINE_SCOPED_KINDS:
+        dup_stmt = dup_stmt.where(DictionaryEntry.id_discipline == discipline_id)
     existing = (await db.execute(dup_stmt)).scalars().first()
     if existing:
         raise HTTPException(status_code=400, detail="Такая запись уже есть")
 
     entry = DictionaryEntry(
         kind=kind, value=value,
-        source_type=source_type, mode=mode,
+        source_type=source_type, mode=mode, direction_code=direction_code,
+        id_discipline=discipline_id,
         source="manual", created_by=user.id_user,
     )
     db.add(entry)
@@ -159,6 +186,15 @@ async def update_entry(
         if m and m not in LITERATURE_MODES:
             raise HTTPException(status_code=400, detail="mode должен быть printed/electronic")
         entry.mode = m
+    if data.direction_code is not None and entry.kind in DIRECTION_SCOPED_KINDS:
+        dc = data.direction_code.strip() or None
+        if not dc:
+            raise HTTPException(status_code=400, detail="Не выбрано направление")
+        entry.direction_code = dc
+    if data.id_discipline is not None and entry.kind in DISCIPLINE_SCOPED_KINDS:
+        if not data.id_discipline:
+            raise HTTPException(status_code=400, detail="Не выбрана дисциплина")
+        entry.id_discipline = data.id_discipline
 
     dup_stmt = select(DictionaryEntry).where(
         DictionaryEntry.kind == entry.kind,
@@ -175,6 +211,10 @@ async def update_entry(
             dup_stmt = dup_stmt.where(DictionaryEntry.mode.is_(None))
         else:
             dup_stmt = dup_stmt.where(DictionaryEntry.mode == entry.mode)
+    if entry.kind in DIRECTION_SCOPED_KINDS:
+        dup_stmt = dup_stmt.where(DictionaryEntry.direction_code == entry.direction_code)
+    if entry.kind in DISCIPLINE_SCOPED_KINDS:
+        dup_stmt = dup_stmt.where(DictionaryEntry.id_discipline == entry.id_discipline)
     dup = (await db.execute(dup_stmt)).scalars().first()
     if dup:
         raise HTTPException(status_code=400, detail="Такая запись уже есть")

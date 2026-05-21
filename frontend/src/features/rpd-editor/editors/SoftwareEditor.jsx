@@ -10,8 +10,10 @@ import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { SOFTWARE_TYPES } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
-const fetchSoftwareSuggestions = async (q) => {
-  const r = await api.getSuggestions("software_name", { q });
+const fetchSoftwareSuggestions = async (q, id_discipline) => {
+  const params = { q };
+  if (id_discipline) params.id_discipline = id_discipline;
+  const r = await api.getSuggestions("software_name", params);
   return r.data?.items || [];
 };
 
@@ -71,6 +73,7 @@ export function SoftwareEditor() {
               item={item}
               editable={editable}
               onSave={(patch) => saveRow(item, patch)}
+              disciplineId={rpd.id_discipline}
             />
           ))}
         </tbody>
@@ -97,7 +100,7 @@ export function SoftwareEditor() {
   </div>;
 }
 
-function SoftwareRow({ item, editable, onSave }) {
+function SoftwareRow({ item, editable, onSave, disciplineId }) {
   function changeType(v) {
     if ((v || null) === (item.license_type || null)) return;
     onSave({ license_type: v || null });
@@ -130,7 +133,7 @@ function SoftwareRow({ item, editable, onSave }) {
       <Combobox
         value={item.name || ""}
         onCommit={commitName}
-        fetchSuggestions={fetchSoftwareSuggestions}
+        fetchSuggestions={(q) => fetchSoftwareSuggestions(q, disciplineId)}
         placeholder="Например, LibreOffice 7.5"
         textarea
         collapsedMaxHeight={64}

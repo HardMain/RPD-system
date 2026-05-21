@@ -9,7 +9,7 @@ from app.routers import (
     auth, rpd, llm, notifications, competencies, upload, export,
     admin, bups, admin_bups, reference, files, admin_directions, fos,
     suggestions, admin_dictionary, admin_disciplines, admin_documents,
-    admin_llm_prompts,
+    admin_llm_prompts, admin_system,
 )
 from app.seed import seed_data
 
@@ -74,6 +74,27 @@ async def _apply_schema_patches() -> None:
         await conn.execute(text(
             "DELETE FROM dictionary_entries WHERE kind IN ('indicator_code', 'indicator_description')"
         ))
+        await conn.execute(text("ALTER TABLE rpd_software DROP COLUMN IF EXISTS purpose"))
+        await conn.execute(text("DELETE FROM dictionary_entries WHERE kind = 'software_purpose'"))
+        await conn.execute(text("ALTER TABLE dictionary_entries ADD COLUMN IF NOT EXISTS direction_code VARCHAR(20)"))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_dictionary_entries_direction_code ON dictionary_entries (direction_code)"
+        ))
+        await conn.execute(text(
+            "DELETE FROM dictionary_entries WHERE kind = 'indicator_description' AND source = 'bup'"
+        ))
+        await conn.execute(text(
+            "DELETE FROM dictionary_entries WHERE kind = 'indicator_description' AND source = 'approved_rpd' AND direction_code IS NULL"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE dictionary_entries ADD COLUMN IF NOT EXISTS id_discipline INTEGER REFERENCES disciplines(id_discipline) ON DELETE SET NULL"
+        ))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS ix_dictionary_entries_id_discipline ON dictionary_entries (id_discipline)"
+        ))
+        await conn.execute(text(
+            "DELETE FROM dictionary_entries WHERE kind IN ('software_name', 'database_name', 'literature_title') AND source = 'approved_rpd' AND id_discipline IS NULL"
+        ))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -126,19 +147,22 @@ app.include_router(admin_dictionary.router)
 app.include_router(admin_disciplines.router)
 app.include_router(admin_documents.router)
 app.include_router(admin_llm_prompts.router)
+app.include_router(admin_system.router)
 app.include_router(files.router)
 app.include_router(fos.router)
 
 @app.get("/api/health")
 async def health():
     from app.core.config import settings
+    from app.services.app_settings import get_llm_model
     llm_demo = settings.LLM_API_KEY.strip().lower() == "demo"
+    model = await get_llm_model()
     return {
         "status": "ok",
         "service": "ИС РПД",
         "version": "1.0.0",
         "llm": {
             "mode": "demo" if llm_demo else "online",
-            "model": settings.LLM_MODEL,
+            "model": model,
         },
     }

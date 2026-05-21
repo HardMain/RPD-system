@@ -5,7 +5,8 @@ from sqlalchemy.orm import selectinload
 from app.models import (
     Rpd, RpdSoftware, RpdDatabase, RpdMaterialTech, RpdLiterature,
     RpdLearningOutcome, AssessmentTool, DictionaryEntry,
-    Competency, CompetencyIndicator,
+    Competency, CompetencyIndicator, Direction,
+    RpdBupDiscipline, BupDiscipline, Bup,
 )
 
 APPROVED_STATUS = "Согласовано"
@@ -39,10 +40,18 @@ async def _existing_keys(db: AsyncSession) -> set[tuple]:
         DictionaryEntry.value,
         DictionaryEntry.source_type,
         DictionaryEntry.mode,
+        DictionaryEntry.direction_code,
+        DictionaryEntry.id_discipline,
     ))
     keys = set()
-    for kind, value, st, md in res.all():
-        keys.add((kind, value.strip().lower(), (st or "").strip().lower(), (md or "").strip().lower()))
+    for kind, value, st, md, dc, di in res.all():
+        keys.add((
+            kind, value.strip().lower(),
+            (st or "").strip().lower(),
+            (md or "").strip().lower(),
+            (dc or "").strip().lower(),
+            di or 0,
+        ))
     return keys
 
 
@@ -55,6 +64,8 @@ def _add_if_new(
     source: str,
     source_type: str | None = None,
     mode: str | None = None,
+    direction_code: str | None = None,
+    id_discipline: int | None = None,
 ) -> bool:
     v = _norm(value)
     if not v:
@@ -63,12 +74,15 @@ def _add_if_new(
         return False
     st = _norm(source_type) or None
     md = _norm(mode) or None
-    key = (kind, v.lower(), (st or "").lower(), (md or "").lower())
+    dc = _norm(direction_code) or None
+    di = id_discipline or None
+    key = (kind, v.lower(), (st or "").lower(), (md or "").lower(), (dc or "").lower(), di or 0)
     if key in keys:
         return False
     keys.add(key)
     db.add(DictionaryEntry(
-        kind=kind, value=v, source_type=st, mode=md, source=source,
+        kind=kind, value=v, source_type=st, mode=md,
+        direction_code=dc, id_discipline=di, source=source,
     ))
     return True
 
@@ -78,18 +92,25 @@ async def _upsert_indicator_description(
     *,
     value: str,
     source_type: str | None,
+    direction_code: str | None,
     source: str,
 ) -> bool:
     v = _norm(value)
     st = _norm(source_type) or None
+    dc = _norm(direction_code) or None
     if not v or st is None:
         return False
     is_ph = _is_placeholder(v)
-    res = await db.execute(
+    stmt = (
         select(DictionaryEntry)
         .where(DictionaryEntry.kind == "indicator_description")
         .where(DictionaryEntry.source_type == st)
     )
+    if dc is None:
+        stmt = stmt.where(DictionaryEntry.direction_code.is_(None))
+    else:
+        stmt = stmt.where(DictionaryEntry.direction_code == dc)
+    res = await db.execute(stmt)
     existing = list(res.scalars().all())
     real = [e for e in existing if not _is_placeholder(e.value)]
     placeholders = [e for e in existing if _is_placeholder(e.value)]
@@ -104,7 +125,7 @@ async def _upsert_indicator_description(
         if real or placeholders:
             return False
         db.add(DictionaryEntry(
-            kind="indicator_description", value=v, source_type=st, source=source,
+            kind="indicator_description", value=v, source_type=st, direction_code=dc, source=source,
         ))
         return True
 
@@ -114,13 +135,16 @@ async def _upsert_indicator_description(
     if real:
         return False
     db.add(DictionaryEntry(
-        kind="indicator_description", value=v, source_type=st, source=source,
+        kind="indicator_description", value=v, source_type=st, direction_code=dc, source=source,
     ))
     return True
 
 
 async def _sync_indicator_description(
-    db: AsyncSession, indicator: CompetencyIndicator | None, snapshot: str,
+    db: AsyncSession,
+    indicator: CompetencyIndicator | None,
+    snapshot: str,
+    direction_code: str | None = None,
 ) -> bool:
     if indicator is None:
         return False
@@ -130,13 +154,19 @@ async def _sync_indicator_description(
     if _norm(indicator.description) == snap:
         return False
     indicator.description = snap
-    await db.execute(
+    dc = _norm(direction_code) or None
+    stmt = (
         delete(DictionaryEntry).where(
             DictionaryEntry.kind == "indicator_description",
             DictionaryEntry.source_type == indicator.code,
             func.lower(DictionaryEntry.value).like("%требуется заполнение%"),
         )
     )
+    if dc is None:
+        stmt = stmt.where(DictionaryEntry.direction_code.is_(None))
+    else:
+        stmt = stmt.where(DictionaryEntry.direction_code == dc)
+    await db.execute(stmt)
     return True
 
 
@@ -150,17 +180,37 @@ async def harvest_rpd(db: AsyncSession, rpd_id: int, *, keys: set[tuple] | None 
             selectinload(Rpd.material_tech),
             selectinload(Rpd.literature),
             selectinload(Rpd.learning_outcomes).selectinload(RpdLearningOutcome.indicator),
+            selectinload(Rpd.bup_links)
+                .selectinload(RpdBupDiscipline.bup_discipline)
+                .selectinload(BupDiscipline.bup)
+                .selectinload(Bup.direction),
         )
     )
     rpd = res.scalar_one_or_none()
     if rpd is None:
         return 0
+
+    def _link_direction(bl) -> str:
+        snap = _norm(bl.direction_code)
+        if snap:
+            return snap
+        bd = getattr(bl, "bup_discipline", None)
+        bup = getattr(bd, "bup", None) if bd is not None else None
+        direc = getattr(bup, "direction", None) if bup is not None else None
+        return _norm(getattr(direc, "code", "")) if direc is not None else ""
+
+    direction_code = next(
+        (_link_direction(bl) for bl in (rpd.bup_links or []) if _link_direction(bl)),
+        None,
+    )
+    discipline_id = rpd.id_discipline or None
     added = 0
     for s in rpd.software or []:
-        if _add_if_new(db, keys, kind="software_name", value=s.name, source="approved_rpd"): added += 1
-        if _add_if_new(db, keys, kind="software_purpose", value=s.purpose, source="approved_rpd"): added += 1
+        if _add_if_new(db, keys, kind="software_name", value=s.name, source="approved_rpd",
+                       id_discipline=discipline_id): added += 1
     for d in rpd.databases or []:
-        if _add_if_new(db, keys, kind="database_name", value=d.name, source="approved_rpd"): added += 1
+        if _add_if_new(db, keys, kind="database_name", value=d.name, source="approved_rpd",
+                       id_discipline=discipline_id): added += 1
     for m in rpd.material_tech or []:
         if _add_if_new(db, keys, kind="equipment", value=m.equipment, source="approved_rpd"): added += 1
         if _add_if_new(db, keys, kind="room_type", value=m.room_type, source="approved_rpd"): added += 1
@@ -169,7 +219,8 @@ async def harvest_rpd(db: AsyncSession, rpd_id: int, *, keys: set[tuple] | None 
         mode = "electronic" if url else "printed"
         if _add_if_new(db, keys,
                        kind="literature_title", value=l.title,
-                       source="approved_rpd", source_type=l.source_type, mode=mode):
+                       source="approved_rpd", source_type=l.source_type, mode=mode,
+                       id_discipline=discipline_id):
             added += 1
     for o in rpd.learning_outcomes or []:
         if _add_if_new(db, keys, kind="assessment_tool", value=o.assessment_tool, source="approved_rpd"):
@@ -182,10 +233,11 @@ async def harvest_rpd(db: AsyncSession, rpd_id: int, *, keys: set[tuple] | None 
                        value=o.indicator_code, source="approved_rpd",
                        source_type=comp_code):
             added += 1
-        if await _sync_indicator_description(db, o.indicator, o.indicator_description or ""):
+        if await _sync_indicator_description(db, o.indicator, o.indicator_description or "", direction_code):
             added += 1
         if await _upsert_indicator_description(
-            db, value=o.indicator_description or "", source_type=ind_code, source="approved_rpd",
+            db, value=o.indicator_description or "", source_type=ind_code,
+            direction_code=direction_code, source="approved_rpd",
         ):
             added += 1
     return added
@@ -196,11 +248,11 @@ async def _dedupe_indicator_descriptions(db: AsyncSession) -> int:
         select(DictionaryEntry).where(DictionaryEntry.kind == "indicator_description")
     )
     rows = list(res.scalars().all())
-    by_st: dict[str | None, list[DictionaryEntry]] = {}
+    by_key: dict[tuple[str | None, str | None], list[DictionaryEntry]] = {}
     for r in rows:
-        by_st.setdefault((r.source_type or None), []).append(r)
+        by_key.setdefault((r.source_type or None, r.direction_code or None), []).append(r)
     removed = 0
-    for st, entries in by_st.items():
+    for _key, entries in by_key.items():
         if len(entries) <= 1:
             continue
         real = [e for e in entries if not _is_placeholder(e.value)]
@@ -264,17 +316,13 @@ async def backfill_from_approved(db: AsyncSession) -> int:
         if _add_if_new(db, keys, kind="competency_code", value=code, source="bup"):
             total += 1
     ind_res = await db.execute(
-        select(CompetencyIndicator.code, CompetencyIndicator.description, Competency.code)
+        select(CompetencyIndicator.code, Competency.code)
         .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
     )
-    for ind_code, desc, comp_code in ind_res.all():
+    for ind_code, comp_code in ind_res.all():
         if _add_if_new(db, keys, kind="indicator_code",
                        value=ind_code, source="bup",
                        source_type=_norm(comp_code) or None):
-            total += 1
-        if await _upsert_indicator_description(
-            db, value=desc, source_type=_norm(ind_code) or None, source="bup",
-        ):
             total += 1
     if total or removed or upgraded:
         await db.commit()

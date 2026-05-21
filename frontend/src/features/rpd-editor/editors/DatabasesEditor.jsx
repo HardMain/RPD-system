@@ -10,8 +10,10 @@ import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { DATABASE_TYPES } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
-const fetchDatabaseSuggestions = async (q) => {
-  const r = await api.getSuggestions("database_name", { q });
+const fetchDatabaseSuggestions = async (q, id_discipline) => {
+  const params = { q };
+  if (id_discipline) params.id_discipline = id_discipline;
+  const r = await api.getSuggestions("database_name", params);
   return r.data?.items || [];
 };
 
@@ -70,6 +72,7 @@ export function DatabasesEditor() {
               item={item}
               editable={editable}
               onSave={(patch) => saveRow(item, patch)}
+              disciplineId={rpd.id_discipline}
             />
           ))}
         </tbody>
@@ -96,7 +99,7 @@ export function DatabasesEditor() {
   </div>;
 }
 
-function DatabaseRow({ item, editable, onSave }) {
+function DatabaseRow({ item, editable, onSave, disciplineId }) {
   function commitName(v) {
     if (v === (item.name || "")) return;
     onSave({ name: v });
@@ -129,7 +132,7 @@ function DatabaseRow({ item, editable, onSave }) {
       <Combobox
         value={item.name || ""}
         onCommit={commitName}
-        fetchSuggestions={fetchDatabaseSuggestions}
+        fetchSuggestions={(q) => fetchDatabaseSuggestions(q, disciplineId)}
         placeholder="Например, eLIBRARY.RU"
         textarea
         collapsedMaxHeight={64}
