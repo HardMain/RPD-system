@@ -1,10 +1,9 @@
+import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from sqlalchemy import text
-
-from app.core.database import engine, Base
+from app.core.migrations import run_migrations
 from app.routers import (
     auth, rpd, llm, notifications, competencies, upload, export,
     admin, bups, admin_bups, reference, files, admin_directions, fos,
@@ -13,98 +12,9 @@ from app.routers import (
 )
 from app.seed import seed_data
 
-async def _apply_schema_patches() -> None:
-    async with engine.begin() as conn:
-        await conn.execute(text("ALTER TABLE rpd DROP COLUMN IF EXISTS deleted_bup_names"))
-        await conn.execute(text("ALTER TABLE bups DROP COLUMN IF EXISTS deleted_at"))
-
-        await conn.execute(text(
-            "ALTER TABLE rpd_bup_disciplines ALTER COLUMN id_bup_discipline DROP NOT NULL"
-        ))
-        for col, ddl in [
-            ("bup_name", "VARCHAR(300)"),
-            ("bup_year", "INTEGER"),
-            ("bup_profile", "VARCHAR(200)"),
-            ("direction_code", "VARCHAR(20)"),
-            ("direction_name", "VARCHAR(200)"),
-            ("direction_profile", "VARCHAR(200)"),
-            ("fgos_file_id", "INTEGER"),
-            ("fgos_file_name", "VARCHAR(300)"),
-            ("code", "VARCHAR(30)"),
-            ("semester", "VARCHAR(30)"),
-            ("control_form", "VARCHAR(255)"),
-            ("total_hours", "INTEGER"),
-            ("lecture_hours", "INTEGER"),
-            ("lab_hours", "INTEGER"),
-            ("practice_hours", "INTEGER"),
-            ("ksr_hours", "INTEGER"),
-            ("self_study_hours", "INTEGER"),
-            ("zet", "INTEGER"),
-            ("discipline_name", "VARCHAR(200)"),
-        ]:
-            await conn.execute(text(
-                f"ALTER TABLE rpd_bup_disciplines ADD COLUMN IF NOT EXISTS {col} {ddl}"
-            ))
-
-        await conn.execute(text(
-            "ALTER TABLE rpd_learning_outcomes ALTER COLUMN id_indicator DROP NOT NULL"
-        ))
-        for col, ddl in [
-            ("indicator_code", "VARCHAR(20)"),
-            ("indicator_description", "TEXT"),
-            ("competency_code", "VARCHAR(20)"),
-            ("competency_name", "TEXT"),
-        ]:
-            await conn.execute(text(
-                f"ALTER TABLE rpd_learning_outcomes ADD COLUMN IF NOT EXISTS {col} {ddl}"
-            ))
-
-        await conn.execute(text("ALTER TABLE competency_indicators ALTER COLUMN code TYPE VARCHAR(40)"))
-        await conn.execute(text("ALTER TABLE uploaded_documents ALTER COLUMN id_rpd DROP NOT NULL"))
-        await conn.execute(text("ALTER TABLE llm_generation_log ADD COLUMN IF NOT EXISTS context_sources TEXT"))
-
-        await conn.execute(text(r"""
-            UPDATE competency_indicators ci
-            SET code = 'ИД-' || split_part(ci.code, '.', 2) || c.code
-            FROM competencies c
-            WHERE ci.id_competency = c.id_competency
-              AND ci.code LIKE c.code || '.%'
-              AND ci.code ~ '^.+\.[0-9]+$'
-        """))
-        await conn.execute(text(
-            "DELETE FROM dictionary_entries WHERE kind IN ('indicator_code', 'indicator_description')"
-        ))
-        await conn.execute(text("ALTER TABLE rpd_software DROP COLUMN IF EXISTS purpose"))
-        await conn.execute(text("DELETE FROM dictionary_entries WHERE kind = 'software_purpose'"))
-        await conn.execute(text("ALTER TABLE dictionary_entries ADD COLUMN IF NOT EXISTS direction_code VARCHAR(20)"))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_dictionary_entries_direction_code ON dictionary_entries (direction_code)"
-        ))
-        await conn.execute(text(
-            "DELETE FROM dictionary_entries WHERE kind = 'indicator_description' AND source = 'bup'"
-        ))
-        await conn.execute(text(
-            "DELETE FROM dictionary_entries WHERE kind = 'indicator_description' AND source = 'approved_rpd' AND direction_code IS NULL"
-        ))
-        await conn.execute(text(
-            "ALTER TABLE dictionary_entries ADD COLUMN IF NOT EXISTS id_discipline INTEGER REFERENCES disciplines(id_discipline) ON DELETE SET NULL"
-        ))
-        await conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS ix_dictionary_entries_id_discipline ON dictionary_entries (id_discipline)"
-        ))
-        await conn.execute(text(
-            "DELETE FROM dictionary_entries WHERE kind = 'literature_title' AND source = 'approved_rpd' AND id_discipline IS NULL"
-        ))
-        await conn.execute(text(
-            "UPDATE dictionary_entries SET id_discipline = NULL WHERE kind IN ('software_name', 'database_name')"
-        ))
-        await conn.execute(text("ALTER TABLE dictionary_entries ADD COLUMN IF NOT EXISTS extra TEXT"))
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    await _apply_schema_patches()
+    await asyncio.to_thread(run_migrations)
     await seed_data()
     from app.core.database import async_session
     from app.services.dictionary_service import backfill_from_approved

@@ -51,7 +51,7 @@ class CompetencyIndicator(Base):
     __tablename__ = "competency_indicators"
     id_indicator = Column(Integer, primary_key=True, autoincrement=True)
     id_competency = Column(Integer, ForeignKey("competencies.id_competency"), nullable=False)
-    code = Column(String(20), nullable=False)
+    code = Column(String(40), nullable=False)
     description = Column(Text, nullable=False)
 
     competency = relationship("Competency", back_populates="indicators")
