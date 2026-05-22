@@ -127,6 +127,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const genKeyRef = useRef(null);
   const [editTexts, setEditTexts] = useState({}); const [editing, setEditing] = useState(null);
   const [modal, setModal] = useState(null); const [rejectComment, setRejectComment] = useState(""); const [validationErrors, setValidationErrors] = useState([]);
+  const [validationActive, setValidationActive] = useState(false);
   const [showMeta, setShowMeta] = useState(false);
   const [showDocs, setShowDocs] = useState(false);
 
@@ -365,15 +366,18 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         return;
       }
       const scrollTop = c.scrollTop;
+      const atBottom = scrollTop + c.clientHeight >= c.scrollHeight - 4;
       const probe = scrollTop + 60;
       let bestKey = "title", bestPos = -Infinity;
       for (const k of SIDEBAR_KEYS) {
         const sec = pdfSectionMap[k]; if (!sec) continue;
-        const pageEl = pdfPageRefs.current[sec.page]; if (!pageEl) continue;
+        const page = Math.min(sec.page || 1, pdfNumPages || sec.page || 1);
+        const pageEl = pdfPageRefs.current[page]; if (!pageEl) continue;
         const pos = pageEl.offsetTop + (sec.y || 0) * pdfScale;
         if (pos <= probe && pos > bestPos) { bestKey = k; bestPos = pos; }
       }
-      setActiveSecPdf(p => p === bestKey ? p : bestKey);
+      const target = atBottom ? SIDEBAR_KEYS[SIDEBAR_KEYS.length - 1] : bestKey;
+      setActiveSecPdf(p => p === target ? p : target);
       preferredActiveSecRef.current = null;
     }
     function handler() {
@@ -507,7 +511,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (!el || !c) return null;
     const yPx = (sec.y || 0) * pdfScale;
 
-    const top = Math.max(0, el.offsetTop + yPx - 18);
+    const maxScroll = Math.max(0, c.scrollHeight - c.clientHeight);
+    const top = Math.min(maxScroll, Math.max(0, el.offsetTop + yPx - 18));
     c.scrollTo({ top, behavior: "smooth" });
     return { page, top };
   }
@@ -544,7 +549,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       if (!el || !c) return;
       setActiveSecEdit(key);
       preferredActiveSecRef.current = key;
-      const targetTop = Math.max(0, c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12);
+      const maxScroll = Math.max(0, c.scrollHeight - c.clientHeight);
+      const targetTop = Math.min(maxScroll, Math.max(0, c.scrollTop + el.getBoundingClientRect().top - c.getBoundingClientRect().top - 12));
       if (Math.abs(c.scrollTop - targetTop) < 6) {
         pendingFlashRef.current = null;
         flashElement(el);
@@ -835,16 +841,36 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (!editTexts.educational_tech?.trim()) e.push({ secKey: "5.1", label: "5.1 Образовательные технологии" });
     if (!editTexts.methodical_recommendations?.trim()) e.push({ secKey: "5.2", label: "5.2 Методические указания" });
 
+    if (!rpd.learning_outcomes?.some(o => (o.outcome_text || "").trim())) e.push({ secKey: "2", label: "2. Результаты обучения (заполните хотя бы один)" });
     if (!rpd.sections?.some(s => (s.title || "").trim())) e.push({ secKey: "4", label: "4. Содержание (нет ни одного заполненного раздела)" });
-    if (!rpd.literature?.some(l => (l.title || "").trim())) e.push({ secKey: "6.1", label: "6.1 Литература (нет ни одного заполненного источника)" });
+    const _practiceH = (rpd.sections || []).reduce((a, s) => a + (s.practice_hours || 0), 0);
+    const _labH = (rpd.sections || []).reduce((a, s) => a + (s.lab_hours || 0), 0);
+    if (_practiceH > 0 && !rpd.topics?.some(t => t.topic_type === "practice" && (t.title || "").trim())) e.push({ secKey: "4.1", label: "4.1 Тематика практических занятий (заполните темы)" });
+    if (_labH > 0 && !rpd.topics?.some(t => t.topic_type === "lab" && (t.title || "").trim())) e.push({ secKey: "4.2", label: "4.2 Тематика лабораторных работ (заполните темы)" });
+    if (!rpd.literature?.some(l => !l.url && (l.title || "").trim())) e.push({ secKey: "6.1", label: "6.1 Печатная литература (нет ни одного источника)" });
+    if (!rpd.literature?.some(l => l.url && (l.title || "").trim())) e.push({ secKey: "6.2", label: "6.2 Электронная литература (нет ни одного источника)" });
+    if (!rpd.software?.some(s => (s.name || "").trim())) e.push({ secKey: "6.3", label: "6.3 Программное обеспечение" });
+    if (!rpd.databases?.some(d => (d.name || "").trim())) e.push({ secKey: "6.4", label: "6.4 БД и информационные справочные системы" });
+    if (!rpd.material_tech?.some(m => (m.room_type || "").trim() || (m.equipment || "").trim())) e.push({ secKey: "7", label: "7. Материально-техническое обеспечение" });
+    if (!rpd.fos_main && !(rpd.fos_other || []).length) e.push({ secKey: "8", label: "8. Фонд оценочных средств (прикрепите файл)" });
+    if (!(rpd.developers || []).length) e.push({ secKey: "developers", label: "Не добавлен ни один разработчик (откройте «Свойства РПД»)" });
     return e;
   }
   async function handleSendApproval() {
     const errors = getValidationErrors();
-    if (errors.length > 0) { setValidationErrors(errors); setModal("validation"); return; }
-    setValidationErrors([]);
+    if (errors.length > 0) { setValidationErrors(errors); setValidationActive(true); setModal("validation"); return; }
+    setValidationErrors([]); setValidationActive(false);
     await flushAllTexts();
-    try { await api.sendForApproval(rpdId); setModal("sent"); await load(); } catch { setModal("error"); }
+    try {
+      await api.sendForApproval(rpdId);
+      setModal("sent");
+      await load();
+      if (isEdit && onToggleMode) onToggleMode();
+    } catch (err) {
+      const detail = err?.response?.data?.detail;
+      if (typeof detail === "string") { setValidationErrors([{ secKey: null, label: detail }]); setValidationActive(true); setModal("validation"); }
+      else setModal("error");
+    }
   }
   async function handleReview(action) { try { await api.reviewRpd(rpdId, { action, comment: rejectComment }); setModal(action === "approve" ? "approved" : null); setRejectComment(""); await load(); } catch { } }
 
@@ -869,15 +895,22 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       ["4", (rpd.sections || []).some(s => (s.title || "").trim())],
       ["5.1", !!(editTexts.educational_tech?.trim() || rpd.educational_tech?.trim())],
       ["5.2", !!(editTexts.methodical_recommendations?.trim() || rpd.methodical_recommendations?.trim())],
-      ["6.1", (rpd.literature || []).some(l => (l.title || "").trim())],
+      ["6.1", (rpd.literature || []).some(l => !l.url && (l.title || "").trim())],
+      ["6.2", (rpd.literature || []).some(l => l.url && (l.title || "").trim())],
+      ["6.3", (rpd.software || []).some(s => (s.name || "").trim())],
+      ["6.4", (rpd.databases || []).some(d => (d.name || "").trim())],
       ["7", (rpd.material_tech || []).some(m => (m.room_type || "").trim() || (m.equipment || "").trim())],
       ["8", !!rpd.fos_main || (rpd.fos_other || []).length > 0],
     ];
+    if (practiceHoursTotal > 0) checks.push(["4.1", (rpd.topics || []).some(t => t.topic_type === "practice" && (t.title || "").trim())]);
+    if (labHoursTotal > 0) checks.push(["4.2", (rpd.topics || []).some(t => t.topic_type === "lab" && (t.title || "").trim())]);
     const total = checks.length;
     const filled = checks.filter(([, v]) => v).length;
     const missing = checks.filter(([, v]) => !v).map(([k]) => k);
     return { total, filled, missing };
   })();
+
+  const liveValidationErrors = validationActive ? getValidationErrors() : [];
 
   const reloadAndNotify = async () => {
     await load(true);
@@ -937,7 +970,10 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     }
     if (key === "topics_practice") { try { await api.addTopic(rpdId, { topic_type: "practice", title: "" }); } catch { } return; }
     if (key === "topics_lab") { try { await api.addTopic(rpdId, { topic_type: "lab", title: "" }); } catch { } return; }
-    if (key === "literature_printed_main") { try { await api.addLiterature(rpdId, { source_type: _PRINTED_TYPE.literature_printed_main, title: "", copies_count: 0 }); } catch { } }
+    if (key === "literature_printed_main") { try { await api.addLiterature(rpdId, { source_type: _PRINTED_TYPE.literature_printed_main, title: "", copies_count: 0 }); } catch { } return; }
+    if (key === "literature_electronic") { try { await api.addLiterature(rpdId, { source_type: "", title: "", url: " ", availability: [] }); } catch { } return; }
+    if (key === "software") { try { await api.addSoftware(rpdId, { name: "", license_type: null }); } catch { } return; }
+    if (key === "databases") { try { await api.addDatabase(rpdId, { name: "", url: "" }); } catch { } return; }
   }
 
   function clearCount(key) {
@@ -955,6 +991,21 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (key === "literature_printed_main") {
       const rows = (rpd.literature || []).filter(l => !l.url && l.source_type === _PRINTED_TYPE.literature_printed_main);
       return Math.max(rows.filter(l => (l.title || "").trim() || l.copies_count).length, rows.length - 1);
+    }
+    if (key === "literature_electronic") {
+      const rows = (rpd.literature || []).filter(l => l.url);
+      const meaningful = rows.filter(l => (l.title || "").trim() || (l.url || "").trim() || (l.source_type || "").trim() || (l.availability?.length > 0)).length;
+      return Math.max(meaningful, rows.length - 1);
+    }
+    if (key === "software") {
+      const rows = rpd.software || [];
+      const meaningful = rows.filter(s => (s.name || "").trim() || (s.license_type || "").trim()).length;
+      return Math.max(meaningful, rows.length - 1);
+    }
+    if (key === "databases") {
+      const rows = rpd.databases || [];
+      const meaningful = rows.filter(d => (d.name || "").trim() || (d.url || "").trim()).length;
+      return Math.max(meaningful, rows.length - 1);
     }
     return _clearOps(key).length;
   }
@@ -983,7 +1034,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           isEdit={isEdit}
           hasPair={hasPair}
           canEdit={canEdit}
-          validationErrors={validationErrors}
+          validationErrors={liveValidationErrors}
           activeSec={activeSec}
           hasLabTopics={hasLabTopics}
           hasPracticeTopics={hasPracticeTopics}
@@ -1200,7 +1251,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div ref={refs["6.2"]} style={{ marginBottom: 32 }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
                       <div style={{ fontSize: 14, fontWeight: 700 }}>6.2. Электронная учебно-методическая литература</div>
-                      {isEdit && canEdit && electronicLiteratureCount > 0 && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="literature_electronic" /><GenButton skey="literature_electronic" /></span>}
+                      {isEdit && canEdit && <span style={{ display: "flex", gap: 8, flexShrink: 0 }}><ClearSectionBtn skey="literature_electronic" /><GenButton skey="literature_electronic" /></span>}
                     </div>
                     <GenPlaque skey="literature_electronic"><LiteratureEditor kind="electronic" /></GenPlaque>
                   </div>
@@ -1279,7 +1330,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       {modal === "error" && <ErrorModal onClose={() => setModal(null)} />}
       {modal === "approved" && <ApprovedModal onClose={() => { setModal(null); onCloseTab && onCloseTab(); }} />}
       {modal === "reject" && <RejectModal comment={rejectComment} onChange={setRejectComment} onClose={() => setModal(null)} onSubmit={() => { handleReview("reject"); setModal(null); }} />}
-      {modal === "validation" && <ValidationModal errors={validationErrors} onGoTo={(secKey) => { goTo(secKey); setModal(null); }} onClose={() => setModal(null)} />}
+      {modal === "validation" && <ValidationModal errors={validationErrors} onGoTo={(secKey) => { setModal(null); if (secKey === "developers") setShowMeta(true); else if (secKey) goTo(secKey); }} onClose={() => setModal(null)} />}
       {modal === "staleDownload" && <StalePdfDownloadModal
         onClose={() => setModal(null)}
         onRefreshAndDownload={() => { setPdfStale(false); reloadPdf(); onExportPdf(rpdId, pdfBdId); setModal(null); }}

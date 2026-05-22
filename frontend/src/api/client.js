@@ -92,6 +92,9 @@ export const createAssessmentTool = (name) => api.post('/assessment-tools/', { n
 export const getSuggestions = (kind, params) =>
   api.get(`/suggestions/${kind}`, { params: params || {} });
 
+export const getDatabaseRefs = (params) =>
+  api.get('/suggestions/database_name/refs', { params: params || {} });
+
 export const adminListDictionary = (kind, params) =>
   api.get(`/admin/dictionary/${kind}`, { params: params || {} });
 export const adminCreateDictionary = (kind, payload) =>

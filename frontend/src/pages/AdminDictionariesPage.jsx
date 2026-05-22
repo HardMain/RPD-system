@@ -11,7 +11,7 @@ import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { useSort, SortTh } from "../components/sortable.jsx";
 import { useStickyState } from "../hooks/useStickyState.js";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
-import { LITERATURE_TYPES, ELECTRONIC_LITERATURE_TYPES } from "../features/rpd-editor/catalogs.js";
+import { LITERATURE_TYPES, ELECTRONIC_LITERATURE_TYPES, SOFTWARE_TYPES } from "../features/rpd-editor/catalogs.js";
 import { BupsContent } from "./AdminBupsPage.jsx";
 import { DirectionsContent } from "./AdminDirectionsPage.jsx";
 import { DepartmentsContent } from "./AdminDepartmentsPage.jsx";
@@ -118,6 +118,7 @@ const MODE_OPTIONS = [
 const LIT_TYPE_OPTIONS_PRINTED = LITERATURE_TYPES.map(t => ({ value: t, label: t }));
 const LIT_TYPE_OPTIONS_ELECTRONIC = ELECTRONIC_LITERATURE_TYPES.map(t => ({ value: t, label: t }));
 const litTypeOptions = (mode) => (mode === "electronic" ? LIT_TYPE_OPTIONS_ELECTRONIC : LIT_TYPE_OPTIONS_PRINTED);
+const SOFTWARE_TYPE_OPTIONS = SOFTWARE_TYPES.map(t => ({ value: t, label: t }));
 
 const SOURCE_LABELS = {
   manual: "Вручную",
@@ -163,6 +164,7 @@ export function AdminDictionariesPage() {
   const [newIndex, setNewIndex] = useState("1");
   const [newDirectionCode, setNewDirectionCode] = useState("");
   const [newDisciplineId, setNewDisciplineId] = useState("");
+  const [newExtra, setNewExtra] = useState("");
   const [adding, setAdding] = useState(false);
   const [prefixFilter, setPrefixFilter] = useState("all");
 
@@ -175,8 +177,9 @@ export function AdminDictionariesPage() {
   const isDiscipline = kind === "discipline";
   const isCustomKind = kind === "bup" || kind === "direction" || kind === "department";
   const isDirectionScoped = kind === "indicator_description";
-  const DISCIPLINE_SCOPED_KINDS_SET = new Set(["literature_title", "software_name", "database_name"]);
-  const isDisciplineScoped = DISCIPLINE_SCOPED_KINDS_SET.has(kind);
+  const isDisciplineScoped = kind === "literature_title";
+  const isSoftware = kind === "software_name";
+  const isDatabase = kind === "database_name";
   const activeGroupIdx = Math.max(0, KIND_GROUPS.findIndex(g => g.kinds.some(k => k.id === kind)));
   const parentMeta = PARENT_LABELS[kind] || null;
   const useGroupedView = !!parentMeta;
@@ -257,6 +260,7 @@ export function AdminDictionariesPage() {
     setNewIndex("1");
     setNewDirectionCode("");
     setNewDisciplineId("");
+    setNewExtra("");
     setPrefixFilter("all");
   }, [kind]);
 
@@ -383,11 +387,16 @@ export function AdminDictionariesPage() {
         if (!newMode) throw new Error("Выберите тип");
         if (!newDisciplineId) throw new Error("Выберите дисциплину");
         payload = { value: v, source_type: newSourceType, mode: newMode, id_discipline: newDisciplineId };
-      } else if (isDisciplineScoped) {
+      } else if (isSoftware) {
         const v = newValue.trim();
         if (!v) throw new Error("Заполните значение");
-        if (!newDisciplineId) throw new Error("Выберите дисциплину");
-        payload = { value: v, id_discipline: newDisciplineId };
+        if (!newSourceType) throw new Error("Выберите вид ПО");
+        payload = { value: v, source_type: newSourceType };
+      } else if (isDatabase) {
+        const v = newValue.trim();
+        if (!v) throw new Error("Заполните наименование");
+        if (!newExtra.trim()) throw new Error("Укажите ссылку на информационный ресурс");
+        payload = { value: v, extra: newExtra.trim() };
       } else {
         const v = newValue.trim();
         if (!v) throw new Error("Заполните значение");
@@ -395,6 +404,7 @@ export function AdminDictionariesPage() {
       }
       await api.adminCreateDictionary(kind, payload);
       setNewValue("");
+      if (isDatabase) setNewExtra("");
       if (kind === "indicator_code") setNewCompetency("");
       reload();
     } catch (e) {
@@ -409,9 +419,11 @@ export function AdminDictionariesPage() {
       ? !!newCompetency.trim() && !!newValue.trim() && !!newDirectionCode
       : isLiterature
         ? !!newValue.trim() && !!newSourceType && !!newMode && !!newDisciplineId
-        : isDisciplineScoped
-          ? !!newValue.trim() && !!newDisciplineId
-          : !!newValue.trim();
+        : isSoftware
+          ? !!newValue.trim() && !!newSourceType
+          : isDatabase
+            ? !!newValue.trim() && !!newExtra.trim()
+            : !!newValue.trim();
 
   return <div style={{ flex: 1, overflow: "auto", scrollbarGutter: "stable", padding: 24, background: T.bg }}>
     <div style={{ maxWidth: 1100, margin: "0 auto" }}>
@@ -501,19 +513,17 @@ export function AdminDictionariesPage() {
             </div>
           </div>
         )}
-        {isDisciplineScoped && !isLiterature && (
+        {isSoftware && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-            <div style={{ flex: "1 1 260px", minWidth: 240 }}>
-              <div style={miniLabel}>Дисциплина <span style={{ color: T.red }}>*</span></div>
-              {disciplineOptions.length === 0
-                ? <div style={{ ...miniInput, color: T.textMuted, fontStyle: "italic" }}>Сначала добавьте дисциплины.</div>
-                : <Dropdown
-                    value={newDisciplineId ? String(newDisciplineId) : ""}
-                    options={disciplineOptions.map(d => ({ value: String(d.id), label: d.name }))}
-                    onChange={v => setNewDisciplineId(v ? Number(v) : "")}
-                    placeholder="— не указано —"
-                    clearLabel="— не указано —"
-                  />}
+            <div style={{ flex: "1 1 320px", minWidth: 260 }}>
+              <div style={miniLabel}>Вид ПО <span style={{ color: T.red }}>*</span></div>
+              <Dropdown
+                value={newSourceType}
+                options={SOFTWARE_TYPE_OPTIONS}
+                onChange={setNewSourceType}
+                placeholder="— не указано —"
+                clearLabel="— не указано —"
+              />
             </div>
           </div>
         )}
@@ -575,6 +585,33 @@ export function AdminDictionariesPage() {
         {kind === "indicator_code" ? (
           <div style={{ color: T.textMuted, fontSize: 12, fontStyle: "italic", padding: "6px 0" }}>
             Код индикатора собирается автоматически из выбранной компетенции и индекса.
+          </div>
+        ) : isDatabase ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <div>
+              <div style={miniLabel}>{KINDS.find(k => k.id === kind)?.valueLabel || "Значение"} <span style={{ color: T.red }}>*</span></div>
+              <input
+                value={newValue}
+                onChange={e => setNewValue(e.target.value)}
+                placeholder="Введите наименование…"
+                style={{ ...adminAddField, width: "100%" }}
+              />
+            </div>
+            <div>
+              <div style={miniLabel}>Ссылка на информационный ресурс <span style={{ color: T.red }}>*</span></div>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <input
+                  value={newExtra}
+                  onChange={e => setNewExtra(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+                  placeholder="https://… или «локальная сеть»"
+                  style={{ ...adminAddField, flex: 1 }}
+                />
+                <Btn small primary onClick={handleAdd} disabled={adding || !canAdd} style={adminAddBtn}>
+                  <PlusIcon /> Добавить
+                </Btn>
+              </div>
+            </div>
           </div>
         ) : (
           <div>
@@ -646,8 +683,10 @@ export function AdminDictionariesPage() {
                   <th style={{ ...hdr, textAlign: "center", width: 80 }} />
                 </> : <>
                   {isLiterature && <SortTh sortKey="sourceType" sort={sort} onSort={toggleSort} style={{ width: 240 }}>Подраздел</SortTh>}
+                  {isSoftware && <SortTh sortKey="sourceType" sort={sort} onSort={toggleSort} style={{ width: 280 }}>Вид ПО</SortTh>}
                   <SortTh sortKey="value" sort={sort} onSort={toggleSort}>{isDiscipline ? "Название дисциплины" : "Значение"}</SortTh>
                   {isLiterature && <SortTh sortKey="mode" sort={sort} onSort={toggleSort} style={{ width: 130 }}>Тип</SortTh>}
+                  {isDatabase && <th style={{ ...hdr, width: 280 }}>Ссылка на информационный ресурс</th>}
                   {isDisciplineScoped && <th style={{ ...hdr, width: 200 }}>Дисциплина</th>}
                   <SortTh sortKey={isDiscipline ? "usage" : "source"} sort={sort} onSort={toggleSort} style={{ width: 200 }}>{isDiscipline ? "Использование" : "Источник"}</SortTh>
                   <th style={{ ...hdr, textAlign: "center", width: 80 }} />
@@ -686,8 +725,10 @@ export function AdminDictionariesPage() {
                         style={{ background: T.surface, cursor: "pointer" }}
                         title="Двойной клик — редактировать">
                       {isLiterature && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic" }}>{it.source_type || "—"}</td>}
+                      {isSoftware && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic" }}>{it.source_type || "— не указан —"}</td>}
                       <td style={{ ...tcell, fontWeight: 500 }}>{it.value}</td>
                       {isLiterature && <td style={{ ...tcell, color: it.mode ? T.text : T.textMuted, fontStyle: it.mode ? "normal" : "italic" }}>{it.mode ? MODE_LABELS[it.mode] || it.mode : "—"}</td>}
+                      {isDatabase && <td style={{ ...tcell, fontSize: 12, color: it.extra ? T.text : T.textMuted, fontStyle: it.extra ? "normal" : "italic", wordBreak: "break-all" }}>{it.extra || "— не указана —"}</td>}
                       {isDisciplineScoped && (
                         <td style={{ ...tcell, fontSize: 12, color: it.id_discipline ? T.text : T.textMuted, fontStyle: it.id_discipline ? "normal" : "italic" }}>
                           {disciplineNameById.get(it.id_discipline) || "—"}
@@ -762,7 +803,9 @@ function DictEditModal({ entry, competencyOptions, directionOptions, disciplineO
   const isLiterature = entry.kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(entry.kind);
   const isDirectionScoped = entry.kind === "indicator_description";
-  const isDisciplineScoped = entry.kind === "literature_title" || entry.kind === "software_name" || entry.kind === "database_name";
+  const isDisciplineScoped = entry.kind === "literature_title";
+  const isSoftware = entry.kind === "software_name";
+  const isDatabase = entry.kind === "database_name";
 
   const initialIndicatorContext = useMemo(() => {
     if (entry.kind === "indicator_code") {
@@ -783,6 +826,7 @@ function DictEditModal({ entry, competencyOptions, directionOptions, disciplineO
   const [index, setIndex] = useState(initialIndicatorContext.index);
   const [directionCode, setDirectionCode] = useState(entry.direction_code || "");
   const [disciplineId, setDisciplineId] = useState(entry.id_discipline || "");
+  const [extra, setExtra] = useState(entry.extra || "");
   const [saving, setSaving] = useState(false);
 
   const longText = entry.kind === "indicator_description" || entry.kind === "literature_title";
@@ -816,11 +860,16 @@ function DictEditModal({ entry, competencyOptions, directionOptions, disciplineO
         if (!mode) throw new Error("Выберите тип");
         if (!disciplineId) throw new Error("Выберите дисциплину");
         payload = { value: v, source_type: sourceType, mode: mode, id_discipline: Number(disciplineId) };
-      } else if (isDisciplineScoped) {
+      } else if (isSoftware) {
         const v = value.trim();
         if (!v) throw new Error("Заполните значение");
-        if (!disciplineId) throw new Error("Выберите дисциплину");
-        payload = { value: v, id_discipline: Number(disciplineId) };
+        if (!sourceType) throw new Error("Выберите вид ПО");
+        payload = { value: v, source_type: sourceType };
+      } else if (isDatabase) {
+        const v = value.trim();
+        if (!v) throw new Error("Заполните наименование");
+        if (!extra.trim()) throw new Error("Укажите ссылку на информационный ресурс");
+        payload = { value: v, extra: extra.trim() };
       } else {
         const v = value.trim();
         if (!v) throw new Error("Заполните значение");
@@ -923,6 +972,18 @@ function DictEditModal({ entry, competencyOptions, directionOptions, disciplineO
               />}
         </div>
       )}
+      {isSoftware && (
+        <div>
+          <div style={miniLabel}>Вид ПО <span style={{ color: T.red }}>*</span></div>
+          <Dropdown
+            value={sourceType}
+            options={SOFTWARE_TYPE_OPTIONS}
+            onChange={setSourceType}
+            placeholder="— не указано —"
+            clearLabel="— не указано —"
+          />
+        </div>
+      )}
       {entry.kind === "indicator_code" ? null : (
         <div>
           <div style={miniLabel}>{entry.kind === "indicator_description" ? "Описание" : "Значение"}</div>
@@ -940,6 +1001,12 @@ function DictEditModal({ entry, competencyOptions, directionOptions, disciplineO
                 onKeyDown={e => { if (e.key === "Enter") save(); }}
                 style={inputStyle}
               />}
+        </div>
+      )}
+      {isDatabase && (
+        <div>
+          <div style={miniLabel}>Ссылка на информационный ресурс <span style={{ color: T.red }}>*</span></div>
+          <input value={extra} onChange={e => setExtra(e.target.value)} style={inputStyle} placeholder="https://… или «локальная сеть»" />
         </div>
       )}
     </div>

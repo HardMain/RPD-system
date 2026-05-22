@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -10,10 +10,9 @@ import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { SOFTWARE_TYPES } from "../catalogs.js";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
-const fetchSoftwareSuggestions = async (q, id_discipline) => {
-  const params = { q };
-  if (id_discipline) params.id_discipline = id_discipline;
-  const r = await api.getSuggestions("software_name", params);
+const fetchSoftwareSuggestions = async (q, licenseType) => {
+  if (!licenseType) return [];
+  const r = await api.getSuggestions("software_name", { q, source_type: licenseType });
   return r.data?.items || [];
 };
 
@@ -27,6 +26,13 @@ export function SoftwareEditor() {
   async function addRow() {
     try { await api.addSoftware(rpdId, { name: "", license_type: null }); await reload(); } catch {}
   }
+
+  const autoAddedRef = useRef(false);
+  useEffect(() => {
+    if (!editable || autoAddedRef.current) return;
+    autoAddedRef.current = true;
+    if (items.length === 0) addRow();
+  }, [editable]);
   async function performDelete(item) {
     if (!item) return;
     try { await api.deleteSoftware(item.id_software); await reload(); } catch {}
@@ -52,8 +58,7 @@ export function SoftwareEditor() {
   }
 
   return <div>
-    {items.length > 0 ? (
-      <div style={{ position: "relative" }}>
+    <div style={{ position: "relative" }}>
       <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <colgroup>
@@ -72,6 +77,7 @@ export function SoftwareEditor() {
               key={item.id_software}
               item={item}
               editable={editable}
+              deletable={items.length > 1}
               onSave={(patch) => saveRow(item, patch)}
               disciplineId={rpd.id_discipline}
             />
@@ -80,12 +86,7 @@ export function SoftwareEditor() {
       </table>
       </div>
       {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить запись" />}
-      </div>
-    ) : (
-      <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-        Не используется
-      </div>
-    )}
+    </div>
     {editable && (
       <div style={{ marginTop: 8 }}>
         <Btn small onClick={addRow}><PlusIcon /> Добавить запись</Btn>
@@ -100,7 +101,7 @@ export function SoftwareEditor() {
   </div>;
 }
 
-function SoftwareRow({ item, editable, onSave, disciplineId }) {
+function SoftwareRow({ item, editable, deletable = true, onSave, disciplineId }) {
   function changeType(v) {
     if ((v || null) === (item.license_type || null)) return;
     onSave({ license_type: v || null });
@@ -119,7 +120,8 @@ function SoftwareRow({ item, editable, onSave, disciplineId }) {
 
   const typeOptions = SOFTWARE_TYPES.map(s => ({ value: s, label: s }));
 
-  return <tr data-trash-row data-trash-id={item.id_software}>
+  const trashProps = deletable ? { "data-trash-row": "", "data-trash-id": item.id_software } : {};
+  return <tr {...trashProps}>
     <td style={{ ...td, padding: 4 }}>
       <Dropdown
         value={item.license_type || ""}
@@ -133,8 +135,9 @@ function SoftwareRow({ item, editable, onSave, disciplineId }) {
       <Combobox
         value={item.name || ""}
         onCommit={commitName}
-        fetchSuggestions={(q) => fetchSoftwareSuggestions(q, disciplineId)}
-        placeholder="Например, LibreOffice 7.5"
+        fetchSuggestions={(q) => fetchSoftwareSuggestions(q, item.license_type)}
+        resetKey={item.license_type || ""}
+        placeholder={item.license_type ? "Начните вводить или выберите из подсказок" : "Сначала выберите вид ПО для подсказок"}
         textarea
         collapsedMaxHeight={64}
         style={inlineTextarea}

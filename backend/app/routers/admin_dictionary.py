@@ -20,9 +20,17 @@ ALLOWED_KINDS = {
     "competency_code", "indicator_code", "indicator_description",
     "faculty", "employee_title",
 }
-SCOPED_KINDS = {"literature_title", "indicator_code", "indicator_description"}
+SCOPED_KINDS = {"literature_title", "indicator_code", "indicator_description", "software_name"}
 DIRECTION_SCOPED_KINDS = {"indicator_description"}
-DISCIPLINE_SCOPED_KINDS = {"literature_title", "software_name", "database_name"}
+DISCIPLINE_SCOPED_KINDS = {"literature_title"}
+SOFTWARE_TYPES = [
+    "Операционные системы",
+    "Офисные приложения",
+    "Среды разработки, тестирования и отладки",
+    "ПО для обработки изображений",
+    "Системы управления проектами",
+    "Прикладное программное обеспечение общего назначения",
+]
 
 LITERATURE_MODES = {"printed", "electronic"}
 
@@ -35,6 +43,7 @@ class DictionaryEntryOut(BaseModel):
     mode: str | None = None
     direction_code: str | None = None
     id_discipline: int | None = None
+    extra: str | None = None
     source: str
     created_at: datetime | None = None
 
@@ -48,6 +57,7 @@ class DictionaryEntryCreate(BaseModel):
     mode: str | None = None
     direction_code: str | None = None
     id_discipline: int | None = None
+    extra: str | None = None
 
 
 class DictionaryEntryUpdate(BaseModel):
@@ -56,6 +66,7 @@ class DictionaryEntryUpdate(BaseModel):
     mode: str | None = None
     direction_code: str | None = None
     id_discipline: int | None = None
+    extra: str | None = None
 
 
 def _ensure_perm(user: User) -> None:
@@ -117,6 +128,11 @@ async def create_entry(
     else:
         source_type = None
         mode = None
+    if kind == "software_name":
+        if not source_type:
+            raise HTTPException(status_code=400, detail="Не выбран вид ПО")
+        if source_type not in SOFTWARE_TYPES:
+            raise HTTPException(status_code=400, detail="Неизвестный вид ПО")
     if kind not in DIRECTION_SCOPED_KINDS:
         direction_code = None
     elif not direction_code:
@@ -147,10 +163,13 @@ async def create_entry(
     if existing:
         raise HTTPException(status_code=400, detail="Такая запись уже есть")
 
+    extra = (data.extra or "").strip() or None if kind == "database_name" else None
+    if kind == "database_name" and not extra:
+        raise HTTPException(status_code=400, detail="Укажите ссылку на информационный ресурс")
     entry = DictionaryEntry(
         kind=kind, value=value,
         source_type=source_type, mode=mode, direction_code=direction_code,
-        id_discipline=discipline_id,
+        id_discipline=discipline_id, extra=extra,
         source="manual", created_by=user.id_user,
     )
     db.add(entry)
@@ -195,6 +214,8 @@ async def update_entry(
         if not data.id_discipline:
             raise HTTPException(status_code=400, detail="Не выбрана дисциплина")
         entry.id_discipline = data.id_discipline
+    if data.extra is not None and entry.kind == "database_name":
+        entry.extra = data.extra.strip() or None
 
     dup_stmt = select(DictionaryEntry).where(
         DictionaryEntry.kind == entry.kind,

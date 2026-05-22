@@ -13,6 +13,7 @@ export function Combobox({
   collapsedMaxHeight = 70,
   style,
   title,
+  resetKey,
 }) {
   const [local, setLocal] = useState(value || "");
   const [open, setOpen] = useState(false);
@@ -30,6 +31,10 @@ export function Combobox({
     lastSyncedRef.current = next;
   }, [value]);
 
+  useEffect(() => { setItems([]); }, [resetKey]);
+
+  useEffect(() => { if (!open) setItems([]); }, [open]);
+
   useEffect(() => {
     if (!open) return;
     if (debRef.current) clearTimeout(debRef.current);
@@ -42,7 +47,7 @@ export function Combobox({
       } catch { setItems([]); }
     }, 150);
     return () => { if (debRef.current) clearTimeout(debRef.current); };
-  }, [open, local]);
+  }, [open, local, resetKey]);
 
 
   function commitIfChanged(v) {

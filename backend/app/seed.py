@@ -730,6 +730,97 @@ async def seed_federal_directions():
         if added:
             await db.commit()
 
+SEED_SOFTWARE: dict[str, list[str]] = {
+    "Операционные системы": [
+        "Debian (GNU GPL)",
+        "Windows 10 (подп. Azure Dev Tools for Teaching)",
+        "Astra Linux Special Edition",
+        "ALT Linux",
+    ],
+    "Офисные приложения": [
+        "LibreOffice (OpenSource)",
+        "Microsoft Office (подп. Azure Dev Tools for Teaching)",
+        "МойОфис Образование",
+        "OnlyOffice",
+    ],
+    "Среды разработки, тестирования и отладки": [
+        "Microsoft Visual Studio (подп. Azure Dev Tools for Teaching)",
+        "MS Visual Studio 2019 Community (Free)",
+        "Visual Studio Code (MIT License)",
+        "PyCharm Community Edition",
+        "IntelliJ IDEA Community Edition",
+        "Eclipse IDE",
+        "PostgreSQL (PostgreSQL License)",
+        "Git (GNU GPL)",
+    ],
+    "ПО для обработки изображений": [
+        "Adobe Photoshop CS3 Russian",
+        "Corel CorelDRAW Suite X4",
+        "GIMP (GNU GPL)",
+        "Blender (GNU GPL)",
+        "Inkscape (GNU GPL)",
+    ],
+    "Системы управления проектами": [
+        "Protege",
+        "3ds Max 2018 (академическая лицензия)",
+        "Autodesk AutoCAD 2019 Education",
+        "SOLIDWORKS Education Edition",
+    ],
+    "Прикладное программное обеспечение общего назначения": [
+        "MathCAD 14 Academic",
+        "MATLAB (академическая лицензия)",
+        "Wolfram Mathematica",
+    ],
+}
+
+SEED_DATABASES: list[tuple[str, str]] = [
+    ("База данных Elsevier «Freedom Collection»", "https://www.elsevier.com/"),
+    ("База данных Scopus", "https://www.scopus.com/"),
+    ("База данных Springer Nature e-books", "http://link.springer.com/"),
+    ("База данных научной электронной библиотеки (eLIBRARY.RU)", "https://elibrary.ru/"),
+    ("Научная библиотека Пермского национального исследовательского политехнического университета", "https://elib.pstu.ru/"),
+    ("Электронно-библиотечная система Лань", "https://e.lanbook.com/"),
+    ("Электронно-библиотечная система IPRsmart", "http://www.iprbookshop.ru/"),
+    ("Информационные ресурсы Сети КонсультантПлюс", "http://www.consultant.ru/"),
+    ("Информационно-справочная система «Техэксперт: нормы, правила, стандарты и законодательства России»", "http://www.cntd.ru/"),
+]
+
+
+async def seed_software_database_dict():
+    async with async_session() as db:
+        sw_res = await db.execute(
+            select(DictionaryEntry.value, DictionaryEntry.source_type)
+            .where(DictionaryEntry.kind == "software_name")
+        )
+        sw_present = {((v or "").strip().lower(), (st or "").strip().lower()) for v, st in sw_res.all()}
+        added = 0
+        for license_type, names in SEED_SOFTWARE.items():
+            for name in names:
+                key = (name.strip().lower(), license_type.strip().lower())
+                if key in sw_present:
+                    continue
+                sw_present.add(key)
+                db.add(DictionaryEntry(kind="software_name", value=name, source_type=license_type, source="seed"))
+                added += 1
+        db_res = await db.execute(
+            select(DictionaryEntry).where(DictionaryEntry.kind == "database_name")
+        )
+        existing_dbs = db_res.scalars().all()
+        db_by_name = {(e.value or "").strip().lower(): e for e in existing_dbs}
+        for name, url in SEED_DATABASES:
+            key = name.strip().lower()
+            existing = db_by_name.get(key)
+            if existing is None:
+                db.add(DictionaryEntry(kind="database_name", value=name, extra=url, source="seed"))
+                added += 1
+            elif not (existing.extra or "").strip():
+                existing.extra = url
+                added += 1
+        if added:
+            await db.commit()
+            print(f"✅ Software/database dictionary seeded ({added} new)")
+
+
 async def seed_data():
     await seed_reference()
     await _seed_demo_data()
@@ -741,6 +832,7 @@ async def seed_data():
     await seed_llm_prompts()
     await upgrade_llm_prompts_to_reference_aware()
     await seed_dictionary_entries()
+    await seed_software_database_dict()
 
 
 async def ensure_three_indicators_for_all_competencies():

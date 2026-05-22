@@ -1370,6 +1370,49 @@ def _rpd_label(rpd: Rpd) -> str:
     year = rpd.academic_year
     return f"«{name}»" + (f" ({year})" if year else "")
 
+def _incomplete_sections(rpd: Rpd) -> list[str]:
+    def filled(value) -> bool:
+        return bool((value or "").strip())
+    missing: list[str] = []
+    if not filled(rpd.goals_text):
+        missing.append("1.1 Цели и задачи")
+    if not filled(rpd.objects_text):
+        missing.append("1.2 Изучаемые объекты")
+    if not filled(rpd.requirements_text):
+        missing.append("1.3 Входные требования")
+    if not any(filled(o.outcome_text) for o in (rpd.learning_outcomes or [])):
+        missing.append("2. Результаты обучения")
+    sections = rpd.sections or []
+    if not any(filled(s.title) for s in sections):
+        missing.append("4. Содержание")
+    topics = rpd.topics or []
+    if sum((s.practice_hours or 0) for s in sections) > 0 and not any(
+        t.topic_type == "practice" and filled(t.title) for t in topics
+    ):
+        missing.append("4.1 Тематика практических занятий")
+    if sum((s.lab_hours or 0) for s in sections) > 0 and not any(
+        t.topic_type == "lab" and filled(t.title) for t in topics
+    ):
+        missing.append("4.2 Тематика лабораторных работ")
+    if not filled(rpd.educational_tech):
+        missing.append("5.1 Образовательные технологии")
+    if not filled(rpd.methodical_recommendations):
+        missing.append("5.2 Методические указания")
+    literature = rpd.literature or []
+    if not any(filled(l.title) for l in literature if not l.url):
+        missing.append("6.1 Печатная литература")
+    if not any(filled(l.title) for l in literature if l.url):
+        missing.append("6.2 Электронная литература")
+    if not any(filled(s.name) for s in (rpd.software or [])):
+        missing.append("6.3 Программное обеспечение")
+    if not any(filled(d.name) for d in (rpd.databases or [])):
+        missing.append("6.4 БД и информационные справочные системы")
+    if not any(filled(m.room_type) or filled(m.equipment) for m in (rpd.material_tech or [])):
+        missing.append("7. Материально-техническое обеспечение")
+    if not (rpd.fos_files or []):
+        missing.append("8. Фонд оценочных средств (прикрепите файл)")
+    return missing
+
 @router.post("/{rpd_id}/send-approval", status_code=200)
 async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
@@ -1378,6 +1421,15 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
             selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer),
             selectinload(Rpd.discipline),
             selectinload(Rpd.author),
+            selectinload(Rpd.developers),
+            selectinload(Rpd.learning_outcomes),
+            selectinload(Rpd.sections),
+            selectinload(Rpd.topics),
+            selectinload(Rpd.literature),
+            selectinload(Rpd.software),
+            selectinload(Rpd.databases),
+            selectinload(Rpd.material_tech),
+            selectinload(Rpd.fos_files),
         )
     )
     rpd = result.scalar_one_or_none()
@@ -1389,6 +1441,16 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
     route = sorted(rpd.approval_route or [], key=lambda s: s.step_order)
     if not route:
         raise HTTPException(status_code=400, detail="Не задан маршрут согласования")
+
+    developer_ids = {d.id_user for d in (rpd.developers or [])}
+    if not developer_ids:
+        raise HTTPException(status_code=400, detail="Добавьте хотя бы одного разработчика РПД перед отправкой на согласование")
+    if user.id_user not in developer_ids:
+        raise HTTPException(status_code=403, detail="Отправить РПД на согласование может только её разработчик")
+
+    missing = _incomplete_sections(rpd)
+    if missing:
+        raise HTTPException(status_code=400, detail="Не заполнены обязательные разделы: " + "; ".join(missing))
 
     for step in route:
         step.status = "waiting"

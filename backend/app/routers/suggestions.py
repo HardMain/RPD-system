@@ -16,8 +16,28 @@ ALLOWED_KINDS = {
     "assessment_tool",
     "competency_code", "indicator_code", "indicator_description",
 }
-SCOPED_KINDS = {"literature_title", "indicator_code", "indicator_description"}
-DISCIPLINE_SCOPED_KINDS = {"literature_title", "software_name", "database_name"}
+SCOPED_KINDS = {"literature_title", "indicator_code", "indicator_description", "software_name"}
+DISCIPLINE_SCOPED_KINDS = {"literature_title"}
+
+
+@router.get("/database_name/refs")
+async def database_refs(
+    q: str | None = Query(default=None),
+    limit: int = Query(default=200, ge=1, le=500),
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    stmt = (
+        select(DictionaryEntry.value, func.max(DictionaryEntry.extra).label("url"))
+        .where(DictionaryEntry.kind == "database_name")
+        .where(DictionaryEntry.value.is_not(None))
+        .where(func.length(func.trim(DictionaryEntry.value)) > 0)
+    )
+    if q:
+        stmt = stmt.where(DictionaryEntry.value.ilike(f"%{q.strip()}%"))
+    stmt = stmt.group_by(DictionaryEntry.value).order_by(func.lower(DictionaryEntry.value).asc()).limit(limit)
+    res = await db.execute(stmt)
+    return {"items": [{"name": v.strip(), "url": (u or "").strip()} for v, u in res.all() if v]}
 
 
 @router.get("/{kind}")

@@ -93,8 +93,12 @@ async def _apply_schema_patches() -> None:
             "CREATE INDEX IF NOT EXISTS ix_dictionary_entries_id_discipline ON dictionary_entries (id_discipline)"
         ))
         await conn.execute(text(
-            "DELETE FROM dictionary_entries WHERE kind IN ('software_name', 'database_name', 'literature_title') AND source = 'approved_rpd' AND id_discipline IS NULL"
+            "DELETE FROM dictionary_entries WHERE kind = 'literature_title' AND source = 'approved_rpd' AND id_discipline IS NULL"
         ))
+        await conn.execute(text(
+            "UPDATE dictionary_entries SET id_discipline = NULL WHERE kind IN ('software_name', 'database_name')"
+        ))
+        await conn.execute(text("ALTER TABLE dictionary_entries ADD COLUMN IF NOT EXISTS extra TEXT"))
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

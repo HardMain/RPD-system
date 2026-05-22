@@ -66,6 +66,7 @@ def _add_if_new(
     mode: str | None = None,
     direction_code: str | None = None,
     id_discipline: int | None = None,
+    extra: str | None = None,
 ) -> bool:
     v = _norm(value)
     if not v:
@@ -82,7 +83,7 @@ def _add_if_new(
     keys.add(key)
     db.add(DictionaryEntry(
         kind=kind, value=v, source_type=st, mode=md,
-        direction_code=dc, id_discipline=di, source=source,
+        direction_code=dc, id_discipline=di, extra=_norm(extra) or None, source=source,
     ))
     return True
 
@@ -207,10 +208,9 @@ async def harvest_rpd(db: AsyncSession, rpd_id: int, *, keys: set[tuple] | None 
     added = 0
     for s in rpd.software or []:
         if _add_if_new(db, keys, kind="software_name", value=s.name, source="approved_rpd",
-                       id_discipline=discipline_id): added += 1
+                       source_type=s.license_type): added += 1
     for d in rpd.databases or []:
-        if _add_if_new(db, keys, kind="database_name", value=d.name, source="approved_rpd",
-                       id_discipline=discipline_id): added += 1
+        if _add_if_new(db, keys, kind="database_name", value=d.name, source="approved_rpd", extra=d.url): added += 1
     for m in rpd.material_tech or []:
         if _add_if_new(db, keys, kind="equipment", value=m.equipment, source="approved_rpd"): added += 1
         if _add_if_new(db, keys, kind="room_type", value=m.room_type, source="approved_rpd"): added += 1

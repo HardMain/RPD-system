@@ -58,8 +58,12 @@ export function LiteratureEditor({ kind }) {
 
   const autoAddedRef = useRef(false);
   useEffect(() => {
-    if (isElectronic || !editable || autoAddedRef.current) return;
+    if (!editable || autoAddedRef.current) return;
     autoAddedRef.current = true;
+    if (isElectronic) {
+      if (items.length === 0) addRow("");
+      return;
+    }
     const hasMain = items.some(l => l.source_type === "Учебные и научные издания");
     if (!hasMain) addRow("Учебные и научные издания");
 
@@ -310,8 +314,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave, disciplineI
     if (item) onDelete(item);
   }
   return <div>
-    {items.length > 0 ? (
-      <div style={{ position: "relative" }}>
+    <div style={{ position: "relative" }}>
       <div className="table-scroll">
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <colgroup>
@@ -334,6 +337,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave, disciplineI
               key={item.id_literature}
               item={item}
               editable={editable}
+              deletable={items.length > 1}
               onSave={(patch) => onSave(item, patch)}
               disciplineId={disciplineId}
             />
@@ -342,12 +346,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave, disciplineI
       </table>
       </div>
       {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить запись" />}
-      </div>
-    ) : (
-      <div style={{ padding: "8px 12px", background: T.bg, borderRadius: 4, fontSize: 12, color: T.textMuted, fontStyle: "italic" }}>
-        Не используется
-      </div>
-    )}
+    </div>
     {editable && (
       <div style={{ marginTop: 8 }}>
         <Btn small onClick={onAdd}><PlusIcon /> Добавить запись</Btn>
@@ -356,7 +355,7 @@ function ElectronicTable({ items, editable, onAdd, onDelete, onSave, disciplineI
   </div>;
 }
 
-function ElectronicRow({ item, editable, onSave, disciplineId }) {
+function ElectronicRow({ item, editable, deletable = true, onSave, disciplineId }) {
   const [url, setUrl] = useState(((item.url || "").trim() ? item.url : ""));
   const urlRef = useRef((item.url || "").trim() ? item.url : "");
   useEffect(() => {
@@ -400,7 +399,8 @@ function ElectronicRow({ item, editable, onSave, disciplineId }) {
 
   const typeOptions = ELECTRONIC_LITERATURE_TYPES.map(t => ({ value: t, label: t }));
 
-  return <tr data-trash-row data-trash-id={item.id_literature}>
+  const trashProps = deletable ? { "data-trash-row": "", "data-trash-id": item.id_literature } : {};
+  return <tr {...trashProps}>
     <td style={{ ...td, padding: 4 }}>
       <Dropdown
         value={item.source_type || ""}

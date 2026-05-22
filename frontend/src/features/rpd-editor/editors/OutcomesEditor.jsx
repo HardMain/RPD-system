@@ -85,14 +85,42 @@ export function OutcomesEditor() {
 
   const reloadRowsRef = useRef(reloadRows);
   useEffect(() => { reloadRowsRef.current = reloadRows; }, [reloadRows]);
+  const tableWrapRef = useRef(null);
+  const tableActiveRef = useRef(false);
+  const reloadPendingRef = useRef(false);
+  const reorderPendingRef = useRef(false);
   const prevUpdatedAt = useRef(rpd?.updated_at);
   useEffect(() => {
     if (!loaded) return;
     const curr = rpd?.updated_at;
     if (curr === prevUpdatedAt.current) return;
     prevUpdatedAt.current = curr;
+    if (tableActiveRef.current) { reloadPendingRef.current = true; return; }
     reloadRowsRef.current();
   }, [rpd?.updated_at, loaded]);
+
+  function flushReorder() {
+    if (reloadPendingRef.current) {
+      reloadPendingRef.current = false;
+      reorderPendingRef.current = false;
+      reloadRowsRef.current();
+    } else if (reorderPendingRef.current) {
+      reorderPendingRef.current = false;
+      setRows(prev => [...prev].sort(compareOutcomeRows));
+    }
+  }
+  function handleTableFocus() {
+    tableActiveRef.current = true;
+  }
+  function handleTableBlur(e) {
+    const wrap = tableWrapRef.current;
+    const to = e.relatedTarget;
+    const fromRow = e.target.closest ? e.target.closest("tr") : null;
+    const toRow = (to && to.closest) ? to.closest("tr") : null;
+    const stillInTable = !!(to && wrap && wrap.contains(to));
+    if (!stillInTable) tableActiveRef.current = false;
+    if (!toRow || toRow !== fromRow) flushReorder();
+  }
 
   const autoAddedRef = useRef(false);
   useEffect(() => {
@@ -123,7 +151,7 @@ export function OutcomesEditor() {
         setRows(prev => prev.map((rr, i) => i === idx ? { ...rr, id_outcome } : rr));
       }
       const sortAffected = "competency_code" in patch || "indicator_code" in patch;
-      if (sortAffected) setRows(prev => [...prev].sort(compareOutcomeRows));
+      if (sortAffected) reorderPendingRef.current = true;
       reload?.();
     } catch (e) {
       setRows(prev => prev.map((r, i) => i === idx ? row : r));
@@ -178,6 +206,30 @@ export function OutcomesEditor() {
   }
   const tbodyRef = useRef(null);
 
+  const usedIndicatorCodes = useMemo(() => {
+    const s = new Set();
+    for (const r of rows) {
+      const c = (r.indicator_code || "").trim().toLowerCase();
+      if (c) s.add(c);
+    }
+    return s;
+  }, [rows]);
+  const fullCompetencies = useMemo(() => {
+    const byComp = new Map();
+    for (const r of rows) {
+      const m = (r.indicator_code || "").trim().match(/^ИД-(\d+)(.+)$/i);
+      if (!m) continue;
+      const comp = m[2].trim().toLowerCase();
+      if (!byComp.has(comp)) byComp.set(comp, new Set());
+      byComp.get(comp).add(parseInt(m[1], 10));
+    }
+    const full = new Set();
+    for (const [comp, idxs] of byComp) {
+      if (idxs.has(1) && idxs.has(2) && idxs.has(3)) full.add(comp);
+    }
+    return full;
+  }, [rows]);
+
   if (!loaded) return null;
 
   if (bds.length === 0) {
@@ -220,7 +272,7 @@ export function OutcomesEditor() {
     )}
 
     {(rows.length > 0 || isManual) && (
-    <div style={{ position: "relative" }}>
+    <div ref={tableWrapRef} onFocusCapture={handleTableFocus} onBlurCapture={handleTableBlur} style={{ position: "relative" }}>
     <div className="table-scroll">
 
     <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
@@ -250,12 +302,12 @@ export function OutcomesEditor() {
           return <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`} {...trProps}>
             <td style={{ ...td, padding: codeEditable ? 4 : undefined, ...wrap }}>
               {codeEditable
-                ? <SnapshotInput value={r.competency_code || ""} onSave={v => saveRow(idx, { competency_code: v })} placeholder="напр. ОПК-1" bold kind="competency_code" />
+                ? <SnapshotInput value={r.competency_code || ""} onSave={v => saveRow(idx, { competency_code: v })} placeholder="напр. ОПК-1" bold kind="competency_code" exclude={fullCompetencies} />
                 : <b>{r.competency_code}</b>}
             </td>
             <td style={{ ...td, padding: codeEditable ? 4 : undefined, ...wrap }}>
               {codeEditable
-                ? <SnapshotInput value={r.indicator_code || ""} onSave={v => saveRow(idx, { indicator_code: v })} placeholder="ОПК-1.1" kind="indicator_code" parent={r.competency_code || ""} />
+                ? <SnapshotInput value={r.indicator_code || ""} onSave={v => saveRow(idx, { indicator_code: v })} placeholder="ОПК-1.1" kind="indicator_code" parent={r.competency_code || ""} exclude={usedIndicatorCodes} />
                 : (r.indicator_code || "")}
             </td>
             <td style={{ ...td, padding: 4, ...wrap }}>
@@ -327,12 +379,18 @@ async function fetchKind(kind, q, source_type, direction_code) {
   return r.data?.items || [];
 }
 
-function SnapshotInput({ value, onSave, placeholder, bold, kind, parent }) {
+function SnapshotInput({ value, onSave, placeholder, bold, kind, parent, exclude }) {
   const style = { width: "100%", minHeight: 48, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontWeight: bold ? 700 : 400, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" };
   return <Combobox
     value={value || ""}
     onCommit={v => { if (v !== (value || "")) onSave(v); }}
-    fetchSuggestions={(q) => fetchKind(kind, q, parent)}
+    fetchSuggestions={async (q) => {
+      if (kind === "indicator_code" && !(parent || "").trim()) return [];
+      const arr = await fetchKind(kind, q, parent);
+      if (!exclude || !exclude.size) return arr;
+      return (arr || []).filter(s => !exclude.has((s || "").trim().toLowerCase()));
+    }}
+    resetKey={`${kind}|${parent || ""}`}
     placeholder={placeholder}
     textarea
     collapsedMaxHeight={56}
@@ -345,7 +403,8 @@ function SnapshotTextarea({ value, onSave, placeholder, parent, directionCode })
   return <Combobox
     value={value || ""}
     onCommit={v => { if (v !== (value || "")) onSave(v); }}
-    fetchSuggestions={(q) => fetchKind("indicator_description", q, parent, directionCode)}
+    fetchSuggestions={(q) => (parent || "").trim() ? fetchKind("indicator_description", q, parent, directionCode) : []}
+    resetKey={`${parent || ""}|${directionCode || ""}`}
     placeholder={placeholder}
     textarea
     collapsedMaxHeight={72}
