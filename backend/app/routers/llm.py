@@ -5,6 +5,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, user_can
+from app.core.crud import assert_rpd_editable
 from app.models import (
     User, Rpd, Discipline, Direction, Bup, BupDiscipline, LlmGenerationLog,
     UploadedDocument, UploadedDocumentSection, RpdBupDiscipline, LlmPrompt,
@@ -51,8 +52,7 @@ async def generate(
         )
     )
     rpd = result.scalar_one_or_none()
-    if not rpd:
-        raise HTTPException(status_code=404, detail="РПД не найдена")
+    assert_rpd_editable(rpd, user)
 
     disc = rpd.discipline
     bd = next((l.bup_discipline for l in rpd.bup_links if l.bup_discipline), None)

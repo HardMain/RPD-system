@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.models import Bup, BupDiscipline
+from app.core.auth import get_current_user
+from app.models import Bup, BupDiscipline, User
 from app.schemas import BupOut, BupDetailOut, BupDisciplineOut
 
 router = APIRouter(prefix="/api/bups", tags=["bups"])
@@ -45,6 +46,7 @@ def _bd_out(bd: BupDiscipline) -> BupDisciplineOut:
 async def list_bups(
     direction_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     q = select(Bup).options(selectinload(Bup.direction))
     if direction_id:
@@ -57,6 +59,7 @@ async def list_bups(
 async def list_bup_disciplines_global(
     id_discipline: int | None = None,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     q = (
         select(BupDiscipline)
@@ -85,7 +88,7 @@ async def list_bup_disciplines_global(
     return out
 
 @router.get("/{bup_id}", response_model=BupDetailOut)
-async def get_bup(bup_id: int, db: AsyncSession = Depends(get_db)):
+async def get_bup(bup_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
         select(Bup).where(Bup.id_bup == bup_id)
         .options(
@@ -101,7 +104,7 @@ async def get_bup(bup_id: int, db: AsyncSession = Depends(get_db)):
     return BupDetailOut(**base.model_dump(), disciplines=[_bd_out(bd) for bd in b.disciplines])
 
 @router.get("/{bup_id}/disciplines", response_model=list[BupDisciplineOut])
-async def list_bup_disciplines(bup_id: int, db: AsyncSession = Depends(get_db)):
+async def list_bup_disciplines(bup_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
         select(BupDiscipline).where(BupDiscipline.id_bup == bup_id)
         .options(
@@ -113,7 +116,7 @@ async def list_bup_disciplines(bup_id: int, db: AsyncSession = Depends(get_db)):
     return [_bd_out(bd) for bd in result.scalars().all()]
 
 @router.get("/disciplines/{bup_discipline_id}", response_model=BupDisciplineOut)
-async def get_bup_discipline(bup_discipline_id: int, db: AsyncSession = Depends(get_db)):
+async def get_bup_discipline(bup_discipline_id: int, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(
         select(BupDiscipline).where(BupDiscipline.id_bup_discipline == bup_discipline_id)
         .options(

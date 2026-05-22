@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, memo } from "react";
 import { T, F } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { ChevronDownIcon, ChevronUpIcon } from "../../../components/icons.jsx";
@@ -10,11 +10,18 @@ import { GenButton } from "../GenButton.jsx";
 const COLLAPSED_HEIGHT = 110;
 const DEFAULT_PLACEHOLDER = "Введите текст для заполнения раздела…";
 
-export function EditableBlock({ skey, label, fieldKey, placeholder }) {
-  const { isEdit, canEdit, generating, genResult, genBusy, autoFill, editTexts, setEditTexts, saveField } = useRpdEditor();
-  const val = editTexts[fieldKey] || "";
+function EditableBlockBase({ skey, label, fieldKey, placeholder }) {
+  const { isEdit, canEdit, generating, genResult, genBusy, autoFill, editTexts, saveField } = useRpdEditor();
+  const ctxVal = editTexts[fieldKey] || "";
   const editable = isEdit && canEdit;
   const ph = placeholder || DEFAULT_PLACEHOLDER;
+
+  const [local, setLocal] = useState(ctxVal);
+  const focusedRef = useRef(false);
+  useEffect(() => {
+    if (!focusedRef.current) setLocal(ctxVal);
+  }, [ctxVal]);
+  const val = editable ? local : ctxVal;
 
   const [expanded, setExpanded] = useState(false);
   const [overflows, setOverflows] = useState(false);
@@ -62,9 +69,10 @@ export function EditableBlock({ skey, label, fieldKey, placeholder }) {
         <textarea
           ref={taRef}
           className="expandable-field"
-          value={val}
-          onChange={e => setEditTexts(p => ({ ...p, [fieldKey]: e.target.value }))}
-          onBlur={() => saveField?.(fieldKey)}
+          value={local}
+          onFocus={() => { focusedRef.current = true; }}
+          onChange={e => setLocal(e.target.value)}
+          onBlur={() => { focusedRef.current = false; saveField?.(fieldKey, local); }}
           placeholder={ph}
           style={{
             display: "block",
@@ -149,3 +157,5 @@ function CornerToggleButton({ expanded, onClick }) {
     {expanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
   </button>;
 }
+
+export const EditableBlock = memo(EditableBlockBase);

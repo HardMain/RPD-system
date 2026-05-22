@@ -10,6 +10,7 @@ export function BottomBar({
   onSendApproval, onApprove, onReject,
 }) {
   const showReviewButtons = canReviewNow && status === "На согласовании";
+  const showSendButton = isEdit && canEdit && !showReviewButtons && (status === "Черновик" || status === "На доработке");
   return <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "10px 16px", flexShrink: 0, background: T.surface, borderTop: "1px solid " + T.border }}>
     {onBack && <Btn small onClick={onBack}>← Назад</Btn>}
     {status && <StatusBadge status={status} />}
@@ -22,7 +23,7 @@ export function BottomBar({
         </span>
       )}
       <div style={{ flex: 1 }} />
-      <Btn small primary onClick={onSendApproval}>Отправить на согласование</Btn>
+      {showSendButton && <Btn small primary onClick={onSendApproval}>Отправить на согласование</Btn>}
     </>}
     {showReviewButtons && <>
       <div style={{ flex: 1 }} />

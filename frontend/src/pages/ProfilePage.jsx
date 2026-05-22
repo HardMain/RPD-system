@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F, fieldLabel, inputBase, formErrorBox, sectionLabel, THEMES, applyTheme, THEME_LIGHT, THEME_DARK } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
+import { PasswordField } from "../components/PasswordField.jsx";
 import { Avatar, AVATAR_COLORS } from "../components/Avatar.jsx";
 import { KeyIcon, InfoIcon, GearIcon, ThemeIcon } from "../components/icons.jsx";
 
@@ -165,21 +166,12 @@ function SecuritySection() {
 
   return <div style={{ maxWidth: 360 }}>
     <Heading>Смена пароля</Heading>
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div>
-        <label style={fieldLabel}>Текущий пароль</label>
-        <input type="password" value={oldPw} onChange={e => setOldPw(e.target.value)} style={inputBase} />
-      </div>
-      <div>
-        <label style={fieldLabel}>Новый пароль</label>
-        <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)} style={inputBase} />
-      </div>
-      <div>
-        <label style={fieldLabel}>Повторите новый пароль</label>
-        <input type="password" value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") submit(); }} style={inputBase} />
-      </div>
-      {err && <div style={formErrorBox}>{err}</div>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <PasswordField label="Текущий пароль" value={oldPw} onChange={e => setOldPw(e.target.value)} />
+      <PasswordField label="Новый пароль" value={newPw} onChange={e => setNewPw(e.target.value)} />
+      <PasswordField label="Повторите новый пароль" value={confirmPw} onChange={e => setConfirmPw(e.target.value)}
+        onKeyDown={e => { if (e.key === "Enter") submit(); }} />
+      {err && <div style={{ ...formErrorBox, marginBottom: 8 }}>{err}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Btn primary onClick={submit} disabled={saving}>{saving ? "Сохранение…" : "Сменить пароль"}</Btn>
         {done && <span style={{ fontSize: 13, color: T.green, fontWeight: 600 }}>Пароль изменён</span>}
@@ -209,7 +201,7 @@ function AppearanceSection({ user, onUserUpdated }) {
 
   return <div>
     <Heading>Внешний вид</Heading>
-    <div style={fieldLabel}>Тема оформления (сохраняется в вашем профиле)</div>
+    <div style={fieldLabel}>Тема оформления</div>
     <div style={{ display: "flex", gap: 12 }}>
       {THEMES.map(t => {
         const picked = current === t.id;

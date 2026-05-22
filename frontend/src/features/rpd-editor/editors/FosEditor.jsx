@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, F } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -11,7 +11,7 @@ import { ConfirmDeleteModal, AlertModal } from "../EditorModals.jsx";
 const cell = { padding: "8px 10px", borderBottom: "1px solid " + T.borderLight, fontSize: 13, verticalAlign: "middle" };
 const head = { ...cell, fontSize: 11, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px", background: T.bg };
 
-export function FosEditor() {
+function FosEditorBase() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const main = rpd.fos_main;
   const other = rpd.fos_other || [];
@@ -203,3 +203,5 @@ function FosLibraryModal({ rpdId, role, onClose, onPicked }) {
     {errorMsg && <AlertModal title="Не удалось выбрать файл" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </Modal>;
 }
+
+export const FosEditor = memo(FosEditorBase);

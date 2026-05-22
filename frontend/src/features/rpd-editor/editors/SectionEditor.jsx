@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, F, td, th, inlineNumber } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -9,7 +9,7 @@ import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { PlanSummary } from "./PlanSummary.jsx";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
-export function SectionEditor() {
+function SectionEditorBase() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -359,3 +359,5 @@ const inlineTextarea = {
 };
 
 
+
+export const SectionEditor = memo(SectionEditorBase);

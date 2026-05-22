@@ -21,7 +21,10 @@ class AssessmentToolCreate(BaseModel):
 router = APIRouter(prefix="/api/assessment-tools", tags=["reference"])
 
 @router.get("/", response_model=list[AssessmentToolOut])
-async def list_assessment_tools(db: AsyncSession = Depends(get_db)):
+async def list_assessment_tools(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
     res = await db.execute(select(AssessmentTool).order_by(AssessmentTool.name))
     return res.scalars().all()
 

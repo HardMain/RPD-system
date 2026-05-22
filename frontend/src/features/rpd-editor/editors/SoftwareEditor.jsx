@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -16,7 +16,7 @@ const fetchSoftwareSuggestions = async (q, licenseType) => {
   return r.data?.items || [];
 };
 
-export function SoftwareEditor() {
+function SoftwareEditorBase() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const items = rpd.software || [];
@@ -145,3 +145,5 @@ function SoftwareRow({ item, editable, deletable = true, onSave, disciplineId })
     </td>
   </tr>;
 }
+
+export const SoftwareEditor = memo(SoftwareEditorBase);

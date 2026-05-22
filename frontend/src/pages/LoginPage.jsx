@@ -2,10 +2,11 @@ import { useState } from "react";
 import * as api from "../api/client.js";
 import { T, F } from "../styles/index.js";
 import { Input } from "../components/Input.jsx";
+import { PasswordField } from "../components/PasswordField.jsx";
 
 export function LoginPage({ onLogin }) {
-  const [u, setU] = useState("ivanov");
-  const [p, setP] = useState("password");
+  const [u, setU] = useState("");
+  const [p, setP] = useState("");
   const [err, setErr] = useState("");
   const [ld, setLd] = useState(false);
 
@@ -28,17 +29,34 @@ export function LoginPage({ onLogin }) {
     finally { setLd(false); }
   };
 
-  return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}>
-    <form onSubmit={go} style={{ background: T.surface, padding: 40, borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,.1)", width: 380 }}>
-      <div style={{ textAlign: "center", marginBottom: 24 }}>
-        <div style={{ fontSize: 20, fontWeight: 700 }}>ПНИПУ</div>
-        <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>ИС формирования РПД</div>
+  return <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg, overflow: "hidden" }}>
+    <div style={{
+      position: "absolute", inset: 0,
+      backgroundImage: "url(/login-bg.png)",
+      backgroundRepeat: "no-repeat",
+      backgroundPosition: "center",
+      backgroundSize: "min(78vw, 760px)",
+      opacity: 0.07,
+      pointerEvents: "none",
+    }} />
+
+    <form onSubmit={go} style={{ position: "relative", background: T.surface, padding: 40, borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,.12)", border: "1px solid " + T.borderLight, width: 400, maxWidth: "90vw" }}>
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <img src="/login-bg.png" alt="ПНИПУ" style={{ height: 64, marginBottom: 14 }} />
+        <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>Информационная система</div>
+        <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>формирования рабочих программ дисциплин</div>
       </div>
-      <Input label="Логин" value={u} onChange={e => setU(e.target.value)} />
-      <Input label="Пароль" value={p} onChange={e => setP(e.target.value)} type="password" />
-      {err && <div style={{ color: T.red, fontSize: 13, marginBottom: 12, textAlign: "center" }}>{err}</div>}
-      <button type="submit" disabled={ld} style={{ width: "100%", padding: 10, border: "none", borderRadius: 6, background: T.accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: F }}>{ld ? "Вход..." : "Войти"}</button>
-      <div style={{ fontSize: 11, color: T.textLight, textAlign: "center", marginTop: 16 }}>ivanov / password (препод) · petrov / password (зав. каф.) · admin / password (админ)</div>
+
+      <Input label="Логин" value={u} onChange={e => setU(e.target.value)} placeholder="Введите логин" />
+      <PasswordField label="Пароль" value={p} onChange={e => setP(e.target.value)} placeholder="Введите пароль" />
+
+      {err && <div style={{ color: T.red, fontSize: 13, margin: "4px 0 14px", textAlign: "center" }}>{err}</div>}
+
+      <button type="submit" disabled={ld} style={{ width: "100%", padding: 11, marginTop: 6, border: "none", borderRadius: 6, background: T.accent, color: "#fff", fontSize: 14, fontWeight: 600, cursor: ld ? "default" : "pointer", opacity: ld ? 0.7 : 1, fontFamily: F }}>{ld ? "Вход..." : "Войти"}</button>
+
+      <div style={{ fontSize: 12, color: T.textMuted, textAlign: "center", marginTop: 22, lineHeight: 1.5, borderTop: "1px solid " + T.borderLight, paddingTop: 16 }}>
+        Если не удаётся войти или у вас нет данных для входа, обратитесь в техническую поддержку.
+      </div>
     </form>
   </div>;
 }

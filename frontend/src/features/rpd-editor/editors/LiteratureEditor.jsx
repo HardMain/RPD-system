@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea, inlineInput, inlineNumber } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -23,7 +23,7 @@ async function fetchLiteratureSuggestions(mode, sourceType, q, id_discipline) {
   return r.data?.items || [];
 }
 
-export function LiteratureEditor({ kind }) {
+function LiteratureEditorBase({ kind }) {
   const { rpd, rpdId, isEdit, canEdit, reload, autoFill, generating, genBusy } = useRpdEditor();
   const editable = isEdit && canEdit;
   const isElectronic = kind === "electronic";
@@ -445,3 +445,5 @@ function ElectronicRow({ item, editable, deletable = true, onSave, disciplineId 
 }
 
 
+
+export const LiteratureEditor = memo(LiteratureEditorBase);

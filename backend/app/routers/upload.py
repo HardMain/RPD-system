@@ -9,6 +9,7 @@ from sqlalchemy import select, delete
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
+from app.core.crud import ensure_rpd_editable, assert_rpd_editable
 from app.core.config import settings
 from app.models.user import User, UploadedDocument, Rpd
 from app.models import UploadedDocumentSection
@@ -33,8 +34,7 @@ async def upload_document(
 ):
     result = await db.execute(select(Rpd).where(Rpd.id_rpd == rpd_id))
     rpd = result.scalar_one_or_none()
-    if not rpd:
-        raise HTTPException(status_code=404, detail="РПД не найдена")
+    assert_rpd_editable(rpd, user)
 
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_EXTENSIONS:
@@ -99,6 +99,7 @@ async def delete_document(doc_id: int, db: AsyncSession = Depends(get_db), user:
     doc = result.scalar_one_or_none()
     if not doc:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, doc.id_rpd, user)
     file_path = doc.file_path
     await db.execute(
         delete(UploadedDocumentSection).where(UploadedDocumentSection.id_document == doc_id)
@@ -138,5 +139,8 @@ async def delete_document_section(chunk_id: int, db: AsyncSession = Depends(get_
     chunk = result.scalar_one_or_none()
     if not chunk:
         raise HTTPException(status_code=404)
+    doc = await db.get(UploadedDocument, chunk.id_document)
+    if doc is not None:
+        await ensure_rpd_editable(db, doc.id_rpd, user)
     await db.delete(chunk)
     await db.commit()

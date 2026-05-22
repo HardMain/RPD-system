@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user
-from app.core.crud import get_or_404
+from app.core.crud import get_or_404, ensure_rpd_editable, assert_rpd_editable
 from app.core.database import get_db
 from app.models import Rpd, RpdFosFile, StoredFile, User
 from app.schemas import FosFileOut, FosFileSelect
@@ -61,6 +61,7 @@ async def upload_fos(
     if role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail=f"role должен быть one of {ALLOWED_ROLES}")
     rpd = await get_or_404(db, Rpd, rpd_id, "РПД не найдена")
+    assert_rpd_editable(rpd, user)
     fname = file.filename or "fos.pdf"
     if not fname.lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Ожидается PDF")
@@ -100,6 +101,7 @@ async def select_fos(
     if data.role not in ALLOWED_ROLES:
         raise HTTPException(status_code=400, detail=f"role должен быть one of {ALLOWED_ROLES}")
     rpd = await get_or_404(db, Rpd, rpd_id, "РПД не найдена")
+    assert_rpd_editable(rpd, user)
     sf = await get_or_404(db, StoredFile, data.id_file, "Файл не найден")
 
     await _replace_main_if_needed(rpd_id, data.role, db)
@@ -123,6 +125,7 @@ async def remove_fos(
     user: User = Depends(get_current_user),
 ):
     link = await get_or_404(db, RpdFosFile, fos_id)
+    await ensure_rpd_editable(db, link.id_rpd, user)
     await db.delete(link)
     await db.commit()
 

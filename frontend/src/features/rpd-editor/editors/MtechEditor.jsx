@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea, inlineNumber } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -17,7 +17,7 @@ const fetchRoomTypeSuggestions = async (q) => {
   return r.data?.items || [];
 };
 
-export function MtechEditor() {
+function MtechEditorBase() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const items = rpd.material_tech || [];
@@ -170,3 +170,5 @@ function MtechRow({ item, editable, onSave }) {
 }
 
 
+
+export const MtechEditor = memo(MtechEditorBase);

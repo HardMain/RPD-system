@@ -36,8 +36,7 @@ class LlmPromptUpdate(BaseModel):
 
 
 def _ensure_perm(user: User) -> None:
-    if not user_can(user, "*"):
-        raise HTTPException(status_code=403, detail="Доступно только администратору")
+    ensure_permission(user, "users.manage", "sources.manage")
 
 
 @router.get("/", response_model=list[LlmPromptOut])

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, F, td, th } from "../../../styles/index.js";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
@@ -49,7 +49,7 @@ function compareOutcomeRows(a, b) {
   return ai.localeCompare(bi, "ru", { numeric: true, sensitivity: "base" });
 }
 
-export function OutcomesEditor() {
+function OutcomesEditorBase() {
   const { rpd, rpdId, isEdit, canEdit, canManageSources, reload, setOutcomesVisibleIds } = useRpdEditor();
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
@@ -548,3 +548,5 @@ function AssessmentToolPicker({ value, disabled, onSave }) {
     style={{ width: "100%", minHeight: 56, padding: "6px 8px", border: "1px solid " + T.borderLight, borderRadius: 4, fontSize: 13, fontFamily: F, background: T.surface, outline: "none", boxSizing: "border-box" }}
   />;
 }
+
+export const OutcomesEditor = memo(OutcomesEditorBase);

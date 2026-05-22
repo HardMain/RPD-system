@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from "react";
 import { Document, Page } from "react-pdf";
 import * as api from "../../api/client.js";
 import { T, F, pdfToolBtn } from "../../styles/index.js";
@@ -636,8 +636,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     return "";
   }
 
-  async function saveField(fieldKey) {
-    const value = (editTexts[fieldKey] || "").trim();
+  async function saveField(fieldKey, valueArg) {
+    const value = ((valueArg !== undefined ? valueArg : editTexts[fieldKey]) || "").trim();
     setEditTexts(p => (p[fieldKey] === value ? p : { ...p, [fieldKey]: value }));
 
     if (value === _expectedValue(fieldKey, rpd)) return;
@@ -874,11 +874,30 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   }
   async function handleReview(action) { try { await api.reviewRpd(rpdId, { action, comment: rejectComment }); setModal(action === "approve" ? "approved" : null); setRejectComment(""); await load(); } catch { } }
 
+  const canManageSources = api.userCan(user, "sources.manage");
+  const canEdit = !!rpd && (rpd.status === "Черновик" || rpd.status === "На доработке"
+    || (rpd.status === "На согласовании" && api.userCan(user, "rpd.edit_meta")));
+  const genBusy = !!generating || genAll;
+
+  const fnRef = useRef({});
+  const stableFns = useMemo(() => ({
+    cancelGeneration: (...a) => fnRef.current.cancelGeneration(...a),
+    autoFill: (...a) => fnRef.current.autoFill(...a),
+    reload: (...a) => fnRef.current.reload(...a),
+    saveField: (...a) => fnRef.current.saveField(...a),
+    clearSection: (...a) => fnRef.current.clearSection(...a),
+    clearCount: (...a) => fnRef.current.clearCount(...a),
+  }), []);
+  const ctxValue = useMemo(() => ({
+    rpd, rpdId, isEdit, canEdit, canManageSources,
+    generating, genResult, genBusy, genBatch,
+    editTexts, setEditTexts, editing, setEditing,
+    isCollapsed, toggleCollapse, setOutcomesVisibleIds,
+    ...stableFns,
+  }), [rpd, rpdId, isEdit, canEdit, canManageSources, generating, genResult, genBusy, genBatch, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, setOutcomesVisibleIds, stableFns]);
+
   if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}><Spinner size={40} /></div>;
   if (!rpd) return <div style={{ flex: 1, padding: 40, textAlign: "center", background: T.bg }}>РПД не найдена</div>;
-
-  const canEdit = rpd.status === "Черновик" || rpd.status === "На доработке";
-  const genBusy = !!generating || genAll;
 
   const labHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.lab_hours || 0), 0);
   const practiceHoursTotal = (rpd.sections || []).reduce((a, s) => a + (s.practice_hours || 0), 0);
@@ -928,7 +947,6 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     literature_methodical_self_study: "Учебно-методическое обеспечение самостоятельной работы студента",
   };
   const _TEXT_CLEAR = new Set(["goals", "objects", "requirements", "educational_tech", "methodical_recommendations"]);
-  const canManageSources = api.userCan(user, "sources.manage");
   const outcomesStructural = (rpd.bup_disciplines || []).some(b => b.is_manual) || canManageSources;
 
   function _clearOps(key) {
@@ -1024,7 +1042,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     requestAnimationFrame(() => requestAnimationFrame(() => { sidebarLockRef.current = false; }));
   }
 
-  const ctxValue = { rpd, rpdId, isEdit, canEdit, canManageSources, generating, genResult, genBusy, genBatch, cancelGeneration, autoFill, reload: reloadAndNotify, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, saveField, clearSection, clearCount, setOutcomesVisibleIds };
+  fnRef.current = { cancelGeneration, autoFill, reload: reloadAndNotify, saveField, clearSection, clearCount };
 
   return <RpdEditorProvider value={ctxValue}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>

@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.core.auth import get_current_user, user_can
+from app.core.crud import ensure_rpd_editable, assert_rpd_editable
 from app.models import (
     User, Rpd, Discipline, Direction, RpdSection, RpdTopic,
     RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase, RpdLearningOutcome,
@@ -748,8 +749,7 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
 async def update_rpd(rpd_id: int, data: RpdUpdate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     result = await db.execute(select(Rpd).where(Rpd.id_rpd == rpd_id))
     rpd = result.scalar_one_or_none()
-    if not rpd:
-        raise HTTPException(status_code=404, detail="РПД не найдена")
+    assert_rpd_editable(rpd, user)
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(rpd, field, value)
     await db.commit()
@@ -771,6 +771,7 @@ async def delete_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User
 
 @router.post("/{rpd_id}/sections", response_model=RpdSectionOut, status_code=201)
 async def add_section(rpd_id: int, data: RpdSectionCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     section = RpdSection(id_rpd=rpd_id, **data.model_dump())
     db.add(section)
     await db.commit()
@@ -783,6 +784,7 @@ async def update_section(section_id: int, data: RpdSectionCreate, db: AsyncSessi
     section = result.scalar_one_or_none()
     if not section:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, section.id_rpd, user)
     for k, v in data.model_dump().items():
         setattr(section, k, v)
     await db.commit()
@@ -794,11 +796,13 @@ async def delete_section(section_id: int, db: AsyncSession = Depends(get_db), us
     result = await db.execute(select(RpdSection).where(RpdSection.id_section == section_id))
     section = result.scalar_one_or_none()
     if section:
+        await ensure_rpd_editable(db, section.id_rpd, user)
         await db.delete(section)
         await db.commit()
 
 @router.post("/{rpd_id}/topics", response_model=RpdTopicOut, status_code=201)
 async def add_topic(rpd_id: int, data: RpdTopicCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     topic = RpdTopic(id_rpd=rpd_id, **data.model_dump())
     db.add(topic)
     await db.commit()
@@ -811,6 +815,7 @@ async def update_topic(topic_id: int, data: RpdTopicUpdate, db: AsyncSession = D
     topic = result.scalar_one_or_none()
     if not topic:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, topic.id_rpd, user)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(topic, k, v)
     await db.commit()
@@ -822,11 +827,13 @@ async def delete_topic(topic_id: int, db: AsyncSession = Depends(get_db), user: 
     result = await db.execute(select(RpdTopic).where(RpdTopic.id_topic == topic_id))
     topic = result.scalar_one_or_none()
     if topic:
+        await ensure_rpd_editable(db, topic.id_rpd, user)
         await db.delete(topic)
         await db.commit()
 
 @router.post("/{rpd_id}/literature", response_model=LiteratureOut, status_code=201)
 async def add_literature(rpd_id: int, data: LiteratureCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     lit = RpdLiterature(id_rpd=rpd_id, **data.model_dump())
     db.add(lit)
     await db.commit()
@@ -839,6 +846,7 @@ async def update_literature(lit_id: int, data: LiteratureUpdate, db: AsyncSessio
     lit = result.scalar_one_or_none()
     if not lit:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, lit.id_rpd, user)
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(lit, k, v)
     await db.commit()
@@ -850,11 +858,13 @@ async def delete_literature(lit_id: int, db: AsyncSession = Depends(get_db), use
     result = await db.execute(select(RpdLiterature).where(RpdLiterature.id_literature == lit_id))
     lit = result.scalar_one_or_none()
     if lit:
+        await ensure_rpd_editable(db, lit.id_rpd, user)
         await db.delete(lit)
         await db.commit()
 
 @router.post("/{rpd_id}/software", response_model=SoftwareOut, status_code=201)
 async def add_software(rpd_id: int, data: SoftwareCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     sw = RpdSoftware(id_rpd=rpd_id, **data.model_dump())
     db.add(sw)
     await db.commit()
@@ -867,6 +877,7 @@ async def update_software(sw_id: int, data: SoftwareCreate, db: AsyncSession = D
     sw = result.scalar_one_or_none()
     if not sw:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, sw.id_rpd, user)
     for k, v in data.model_dump().items():
         setattr(sw, k, v)
     await db.commit()
@@ -878,11 +889,13 @@ async def delete_software(sw_id: int, db: AsyncSession = Depends(get_db), user: 
     result = await db.execute(select(RpdSoftware).where(RpdSoftware.id_software == sw_id))
     sw = result.scalar_one_or_none()
     if sw:
+        await ensure_rpd_editable(db, sw.id_rpd, user)
         await db.delete(sw)
         await db.commit()
 
 @router.post("/{rpd_id}/material-tech", response_model=MaterialTechOut, status_code=201)
 async def add_material_tech(rpd_id: int, data: MaterialTechCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     mt = RpdMaterialTech(id_rpd=rpd_id, **data.model_dump())
     db.add(mt)
     await db.commit()
@@ -895,6 +908,7 @@ async def update_material_tech(mt_id: int, data: MaterialTechCreate, db: AsyncSe
     mt = result.scalar_one_or_none()
     if not mt:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, mt.id_rpd, user)
     for k, v in data.model_dump().items():
         setattr(mt, k, v)
     await db.commit()
@@ -906,11 +920,13 @@ async def delete_material_tech(mt_id: int, db: AsyncSession = Depends(get_db), u
     result = await db.execute(select(RpdMaterialTech).where(RpdMaterialTech.id_material_tech == mt_id))
     mt = result.scalar_one_or_none()
     if mt:
+        await ensure_rpd_editable(db, mt.id_rpd, user)
         await db.delete(mt)
         await db.commit()
 
 @router.post("/{rpd_id}/databases", response_model=DatabaseOut, status_code=201)
 async def add_database(rpd_id: int, data: DatabaseCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     item = RpdDatabase(id_rpd=rpd_id, **data.model_dump())
     db.add(item)
     await db.commit()
@@ -923,6 +939,7 @@ async def update_database(db_id: int, data: DatabaseCreate, db: AsyncSession = D
     item = result.scalar_one_or_none()
     if not item:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, item.id_rpd, user)
     for k, v in data.model_dump().items():
         setattr(item, k, v)
     await db.commit()
@@ -934,11 +951,13 @@ async def delete_database(db_id: int, db: AsyncSession = Depends(get_db), user: 
     result = await db.execute(select(RpdDatabase).where(RpdDatabase.id_database == db_id))
     item = result.scalar_one_or_none()
     if item:
+        await ensure_rpd_editable(db, item.id_rpd, user)
         await db.delete(item)
         await db.commit()
 
 @router.post("/{rpd_id}/outcomes", response_model=LearningOutcomeOut, status_code=201)
 async def add_outcome(rpd_id: int, data: LearningOutcomeCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     lo = RpdLearningOutcome(id_rpd=rpd_id, **data.model_dump())
     db.add(lo)
     await db.flush()
@@ -967,6 +986,7 @@ async def update_outcome(outcome_id: int, data: LearningOutcomeCreate, db: Async
     lo = result.scalar_one_or_none()
     if not lo:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, lo.id_rpd, user)
     for k, v in data.model_dump().items():
         setattr(lo, k, v)
     await db.commit()
@@ -990,6 +1010,7 @@ async def delete_outcome(outcome_id: int, db: AsyncSession = Depends(get_db), us
     lo = result.scalar_one_or_none()
     if lo:
         rpd_row = await db.get(Rpd, lo.id_rpd)
+        assert_rpd_editable(rpd_row, user)
         await db.delete(lo)
         if rpd_row:
             rpd_row.updated_at = datetime.now(timezone.utc)
@@ -1002,8 +1023,7 @@ async def update_manual_link(
     user: User = Depends(get_current_user),
 ):
     rpd_row = await db.get(Rpd, rpd_id)
-    if not rpd_row:
-        raise HTTPException(status_code=404, detail="РПД не найдена")
+    assert_rpd_editable(rpd_row, user)
 
     res = await db.execute(
         select(RpdBupDiscipline)
@@ -1047,8 +1067,7 @@ async def add_manual_outcome(
     user: User = Depends(get_current_user),
 ):
     rpd = await db.get(Rpd, rpd_id)
-    if not rpd:
-        raise HTTPException(status_code=404, detail="РПД не найдена")
+    assert_rpd_editable(rpd, user)
     if data.id_indicator is not None:
         dup_res = await db.execute(
             select(RpdLearningOutcome.id_outcome)
@@ -1098,6 +1117,7 @@ async def patch_outcome_snapshot(
     lo = res.scalar_one_or_none()
     if not lo:
         raise HTTPException(status_code=404)
+    await ensure_rpd_editable(db, lo.id_rpd, user)
     payload = data.model_dump(exclude_unset=True)
     SNAPSHOT_FIELDS = {"competency_code", "competency_name", "indicator_code", "indicator_description"}
     for field in ("competency_code", "competency_name", "indicator_code", "indicator_description", "outcome_text", "assessment_tool"):
@@ -1127,8 +1147,7 @@ async def attach_bup_discipline(
     user: User = Depends(get_current_user),
 ):
     rpd = await db.get(Rpd, rpd_id)
-    if not rpd:
-        raise HTTPException(status_code=404, detail="РПД не найдена")
+    assert_rpd_editable(rpd, user)
     bd = await db.get(BupDiscipline, bd_id)
     if not bd:
         raise HTTPException(status_code=404, detail="Дисциплина БУПа не найдена")
@@ -1181,6 +1200,7 @@ async def detach_bup_discipline(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    await ensure_rpd_editable(db, rpd_id, user)
     res = await db.execute(
         select(RpdBupDiscipline)
         .where(RpdBupDiscipline.id_rpd == rpd_id)
@@ -1287,6 +1307,7 @@ async def upsert_outcome(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
+    await ensure_rpd_editable(db, rpd_id, user)
     lo: RpdLearningOutcome | None = None
     if data.id_outcome:
         res = await db.execute(
@@ -1341,6 +1362,7 @@ async def upsert_outcome(
 
 @router.post("/{rpd_id}/developers", response_model=DeveloperOut, status_code=201)
 async def add_developer(rpd_id: int, user_id: int = Query(...), db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
+    await ensure_rpd_editable(db, rpd_id, user)
     dev = RpdDeveloper(id_rpd=rpd_id, id_user=user_id)
     db.add(dev)
     await db.commit()
@@ -1362,6 +1384,7 @@ async def remove_developer(dev_id: int, db: AsyncSession = Depends(get_db), user
     result = await db.execute(select(RpdDeveloper).where(RpdDeveloper.id_rpd_developer == dev_id))
     dev = result.scalar_one_or_none()
     if dev:
+        await ensure_rpd_editable(db, dev.id_rpd, user)
         await db.delete(dev)
         await db.commit()
 

@@ -1,6 +1,7 @@
+import { memo } from "react";
 import { T, td, th } from "../../../styles/index.js";
 
-export function WorkloadTable({ rpd }) {
+function WorkloadTableBase({ rpd }) {
   const bds = rpd?.bup_disciplines || [];
 
   const semesterMap = new Map();
@@ -192,3 +193,5 @@ const ROWS = [
   { label: "Общая трудоёмкость дисциплины", indent: 0, total: true,
     value: (s) => sumNullable(s.lecture, s.lab, s.practice, s.ksr, s.srs) },
 ];
+
+export const WorkloadTable = memo(WorkloadTableBase);

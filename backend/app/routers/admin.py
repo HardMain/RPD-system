@@ -11,7 +11,7 @@ from app.core.auth import (
 from app.core.crud import get_or_404, ensure_permission
 from app.models.user import User, Role, Department
 from app.models.bup import BupDiscipline
-from app.schemas import UserCreate, UserDetailOut, RoleOut, DepartmentIn, DepartmentOut
+from app.schemas import UserCreate, UserDetailOut, RoleOut, DepartmentIn, DepartmentOut, ReviewerCandidateOut
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -288,7 +288,7 @@ async def delete_department(
             detail="Не удалось удалить подразделение: на него ссылаются другие записи. " + str(e),
         )
 
-@router.get("/users/search", response_model=list[UserDetailOut])
+@router.get("/users/search", response_model=list[ReviewerCandidateOut])
 async def search_users(
     q: str = "",
     db: AsyncSession = Depends(get_db),
@@ -301,14 +301,10 @@ async def search_users(
     result = await db.execute(query)
     rows = result.scalars().all()
     return [
-        UserDetailOut(
-            id_user=u.id_user, login=u.login, full_name=u.full_name,
-            title=u.title,
-            email=u.email, is_active=u.is_active,
+        ReviewerCandidateOut(
+            id_user=u.id_user, full_name=u.full_name, title=u.title,
             role=u.role.name if u.role else "",
             department=u.department.name if u.department else "",
-            id_role=u.id_role, id_department=u.id_department,
-            created_at=u.created_at,
         )
         for u in rows
     ]

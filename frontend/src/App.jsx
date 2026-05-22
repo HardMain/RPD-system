@@ -325,11 +325,14 @@ export default function App() {
     };
     const wireAll = () => document.querySelectorAll(".table-scroll").forEach(wire);
     wireAll();
-    refresh();
-    const mo = new MutationObserver(() => { wireAll(); refresh(); });
+    let rafId = 0;
+    const mo = new MutationObserver(() => {
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => { rafId = 0; wireAll(); });
+    });
     mo.observe(document.body, { childList: true, subtree: true });
     window.addEventListener("resize", refresh);
-    return () => { ro.disconnect(); mo.disconnect(); window.removeEventListener("resize", refresh); };
+    return () => { if (rafId) cancelAnimationFrame(rafId); ro.disconnect(); mo.disconnect(); window.removeEventListener("resize", refresh); };
   }, []);
 
   useEffect(() => {

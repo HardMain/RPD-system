@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -14,7 +14,7 @@ const fetchDatabaseSuggestions = async (q) => {
   return r.data?.items || [];
 };
 
-export function DatabasesEditor() {
+function DatabasesEditorBase() {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const items = rpd.databases || [];
@@ -174,3 +174,5 @@ function DatabaseRow({ item, editable, deletable = true, onSave, disciplineId })
     </td>
   </tr>;
 }
+
+export const DatabasesEditor = memo(DatabasesEditorBase);

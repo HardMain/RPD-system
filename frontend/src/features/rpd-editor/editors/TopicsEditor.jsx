@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -8,7 +8,7 @@ import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 
-export function TopicsEditor({ kind }) {
+function TopicsEditorBase({ kind }) {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
   const editable = isEdit && canEdit;
   const titleLabel = kind === "lab"
@@ -149,3 +149,5 @@ function TopicRow({ topic, index, editable, deletable, onSave }) {
     </td>
   </tr>;
 }
+
+export const TopicsEditor = memo(TopicsEditorBase);

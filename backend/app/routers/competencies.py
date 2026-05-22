@@ -4,8 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
+from app.core.auth import get_current_user
 from app.models import (
-    Competency, BupDiscipline, BupDisciplineCompetency,
+    Competency, BupDiscipline, BupDisciplineCompetency, User,
 )
 from app.schemas import CompetencyOut, IndicatorOut, DisciplineCompetencyOut
 
@@ -15,6 +16,7 @@ router = APIRouter(prefix="/api/competencies", tags=["competencies"])
 async def list_competencies(
     direction_id: int | None = None,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     q = select(Competency).options(selectinload(Competency.indicators))
     if direction_id:
@@ -42,6 +44,7 @@ def _comp_to_out(comp: Competency) -> DisciplineCompetencyOut:
 async def competencies_by_discipline(
     discipline_id: int,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(BupDisciplineCompetency)
@@ -60,6 +63,7 @@ async def competencies_by_discipline(
 async def competencies_by_bup_discipline(
     bup_discipline_id: int,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
     result = await db.execute(
         select(BupDisciplineCompetency)
