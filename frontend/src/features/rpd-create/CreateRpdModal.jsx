@@ -11,26 +11,10 @@ import { RowTrashOverlay } from "../../components/RowTrashOverlay.jsx";
 import { PlusIcon } from "../../components/icons.jsx";
 import { ReviewerChain } from "../../components/ReviewerChain.jsx";
 import { AlertModal, ConfirmDeleteModal } from "../rpd-editor/EditorModals.jsx";
+import { emptySemester, loadDraft, saveDraft, clearDraft } from "./draftStorage.js";
 
 const CONTROL_OPTIONS = ["экзамен", "зачёт", "диф. зачет", "курсовой проект", "курсовая работа"];
 const EXAM_DEFAULT = 36;
-const DRAFT_KEY = "createRpdDraft.v1";
-
-function emptySemester(number) {
-  return { number, lecture: 0, lab: 0, practice: 0, ksr: 0, srs: 0, exam: 0, controls: [] };
-}
-
-function loadDraft() {
-  try {
-    const raw = sessionStorage.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw);
-    return d && typeof d === "object" ? d : null;
-  } catch { return null; }
-}
-function clearDraft() {
-  try { sessionStorage.removeItem(DRAFT_KEY); } catch {}
-}
 
 export function CreateRpdModal({ onClose, onCreated }) {
   const draft = useRef(loadDraft()).current;
@@ -83,16 +67,14 @@ export function CreateRpdModal({ onClose, onCreated }) {
   const semTbodyRef = useRef(null);
 
   useEffect(() => {
-    try {
-      sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
-        mode,
-        discId,
-        bdIds: Array.from(bdIds),
-        discQuery, discPickedId,
-        manual, manualSemesters,
-        year, baseId, reviewerIds,
-      }));
-    } catch {}
+    saveDraft({
+      mode,
+      discId,
+      bdIds: Array.from(bdIds),
+      discQuery, discPickedId,
+      manual, manualSemesters,
+      year, baseId, reviewerIds,
+    });
   }, [mode, discId, bdIds, discQuery, discPickedId, manual, manualSemesters, year, baseId, reviewerIds]);
 
   function discardAndClose() {

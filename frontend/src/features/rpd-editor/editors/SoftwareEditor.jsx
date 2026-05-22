@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, memo } from "react";
+import { useRef, memo } from "react";
 import * as api from "../../../api/client.js";
 import { T, td, th, inlineTextarea } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
@@ -8,7 +8,7 @@ import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 import { SOFTWARE_TYPES } from "../catalogs.js";
-import { ConfirmDeleteModal } from "../EditorModals.jsx";
+import { useRowEditor } from "../hooks/useRowEditor.jsx";
 
 const fetchSoftwareSuggestions = async (q, licenseType) => {
   if (!licenseType) return [];
@@ -21,41 +21,17 @@ function SoftwareEditorBase() {
   const editable = isEdit && canEdit;
   const items = rpd.software || [];
   const tbodyRef = useRef(null);
-  const [pendingDelete, setPendingDelete] = useState(null);
-
-  async function addRow() {
-    try { await api.addSoftware(rpdId, { name: "", license_type: null }); await reload(); } catch {}
-  }
-
-  const autoAddedRef = useRef(false);
-  useEffect(() => {
-    if (!editable || autoAddedRef.current) return;
-    autoAddedRef.current = true;
-    if (items.length === 0) addRow();
-  }, [editable]);
-  async function performDelete(item) {
-    if (!item) return;
-    try { await api.deleteSoftware(item.id_software); await reload(); } catch {}
-  }
-  function delRow(item) {
-    const filled = (item.name || "").trim() || (item.license_type || "").trim();
-    if (filled) { setPendingDelete(item); return; }
-    performDelete(item);
-  }
-  function delById(id) {
-    const item = items.find(it => String(it.id_software) === String(id));
-    if (item) delRow(item);
-  }
-
-  async function saveRow(item, patch) {
-    try {
-      await api.updateSoftware(item.id_software, {
-        name: patch.name ?? item.name ?? "",
-        license_type: patch.license_type !== undefined ? patch.license_type : (item.license_type ?? null),
-      });
-      await reload();
-    } catch {}
-  }
+  const { addRow, saveRow, delById, confirmModal } = useRowEditor({
+    items, editable, reload, idKey: "id_software",
+    autoAddWhenEmpty: true,
+    add: () => api.addSoftware(rpdId, { name: "", license_type: null }),
+    update: (item, patch) => api.updateSoftware(item.id_software, {
+      name: patch.name ?? item.name ?? "",
+      license_type: patch.license_type !== undefined ? patch.license_type : (item.license_type ?? null),
+    }),
+    remove: (item) => api.deleteSoftware(item.id_software),
+    isFilled: (item) => !!((item.name || "").trim() || (item.license_type || "").trim()),
+  });
 
   return <div>
     <div style={{ position: "relative" }}>
@@ -92,12 +68,7 @@ function SoftwareEditorBase() {
         <Btn small onClick={addRow}><PlusIcon /> Добавить запись</Btn>
       </div>
     )}
-    {pendingDelete && <ConfirmDeleteModal
-      title="Удалить запись?"
-      message="Запись содержит данные. После удаления восстановить её будет нельзя."
-      onClose={() => setPendingDelete(null)}
-      onConfirm={async () => { const it = pendingDelete; setPendingDelete(null); await performDelete(it); }}
-    />}
+    {confirmModal}
   </div>;
 }
 

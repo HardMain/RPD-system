@@ -6,7 +6,7 @@ import { PlusIcon } from "../../../components/icons.jsx";
 import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
-import { ConfirmDeleteModal } from "../EditorModals.jsx";
+import { useRowEditor } from "../hooks/useRowEditor.jsx";
 
 function TopicsEditorBase({ kind }) {
   const { rpd, rpdId, isEdit, canEdit, reload } = useRpdEditor();
@@ -41,40 +41,16 @@ function TopicsEditorBase({ kind }) {
 
 function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
   const tbodyRef = useRef(null);
-  const [pendingDelete, setPendingDelete] = useState(null);
-  async function addTopic() {
-    try {
-      await api.addTopic(rpdId, { topic_type: kind, title: "" });
-      await reload();
-    } catch {}
-  }
-  async function performDelete(t) {
-    if (!t) return;
-    try { await api.deleteTopic(t.id_topic); await reload(); } catch {}
-  }
-  function delTopic(t) {
-    if ((t.title || "").trim()) { setPendingDelete(t); return; }
-    performDelete(t);
-  }
-  function delById(id) {
-    const t = topics.find(it => String(it.id_topic) === String(id));
-    if (t) delTopic(t);
-  }
-
-  const autoAddedRef = useRef(false);
-  useEffect(() => {
-    if (!editable || autoAddedRef.current) return;
-    autoAddedRef.current = true;
-    if (topics.length === 0) addTopic();
-
-  }, [editable]);
-  async function saveTitle(topic, title) {
-    if ((topic.title || "") === title) return;
-    try {
-      await api.updateTopic(topic.id_topic, { title });
-      await reload();
-    } catch {}
-  }
+  const { addRow, saveRow, delById, confirmModal } = useRowEditor({
+    items: topics, editable, reload, idKey: "id_topic",
+    autoAddWhenEmpty: true,
+    add: () => api.addTopic(rpdId, { topic_type: kind, title: "" }),
+    update: (t, title) => api.updateTopic(t.id_topic, { title }),
+    remove: (t) => api.deleteTopic(t.id_topic),
+    isFilled: (t) => !!(t.title || "").trim(),
+    confirmTitle: "Удалить тему?",
+    confirmMessage: "У темы заполнено название. После удаления восстановить её будет нельзя.",
+  });
 
   return <div style={{ position: "relative" }}>
     <div className="table-scroll">
@@ -97,7 +73,7 @@ function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
             index={i + 1}
             editable={editable}
             deletable={topics.length > 1}
-            onSave={(title) => saveTitle(t, title)}
+            onSave={(title) => saveRow(t, title)}
           />
         ))}
       </tbody>
@@ -106,15 +82,10 @@ function TopicsTable({ topics, kind, rpdId, titleLabel, editable, reload }) {
     {editable && <RowTrashOverlay tbodyRef={tbodyRef} onDelete={delById} title="Удалить тему" />}
     {editable && (
       <div style={{ marginTop: 8 }}>
-        <Btn small onClick={addTopic}><PlusIcon /> Добавить тему</Btn>
+        <Btn small onClick={addRow}><PlusIcon /> Добавить тему</Btn>
       </div>
     )}
-    {pendingDelete && <ConfirmDeleteModal
-      title="Удалить тему?"
-      message="У темы заполнено название. После удаления восстановить её будет нельзя."
-      onClose={() => setPendingDelete(null)}
-      onConfirm={async () => { const t = pendingDelete; setPendingDelete(null); await performDelete(t); }}
-    />}
+    {confirmModal}
   </div>;
 }
 
@@ -141,7 +112,7 @@ function TopicRow({ topic, index, editable, deletable, onSave }) {
       <ExpandableTextarea
         value={local}
         onChange={e => setLocal(e.target.value)}
-        onBlur={() => { const t = local.trim(); if (t !== local) setLocal(t); onSave(t); }}
+        onBlur={() => { const t = local.trim(); if (t !== local) setLocal(t); if (t !== (topic.title || "")) onSave(t); }}
         placeholder="Название темы"
         collapsedMaxHeight={64}
         style={inlineTextarea}

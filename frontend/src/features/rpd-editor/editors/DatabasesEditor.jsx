@@ -7,7 +7,7 @@ import { ExpandableTextarea } from "../../../components/ExpandableTextarea.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
-import { ConfirmDeleteModal } from "../EditorModals.jsx";
+import { useRowEditor } from "../hooks/useRowEditor.jsx";
 
 const fetchDatabaseSuggestions = async (q) => {
   const r = await api.getSuggestions("database_name", { q });
@@ -19,7 +19,6 @@ function DatabasesEditorBase() {
   const editable = isEdit && canEdit;
   const items = rpd.databases || [];
   const tbodyRef = useRef(null);
-  const [pendingDelete, setPendingDelete] = useState(null);
   const [refsMap, setRefsMap] = useState(() => new Map());
 
   useEffect(() => {
@@ -36,43 +35,24 @@ function DatabasesEditorBase() {
     return () => { alive = false; };
   }, [editable]);
 
-  async function addRow() {
-    try { await api.addDatabase(rpdId, { name: "", url: "" }); await reload(); } catch {}
-  }
-
-  const autoAddedRef = useRef(false);
-  useEffect(() => {
-    if (!editable || autoAddedRef.current) return;
-    autoAddedRef.current = true;
-    if (items.length === 0) addRow();
-  }, [editable]);
-  async function performDelete(item) {
-    if (!item) return;
-    try { await api.deleteDatabase(item.id_database); await reload(); } catch {}
-  }
-  function delRow(item) {
-    const filled = (item.name || "").trim() || (item.url || "").trim();
-    if (filled) { setPendingDelete(item); return; }
-    performDelete(item);
-  }
-  function delById(id) {
-    const item = items.find(it => String(it.id_database) === String(id));
-    if (item) delRow(item);
-  }
-  async function saveRow(item, patch) {
-    const next = { ...patch };
-    if (next.name !== undefined) {
-      const url = refsMap.get((next.name || "").trim().toLowerCase());
-      if (url) next.url = url;
-    }
-    try {
-      await api.updateDatabase(item.id_database, {
+  const { addRow, saveRow, delById, confirmModal } = useRowEditor({
+    items, editable, reload, idKey: "id_database",
+    autoAddWhenEmpty: true,
+    add: () => api.addDatabase(rpdId, { name: "", url: "" }),
+    update: (item, patch) => {
+      const next = { ...patch };
+      if (next.name !== undefined) {
+        const url = refsMap.get((next.name || "").trim().toLowerCase());
+        if (url) next.url = url;
+      }
+      return api.updateDatabase(item.id_database, {
         name: next.name ?? item.name ?? "",
         url: next.url !== undefined ? next.url : (item.url ?? ""),
       });
-      await reload();
-    } catch {}
-  }
+    },
+    remove: (item) => api.deleteDatabase(item.id_database),
+    isFilled: (item) => !!((item.name || "").trim() || (item.url || "").trim()),
+  });
 
   return <div>
     <div style={{ position: "relative" }}>
@@ -109,12 +89,7 @@ function DatabasesEditorBase() {
         <Btn small onClick={addRow}><PlusIcon /> Добавить запись</Btn>
       </div>
     )}
-    {pendingDelete && <ConfirmDeleteModal
-      title="Удалить запись?"
-      message="Запись содержит данные. После удаления восстановить её будет нельзя."
-      onClose={() => setPendingDelete(null)}
-      onConfirm={async () => { const it = pendingDelete; setPendingDelete(null); await performDelete(it); }}
-    />}
+    {confirmModal}
   </div>;
 }
 

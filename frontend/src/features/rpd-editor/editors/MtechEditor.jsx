@@ -6,7 +6,7 @@ import { Combobox } from "../../../components/Combobox.jsx";
 import { PlusIcon } from "../../../components/icons.jsx";
 import { RowTrashOverlay } from "../../../components/RowTrashOverlay.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
-import { ConfirmDeleteModal } from "../EditorModals.jsx";
+import { useRowEditor } from "../hooks/useRowEditor.jsx";
 
 const fetchEquipmentSuggestions = async (q) => {
   const r = await api.getSuggestions("equipment", { q });
@@ -22,34 +22,17 @@ function MtechEditorBase() {
   const editable = isEdit && canEdit;
   const items = rpd.material_tech || [];
   const tbodyRef = useRef(null);
-  const [pendingDelete, setPendingDelete] = useState(null);
-
-  async function addRow() {
-    try { await api.addMaterialTech(rpdId, { room_type: "", equipment: "", quantity: 0 }); await reload(); } catch {}
-  }
-  async function performDelete(item) {
-    if (!item) return;
-    try { await api.deleteMaterialTech(item.id_material_tech); await reload(); } catch {}
-  }
-  function delRow(item) {
-    const filled = (item.room_type || "").trim() || (item.equipment || "").trim() || (item.quantity ?? 0) > 0;
-    if (filled) { setPendingDelete(item); return; }
-    performDelete(item);
-  }
-  function delById(id) {
-    const item = items.find(it => String(it.id_material_tech) === String(id));
-    if (item) delRow(item);
-  }
-  async function saveRow(item, patch) {
-    try {
-      await api.updateMaterialTech(item.id_material_tech, {
-        room_type: patch.room_type ?? item.room_type ?? "",
-        equipment: patch.equipment !== undefined ? patch.equipment : (item.equipment ?? ""),
-        quantity: patch.quantity !== undefined ? patch.quantity : (item.quantity ?? null),
-      });
-      await reload();
-    } catch {}
-  }
+  const { addRow, saveRow, delById, confirmModal } = useRowEditor({
+    items, editable, reload, idKey: "id_material_tech",
+    add: () => api.addMaterialTech(rpdId, { room_type: "", equipment: "", quantity: 0 }),
+    update: (item, patch) => api.updateMaterialTech(item.id_material_tech, {
+      room_type: patch.room_type ?? item.room_type ?? "",
+      equipment: patch.equipment !== undefined ? patch.equipment : (item.equipment ?? ""),
+      quantity: patch.quantity !== undefined ? patch.quantity : (item.quantity ?? null),
+    }),
+    remove: (item) => api.deleteMaterialTech(item.id_material_tech),
+    isFilled: (item) => !!((item.room_type || "").trim() || (item.equipment || "").trim() || (item.quantity ?? 0) > 0),
+  });
 
   return <div>
     {items.length > 0 ? (
@@ -92,12 +75,7 @@ function MtechEditorBase() {
         <Btn small onClick={addRow}><PlusIcon /> Добавить запись</Btn>
       </div>
     )}
-    {pendingDelete && <ConfirmDeleteModal
-      title="Удалить запись?"
-      message="Запись содержит данные. После удаления восстановить её будет нельзя."
-      onClose={() => setPendingDelete(null)}
-      onConfirm={async () => { const it = pendingDelete; setPendingDelete(null); await performDelete(it); }}
-    />}
+    {confirmModal}
   </div>;
 }
 
