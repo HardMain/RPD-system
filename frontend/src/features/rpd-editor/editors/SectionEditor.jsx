@@ -301,7 +301,7 @@ function SectionRow({ section, number, editable, deletable, onSave }) {
         value={local.brief_content || ""}
         onChange={e => patch("brief_content", e.target.value)}
         onBlur={() => commitField("brief_content")}
-        placeholder="Краткое содержание (необязательно)"
+        placeholder="Краткое содержание"
         collapsedMaxHeight={64}
         wrapperStyle={{ marginTop: 4 }}
         style={inlineTextarea}

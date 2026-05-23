@@ -101,6 +101,7 @@ class RpdBupDiscipline(Base):
     semesters_data = Column(JSONB, nullable=True)
     discipline_name = Column(String(200))
     form_of_study = Column(String(40))
+    degree_level = Column(String(50))
     is_manual = Column(Boolean, nullable=False, default=False)
 
     __table_args__ = (

@@ -85,6 +85,7 @@ export const upsertOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes/u
 export const addManualOutcome = (rpdId, data) => api.post(`/rpd/${rpdId}/outcomes/manual`, data);
 export const patchOutcomeSnapshot = (outcomeId, data) => api.patch(`/rpd/outcomes/${outcomeId}/snapshot`, data);
 export const updateManualLink = (rpdId, data) => api.patch(`/rpd/${rpdId}/manual-link`, data);
+export const updateRpdHeaderMeta = (rpdId, data) => api.patch(`/rpd/${rpdId}/header-meta`, data);
 
 export const getAssessmentTools = () => api.get('/assessment-tools/');
 export const createAssessmentTool = (name) => api.post('/assessment-tools/', { name });
@@ -272,5 +273,8 @@ export const getHealth = () => api.get('/health');
 
 export const adminGetLlmModel = () => api.get('/admin/system/llm-model');
 export const adminSetLlmModel = (model) => api.patch('/admin/system/llm-model', { model });
+
+export const adminGetApprover = () => api.get('/admin/system/approver');
+export const adminSetApprover = (position, name) => api.patch('/admin/system/approver', { position, name });
 
 export default api;

@@ -20,6 +20,7 @@ class RpdManualPayload(BaseModel):
     zet: int | None = None
     semesters_data: list[dict] | None = None
     form_of_study: str | None = None
+    degree_level: str | None = None
 
 class ManualLinkUpdate(BaseModel):
     direction_code: str | None = None
@@ -32,6 +33,11 @@ class ManualLinkUpdate(BaseModel):
     zet: int | None = None
     semesters_data: list[dict] | None = None
     form_of_study: str | None = None
+    degree_level: str | None = None
+
+class HeaderMetaUpdate(BaseModel):
+    form_of_study: str | None = None
+    degree_level: str | None = None
 
 class ManualOutcomeCreate(BaseModel):
     competency_code: str | None = None
@@ -346,6 +352,7 @@ class BupDisciplineRefOut(BaseModel):
     fgos_file_name: str | None = None
     semesters_data: list[dict] | None = None
     form_of_study: str | None = None
+    degree_level: str | None = None
     bup_deleted: bool = False
     is_manual: bool = False
 

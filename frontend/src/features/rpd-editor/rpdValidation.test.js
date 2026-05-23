@@ -15,16 +15,27 @@ const emptyRpd = {
 };
 
 const fullRpd = {
-  learning_outcomes: [{ outcome_text: "Знает основы" }],
-  sections: [{ title: "Введение", practice_hours: 0, lab_hours: 0 }],
+  bup_disciplines: [{
+    id_bup_discipline: 1,
+    form_of_study: "очная",
+    degree_level: "бакалавриат",
+    semester: "1",
+    lecture_hours: 36, lab_hours: 0, practice_hours: 0, self_study_hours: 36,
+    semesters_data: [{ number: 1, lecture: 36, lab: 0, practice: 0, srs: 36 }],
+  }],
+  learning_outcomes: [{ outcome_text: "Знает основы", assessment_tool: "Экзамен" }],
+  sections: [{
+    title: "Введение", brief_content: "Содержание раздела.",
+    lecture_hours: 36, lab_hours: 0, practice_hours: 0, self_study_hours: 36, semester: 1,
+  }],
   topics: [],
   literature: [
     { title: "Учебник", url: null },
     { title: "Электронный ресурс", url: "https://e.lanbook.com" },
   ],
-  software: [{ name: "VS Code" }],
-  databases: [{ name: "Лань" }],
-  material_tech: [{ room_type: "Лекционная аудитория", equipment: "" }],
+  software: [{ name: "VS Code", license_type: "Среды разработки, тестирования и отладки" }],
+  databases: [{ name: "Лань", url: "https://e.lanbook.com" }],
+  material_tech: [{ room_type: "Лекционная аудитория", equipment: "Проектор" }],
   fos_main: { id_rpd_fos: 1 },
   fos_other: [],
   developers: [{ id_user: 1 }],

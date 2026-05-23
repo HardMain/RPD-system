@@ -7,6 +7,7 @@ from app.core.database import get_db
 from app.models import User
 from app.services.app_settings import (
     LLM_MODEL_CHOICES, get_llm_model, set_setting, LLM_MODEL_KEY,
+    get_approver, APPROVER_POSITION_KEY, APPROVER_NAME_KEY,
 )
 
 router = APIRouter(prefix="/api/admin/system", tags=["admin-system"])
@@ -15,6 +16,11 @@ router = APIRouter(prefix="/api/admin/system", tags=["admin-system"])
 def _require_admin(user: User) -> None:
     if not user_can(user, "*"):
         raise HTTPException(status_code=403, detail="Только администратору")
+
+
+def _require_settings_access(user: User) -> None:
+    if not (user_can(user, "*") or user_can(user, "users.create")):
+        raise HTTPException(status_code=403, detail="Недостаточно прав")
 
 
 class LlmModelOut(BaseModel):
@@ -52,3 +58,33 @@ async def update_llm_model(
         current=current,
         choices=[{"id": mid, "label": lbl} for mid, lbl in LLM_MODEL_CHOICES],
     )
+
+
+class ApproverOut(BaseModel):
+    position: str
+    name: str
+
+
+class ApproverIn(BaseModel):
+    position: str
+    name: str
+
+
+@router.get("/approver", response_model=ApproverOut)
+async def get_approver_setting(user: User = Depends(get_current_user)):
+    _require_settings_access(user)
+    data = await get_approver()
+    return ApproverOut(position=data["position"], name=data["name"])
+
+
+@router.patch("/approver", response_model=ApproverOut)
+async def update_approver_setting(
+    payload: ApproverIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_settings_access(user)
+    await set_setting(db, APPROVER_POSITION_KEY, payload.position.strip())
+    await set_setting(db, APPROVER_NAME_KEY, payload.name.strip())
+    data = await get_approver()
+    return ApproverOut(position=data["position"], name=data["name"])

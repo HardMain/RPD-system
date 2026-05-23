@@ -12,6 +12,7 @@ import { PlusIcon } from "../../components/icons.jsx";
 import { ReviewerChain } from "../../components/ReviewerChain.jsx";
 import { AlertModal, ConfirmDeleteModal } from "../rpd-editor/EditorModals.jsx";
 import { emptySemester, loadDraft, saveDraft, clearDraft } from "./draftStorage.js";
+import { FORM_OF_STUDY_OPTIONS, DEGREE_LEVEL_OPTIONS } from "../../utils/options.js";
 
 const CONTROL_OPTIONS = ["экзамен", "зачёт", "диф. зачет", "курсовой проект", "курсовая работа"];
 const EXAM_DEFAULT = 36;
@@ -39,7 +40,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
 
   const [manual, setManual] = useState(draft?.manual ?? {
     direction_code: "", direction_name: "", direction_profile: "",
-    zet: 0, exam_hours: 0, form_of_study: "",
+    zet: 0, exam_hours: 0, form_of_study: "", degree_level: "",
   });
   const [manualSemesters, setManualSemesters] = useState(
     Array.isArray(draft?.manualSemesters) && draft.manualSemesters.length > 0
@@ -264,6 +265,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
       direction_name: !manual.direction_name.trim(),
       direction_profile: !manual.direction_profile.trim(),
       form_of_study: !manual.form_of_study,
+      degree_level: !manual.degree_level,
       zet: !(+manual.zet > 0),
       no_semesters: manualSemesters.length === 0,
       semesters: semIssues,
@@ -275,7 +277,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
     if (!manualFieldIssues) return false;
     const f = manualFieldIssues;
     if (f.discipline || f.direction_code || f.direction_name || f.direction_profile
-        || f.form_of_study || f.zet || f.no_semesters || f.hours_mismatch) return true;
+        || f.form_of_study || f.degree_level || f.zet || f.no_semesters || f.hours_mismatch) return true;
     return f.semesters.some(s => s.noControl || s.examMissingHours);
   }, [manualFieldIssues]);
 
@@ -375,6 +377,7 @@ export function CreateRpdModal({ onClose, onCreated }) {
             zet: num(manual.zet),
             semesters_data,
             form_of_study: (manual.form_of_study || "").trim() || null,
+            degree_level: (manual.degree_level || "").trim() || null,
           },
         };
       }
@@ -595,12 +598,23 @@ export function CreateRpdModal({ onClose, onCreated }) {
               <div key={errorPulse} className={flashField("form_of_study") ? "err-flash" : ""} style={{ borderRadius: 4 }}>
                 <Dropdown
                   value={manual.form_of_study || ""}
-                  options={[
-                    { value: "очная", label: "очная" },
-                    { value: "заочная", label: "заочная" },
-                    { value: "очно-заочная", label: "очно-заочная" },
-                  ]}
+                  options={FORM_OF_STUDY_OPTIONS}
                   onChange={v => manualField("form_of_study", v)}
+                  placeholder="— не указано —"
+                  clearLabel="— не указано —"
+                  title="Обязательное поле"
+                />
+              </div>
+            </div>
+            <div style={{ flex: "0 0 240px", minWidth: 220 }}>
+              <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>
+                Уровень образования <span style={{ color: T.red }}>*</span>
+              </div>
+              <div key={errorPulse} className={flashField("degree_level") ? "err-flash" : ""} style={{ borderRadius: 4 }}>
+                <Dropdown
+                  value={manual.degree_level || ""}
+                  options={DEGREE_LEVEL_OPTIONS}
+                  onChange={v => manualField("degree_level", v)}
                   placeholder="— не указано —"
                   clearLabel="— не указано —"
                   title="Обязательное поле"
@@ -694,8 +708,8 @@ export function CreateRpdModal({ onClose, onCreated }) {
                   <td style={totalCell(false)}>{sums.pr}</td>
                   <td style={totalCell(false)}>{sums.ksr}</td>
                   <td style={totalCell(false)}>{sums.srs}</td>
-                  <td style={totalCell(totalMismatch)} title={totalMismatch ? `Не совпадает с «Общая трудоёмкость» (${totalTarget} ч)` : ""}>{sums.aud}</td>
-                  <td style={totalCell(examMismatch)} title={examMismatch ? `Не совпадает с «Часы экзамена (всего)» (${examTarget} ч)` : ""}>{sums.exam}</td>
+                  <td style={totalCell(totalMismatch)} title={totalMismatch ? `Распределено ${sums.aud} ч из ${totalTarget} ч («Общая трудоёмкость»)` : "распределено / план"}>{totalTarget > 0 ? `${sums.aud} / ${totalTarget}` : sums.aud}</td>
+                  <td style={totalCell(examMismatch)} title={examMismatch ? `Распределено ${sums.exam} ч из ${examTarget} ч («Часы экзамена»)` : "распределено / план"}>{examTarget > 0 ? `${sums.exam} / ${examTarget}` : sums.exam}</td>
                   <td style={{ ...semCell, background: T.surface }}></td>
                   <td style={{ ...semCell, background: T.surface }}></td>
                 </tr>

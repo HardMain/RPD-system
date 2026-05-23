@@ -54,7 +54,8 @@ async def reviewer_ids(client, headers, *logins, login_fixture=None):
 async def make_sendable_rpd(client, headers, *, developer_id, reviewers,
                             discipline="Физика", academic_year="2099/2100"):
     """Создаёт черновик, проходящий все проверки send-approval: разработчик,
-    заполненные обязательные разделы и прикреплённый ФОС."""
+    полностью заполненные обязательные разделы (включая совпадение часов с планом
+    БУПа и все результаты обучения) и прикреплённый ФОС."""
     bd = await bd_id_for(client, headers, discipline)
     created = await client.post("/api/rpd/", headers=headers, json={
         "bup_discipline_ids": [bd], "academic_year": academic_year, "reviewer_ids": reviewers,
@@ -71,11 +72,52 @@ async def make_sendable_rpd(client, headers, *, developer_id, reviewers,
     })
     assert patch.status_code == 200, patch.text
 
-    sec = await client.post(f"/api/rpd/{rid}/sections", headers=headers, json={
-        "section_number": 1, "title": "Раздел 1", "lecture_hours": 4,
-        "practice_hours": 0, "lab_hours": 0, "self_study_hours": 8, "semester": 1,
-    })
-    assert sec.status_code == 201, sec.text
+    detail = await rpd_detail(client, headers, rid)
+    link = detail["bup_disciplines"][0]
+    semesters_data = link.get("semesters_data") or []
+    if semesters_data:
+        plan = [
+            {"number": s.get("number") or 1,
+             "lecture": s.get("lecture") or 0, "lab": s.get("lab") or 0,
+             "practice": s.get("practice") or 0, "srs": s.get("srs") or 0}
+            for s in semesters_data
+        ]
+    else:
+        import re as _re
+        m = _re.search(r"\d+", str(link.get("semester") or "1"))
+        plan = [{
+            "number": int(m.group(0)) if m else 1,
+            "lecture": link.get("lecture_hours") or 0,
+            "lab": link.get("lab_hours") or 0,
+            "practice": link.get("practice_hours") or 0,
+            "srs": link.get("self_study_hours") or 0,
+        }]
+
+    section_no = 1
+    for sem in plan:
+        sec = await client.post(f"/api/rpd/{rid}/sections", headers=headers, json={
+            "section_number": section_no,
+            "title": f"Раздел {section_no}",
+            "brief_content": "Краткое содержание раздела.",
+            "lecture_hours": sem["lecture"],
+            "lab_hours": sem["lab"],
+            "practice_hours": sem["practice"],
+            "self_study_hours": sem["srs"],
+            "semester": sem["number"],
+        })
+        assert sec.status_code == 201, sec.text
+        section_no += 1
+
+    if any(s["practice"] for s in plan):
+        tp = await client.post(f"/api/rpd/{rid}/topics", headers=headers, json={
+            "topic_type": "practice", "title": "Практическое занятие",
+        })
+        assert tp.status_code == 201, tp.text
+    if any(s["lab"] for s in plan):
+        tl = await client.post(f"/api/rpd/{rid}/topics", headers=headers, json={
+            "topic_type": "lab", "title": "Лабораторная работа",
+        })
+        assert tl.status_code == 201, tl.text
 
     lit = await client.post(f"/api/rpd/{rid}/literature", headers=headers, json={
         "source_type": "Учебные и научные издания", "title": "Учебник",
@@ -106,10 +148,13 @@ async def make_sendable_rpd(client, headers, *, developer_id, reviewers,
     detail = await rpd_detail(client, headers, rid)
     los = detail["learning_outcomes"]
     assert los, "ожидались автозаполненные результаты обучения"
-    ups = await client.post(f"/api/rpd/{rid}/outcomes/upsert", headers=headers, json={
-        "id_outcome": los[0]["id_outcome"], "outcome_text": "Знает", "assessment_tool": "Экзамен",
-    })
-    assert ups.status_code == 200, ups.text
+    for lo in los:
+        ups = await client.post(f"/api/rpd/{rid}/outcomes/upsert", headers=headers, json={
+            "id_outcome": lo["id_outcome"],
+            "outcome_text": "Знает основы",
+            "assessment_tool": "Экзамен",
+        })
+        assert ups.status_code == 200, ups.text
 
     fos = await client.post(
         f"/api/rpd/{rid}/fos", headers=headers,

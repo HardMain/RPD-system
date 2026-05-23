@@ -19,6 +19,7 @@ from app.models import (
 )
 from app.services.docx_renderer import render_rpd_pdf_bytes
 from app.services.rpd_template_context import build_context
+from app.services.app_settings import get_approver
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -73,7 +74,8 @@ async def _render(rpd: Rpd, link: RpdBupDiscipline | None) -> bytes:
     if not os.path.exists(_TEMPLATE_DOCX):
         raise HTTPException(status_code=500, detail=f"Шаблон не найден: {_TEMPLATE_DOCX}")
     bd = link.bup_discipline if link else None
-    context = build_context(rpd, bd=bd, link=link)
+    approver = await get_approver()
+    context = build_context(rpd, bd=bd, link=link, approver=approver)
     try:
         return await asyncio.to_thread(render_rpd_pdf_bytes, _TEMPLATE_DOCX, context)
     except Exception as exc:

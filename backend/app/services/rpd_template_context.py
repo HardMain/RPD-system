@@ -69,7 +69,7 @@ def _parse_control_form(raw: str) -> dict[int, set[str]]:
                 out.setdefault(int(tok), set()).add(label)
     return out
 
-def build_context(rpd, bd=None, link=None) -> dict:
+def build_context(rpd, bd=None, link=None, approver=None) -> dict:
     d = rpd.discipline
     if link is None:
         link = next((l for l in (rpd.bup_links or [])), None)
@@ -388,11 +388,11 @@ def build_context(rpd, bd=None, link=None) -> dict:
         material_tech = [{"lesson_type": "", "equipment": "", "quantity": ""}]
 
     context: dict[str, Any] = {
-        "rector_position": "Проректор по образовательной деятельности",
-        "rector_name": "И.Ю.Черникова",
+        "rector_position": (approver or {}).get("position") or "Проректор по образовательной деятельности",
+        "rector_name": (approver or {}).get("name") or "И.Ю.Черникова",
         "discipline_name": d.name or "",
         "study_form": study_form,
-        "level_higher_education": (direction.degree_level if direction else None) or "бакалавриат",
+        "level_higher_education": _pick(link.degree_level if link else None, direction.degree_level if direction else None) or "бакалавриат",
         "total_hours": total_hours,
         "total_ze": _ze(total_hours),
         "direction_code": (direction_code or (direction.code if direction else None)) or "",

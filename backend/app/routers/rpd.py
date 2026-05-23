@@ -26,7 +26,7 @@ from app.schemas import (
     ApprovalRouteStepOut, ApprovalRouteUpdate, ReviewerCandidateOut,
     DirectionOut, DisciplineOut, UploadedDocumentOut,
     OutcomeUpsert, OutcomeRowOut, BupDisciplineRefOut, FosFileOut,
-    ManualLinkUpdate, ManualOutcomeCreate,
+    ManualLinkUpdate, ManualOutcomeCreate, HeaderMetaUpdate,
 )
 from app.models import Bup, DirectionProgram
 
@@ -126,6 +126,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
             fgos_file_name=_pick(link.fgos_file_name, fgos.original_name if fgos else None),
             semesters_data=_pick(link.semesters_data, bd.semesters_data if bd else None),
             form_of_study=_pick(link.form_of_study, bup.form_of_study if bup else None),
+            degree_level=_pick(link.degree_level, direc.degree_level if direc else None),
             bup_deleted=bd is None and not link.is_manual,
             is_manual=link.is_manual,
         )
@@ -418,6 +419,7 @@ def _fill_rpd_bup_disc_snapshot(link: RpdBupDiscipline, bd: BupDiscipline) -> No
     link.semesters_data = bd.semesters_data
     link.discipline_name = bd.discipline.name if bd.discipline else None
     link.form_of_study = bup.form_of_study if bup else None
+    link.degree_level = direc.degree_level if direc else None
 
 def _fill_outcome_snapshot(lo: RpdLearningOutcome, ind: CompetencyIndicator) -> None:
     comp = ind.competency if ind else None
@@ -553,6 +555,7 @@ def _fill_manual_link(link: RpdBupDiscipline, payload, *, discipline_name: str) 
     link.semesters_data = payload.semesters_data
     link.discipline_name = discipline_name
     link.form_of_study = (payload.form_of_study or "").strip() or None
+    link.degree_level = (payload.degree_level or "").strip() or None
     if payload.zet is not None:
         link.total_hours = int(payload.zet) * 36
 
@@ -1060,6 +1063,40 @@ async def update_manual_link(
     await db.commit()
     return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
 
+@router.patch("/{rpd_id}/header-meta", response_model=RpdDetailOut)
+async def update_header_meta(
+    rpd_id: int, data: HeaderMetaUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    rpd_row = await db.get(Rpd, rpd_id)
+    if rpd_row is None:
+        raise HTTPException(status_code=404, detail="РПД не найдена")
+    if rpd_row.status == "Согласовано":
+        raise HTTPException(status_code=403, detail="РПД в статусе «Согласовано» редактировать нельзя")
+    if not user_can(user, "rpd.edit_meta"):
+        raise HTTPException(
+            status_code=403,
+            detail="Менять данные титульника могут только сотрудники УМУ, техники и администратор",
+        )
+
+    res = await db.execute(
+        select(RpdBupDiscipline).where(RpdBupDiscipline.id_rpd == rpd_id)
+    )
+    links = res.scalars().all()
+    if not links:
+        raise HTTPException(status_code=400, detail="У РПД нет привязок — нечего редактировать")
+
+    payload = data.model_dump(exclude_unset=True)
+    for link in links:
+        if "form_of_study" in payload:
+            link.form_of_study = (payload["form_of_study"] or "").strip() or None
+        if "degree_level" in payload:
+            link.degree_level = (payload["degree_level"] or "").strip() or None
+
+    await db.commit()
+    return _build_rpd_detail(await _get_rpd_full(rpd_id, db))
+
 @router.post("/{rpd_id}/outcomes/manual", response_model=LearningOutcomeOut, status_code=201)
 async def add_manual_outcome(
     rpd_id: int, data: ManualOutcomeCreate,
@@ -1393,45 +1430,156 @@ def _rpd_label(rpd: Rpd) -> str:
     year = rpd.academic_year
     return f"«{name}»" + (f" ({year})" if year else "")
 
+def _header_value(link, attr: str, *fallbacks: str) -> str:
+    if link is None:
+        return ""
+    snap = getattr(link, attr, None)
+    if (snap or "").strip():
+        return snap
+    obj = link.bup_discipline
+    for step in fallbacks:
+        if obj is None:
+            return ""
+        obj = getattr(obj, step, None)
+    return (obj or "") if isinstance(obj, str) else ""
+
+def _f(value) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return bool(value)
+
+def _plan_semesters(rpd: Rpd) -> list[dict] | None:
+    links = rpd.bup_links or []
+    if not links:
+        return None
+    bd = links[0]
+    sd = bd.semesters_data or []
+    if sd:
+        return [
+            {"number": s.get("number"),
+             "lec": s.get("lecture") or 0, "lab": s.get("lab") or 0,
+             "pr":  s.get("practice") or 0, "srs": s.get("srs") or 0}
+            for s in sd
+        ]
+    import re as _re
+    m = _re.search(r"\d+", str(bd.semester or "1"))
+    return [{
+        "number": int(m.group(0)) if m else 1,
+        "lec": bd.lecture_hours or 0, "lab": bd.lab_hours or 0,
+        "pr":  bd.practice_hours or 0, "srs": bd.self_study_hours or 0,
+    }]
+
+def _section_hours_match(rpd: Rpd) -> bool:
+    plan = _plan_semesters(rpd)
+    if not plan:
+        return False
+    fallback = plan[0]["number"]
+    for sem in plan:
+        n = sem["number"]
+        rows = [s for s in (rpd.sections or []) if (s.semester or fallback) == n]
+        if sum(s.lecture_hours or 0 for s in rows)     != sem["lec"]: return False
+        if sum(s.lab_hours or 0 for s in rows)         != sem["lab"]: return False
+        if sum(s.practice_hours or 0 for s in rows)    != sem["pr"]:  return False
+        if sum(s.self_study_hours or 0 for s in rows)  != sem["srs"]: return False
+    return True
+
+def _section_rows_complete(rpd: Rpd) -> bool:
+    non_empty = [
+        s for s in (rpd.sections or [])
+        if _f(s.title) or _f(s.brief_content)
+        or s.lecture_hours or s.lab_hours or s.practice_hours or s.self_study_hours
+    ]
+    if not non_empty:
+        return False
+    return all(_f(s.title) and _f(s.brief_content) for s in non_empty)
+
+def _topics_complete(rpd: Rpd, kind: str) -> bool:
+    rows = [t for t in (rpd.topics or []) if t.topic_type == kind]
+    non_empty = [t for t in rows if _f(t.title)]
+    return bool(non_empty)
+
+def _outcomes_complete(rpd: Rpd) -> bool:
+    rows = rpd.learning_outcomes or []
+    if not rows:
+        return False
+    return all(_f(o.outcome_text) and _f(o.assessment_tool) for o in rows)
+
+def _printed_lit_complete(rpd: Rpd) -> bool:
+    rows = [l for l in (rpd.literature or []) if not (l.url or "").strip()]
+    non_empty = [l for l in rows if _f(l.title) or l.copies_count]
+    if not non_empty:
+        return False
+    return all(_f(l.title) for l in non_empty)
+
+def _electronic_lit_complete(rpd: Rpd) -> bool:
+    rows = [l for l in (rpd.literature or []) if (l.url or "").strip()]
+    non_empty = [l for l in rows if _f(l.title) or _f(l.url)]
+    if not non_empty:
+        return False
+    return all(_f(l.title) and _f(l.url) for l in non_empty)
+
+def _software_complete(rpd: Rpd) -> bool:
+    rows = rpd.software or []
+    non_empty = [s for s in rows if _f(s.name) or _f(s.license_type)]
+    if not non_empty:
+        return False
+    return all(_f(s.name) and _f(s.license_type) for s in non_empty)
+
+def _databases_complete(rpd: Rpd) -> bool:
+    rows = rpd.databases or []
+    non_empty = [d for d in rows if _f(d.name) or _f(d.url)]
+    if not non_empty:
+        return False
+    return all(_f(d.name) and _f(d.url) for d in non_empty)
+
+def _mtech_complete(rpd: Rpd) -> bool:
+    rows = rpd.material_tech or []
+    non_empty = [m for m in rows if _f(m.room_type) or _f(m.equipment) or m.quantity]
+    if not non_empty:
+        return False
+    return all(_f(m.room_type) and _f(m.equipment) for m in non_empty)
+
 def _incomplete_sections(rpd: Rpd) -> list[str]:
-    def filled(value) -> bool:
-        return bool((value or "").strip())
     missing: list[str] = []
-    if not filled(rpd.goals_text):
+    links = rpd.bup_links or []
+    rep = links[0] if links else None
+    if not _f(_header_value(rep, "form_of_study", "bup", "form_of_study")):
+        missing.append("Титульник: форма обучения")
+    if not _f(_header_value(rep, "degree_level", "bup", "direction", "degree_level")):
+        missing.append("Титульник: уровень образования")
+    if not _f(rpd.goals_text):
         missing.append("1.1 Цели и задачи")
-    if not filled(rpd.objects_text):
+    if not _f(rpd.objects_text):
         missing.append("1.2 Изучаемые объекты")
-    if not filled(rpd.requirements_text):
+    if not _f(rpd.requirements_text):
         missing.append("1.3 Входные требования")
-    if not any(filled(o.outcome_text) for o in (rpd.learning_outcomes or [])):
-        missing.append("2. Результаты обучения")
+    if not _outcomes_complete(rpd):
+        missing.append("2. Результаты обучения — для каждого индикатора заполните результат и средство оценки")
+    if not _section_rows_complete(rpd):
+        missing.append("4. Содержание — в каждой строке должны быть заполнены название и краткое содержание")
+    elif not _section_hours_match(rpd):
+        missing.append("4. Содержание — часы в строках должны совпадать с планом БУПа")
     sections = rpd.sections or []
-    if not any(filled(s.title) for s in sections):
-        missing.append("4. Содержание")
-    topics = rpd.topics or []
-    if sum((s.practice_hours or 0) for s in sections) > 0 and not any(
-        t.topic_type == "practice" and filled(t.title) for t in topics
-    ):
-        missing.append("4.1 Тематика практических занятий")
-    if sum((s.lab_hours or 0) for s in sections) > 0 and not any(
-        t.topic_type == "lab" and filled(t.title) for t in topics
-    ):
-        missing.append("4.2 Тематика лабораторных работ")
-    if not filled(rpd.educational_tech):
+    if sum((s.practice_hours or 0) for s in sections) > 0 and not _topics_complete(rpd, "practice"):
+        missing.append("4.1 Тематика практических занятий — заполните название в каждой строке")
+    if sum((s.lab_hours or 0) for s in sections) > 0 and not _topics_complete(rpd, "lab"):
+        missing.append("4.2 Тематика лабораторных работ — заполните название в каждой строке")
+    if not _f(rpd.educational_tech):
         missing.append("5.1 Образовательные технологии")
-    if not filled(rpd.methodical_recommendations):
+    if not _f(rpd.methodical_recommendations):
         missing.append("5.2 Методические указания")
-    literature = rpd.literature or []
-    if not any(filled(l.title) for l in literature if not l.url):
-        missing.append("6.1 Печатная литература")
-    if not any(filled(l.title) for l in literature if l.url):
-        missing.append("6.2 Электронная литература")
-    if not any(filled(s.name) for s in (rpd.software or [])):
-        missing.append("6.3 Программное обеспечение")
-    if not any(filled(d.name) for d in (rpd.databases or [])):
-        missing.append("6.4 БД и информационные справочные системы")
-    if not any(filled(m.room_type) or filled(m.equipment) for m in (rpd.material_tech or [])):
-        missing.append("7. Материально-техническое обеспечение")
+    if not _printed_lit_complete(rpd):
+        missing.append("6.1 Печатная литература — заполните название в каждой строке")
+    if not _electronic_lit_complete(rpd):
+        missing.append("6.2 Электронная литература — заполните название и ссылку в каждой строке")
+    if not _software_complete(rpd):
+        missing.append("6.3 ПО — заполните вид и наименование в каждой строке")
+    if not _databases_complete(rpd):
+        missing.append("6.4 БД и ИСС — заполните наименование и ссылку в каждой строке")
+    if not _mtech_complete(rpd):
+        missing.append("7. МТО — заполните тип помещения и оборудование в каждой строке")
     if not (rpd.fos_files or []):
         missing.append("8. Фонд оценочных средств (прикрепите файл)")
     return missing
@@ -1453,6 +1601,10 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
             selectinload(Rpd.databases),
             selectinload(Rpd.material_tech),
             selectinload(Rpd.fos_files),
+            selectinload(Rpd.bup_links)
+                .selectinload(RpdBupDiscipline.bup_discipline)
+                .selectinload(BupDiscipline.bup)
+                .selectinload(Bup.direction),
         )
     )
     rpd = result.scalar_one_or_none()
@@ -1513,6 +1665,7 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
         .options(
             selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer),
             selectinload(Rpd.discipline),
+            selectinload(Rpd.developers),
         )
     )
     rpd = result.scalar_one_or_none()
@@ -1569,7 +1722,9 @@ async def review_rpd(rpd_id: int, data: ApprovalAction, db: AsyncSession = Depen
         msg = f"РПД {label} возвращена на доработку ({user.full_name})"
     if data.comment:
         msg += f". Комментарий: {data.comment}"
-    db.add(Notification(id_user=rpd.id_author, id_rpd=rpd_id, message=msg))
+    developer_ids = {d.id_user for d in (rpd.developers or []) if d.id_user != user.id_user}
+    for dev_id in developer_ids:
+        db.add(Notification(id_user=dev_id, id_rpd=rpd_id, message=msg))
     if just_approved:
         from app.services.dictionary_service import harvest_rpd
         await harvest_rpd(db, rpd_id)

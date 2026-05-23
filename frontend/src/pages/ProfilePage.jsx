@@ -238,6 +238,7 @@ function SystemSection({ user }) {
   useEffect(() => { api.getHealth().then(r => setH(r.data)).catch(() => {}); }, []);
   const llmOnline = h?.llm?.mode === "online";
   const isAdmin = api.userCan(user, "*");
+  const canEditSettings = isAdmin || api.userCan(user, "users.create");
   const reloadHealth = () => api.getHealth().then(r => setH(r.data)).catch(() => {});
   const cards = [
     { title: "Статус", rows: [
@@ -259,8 +260,61 @@ function SystemSection({ user }) {
           </span>
         </div>)}
       </div>)}
+      {canEditSettings && <ApproverSettings />}
       {isAdmin && <LlmModelSelector onChanged={reloadHealth} />}
     </div>
+  </div>;
+}
+
+function ApproverSettings() {
+  const [position, setPosition] = useState("");
+  const [name, setName] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    api.adminGetApprover()
+      .then(r => { setPosition(r.data.position || ""); setName(r.data.name || ""); setLoaded(true); })
+      .catch(() => setError("Не удалось загрузить настройку"));
+  }, []);
+  async function save() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const r = await api.adminSetApprover(position.trim(), name.trim());
+      setPosition(r.data.position || "");
+      setName(r.data.name || "");
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      setError(e?.response?.data?.detail || "Не удалось сохранить");
+    }
+    setSaving(false);
+  }
+  return <div style={{ background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 16 }}>
+    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Утверждающий (блок «УТВЕРЖДАЮ»)</div>
+    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>
+      Должность и ФИО лица, утверждающего РПД. Подставляются в шапку всех документов при скачивании.
+    </div>
+    {loaded ? <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div>
+        <div style={fieldLabel}>Должность</div>
+        <input value={position} onChange={e => setPosition(e.target.value)} disabled={saving}
+          placeholder="Проректор по образовательной деятельности" style={inputBase} />
+      </div>
+      <div>
+        <div style={fieldLabel}>ФИО</div>
+        <input value={name} onChange={e => setName(e.target.value)} disabled={saving}
+          placeholder="И.Ю.Черникова" style={inputBase} />
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <Btn small primary onClick={save} disabled={saving}>Сохранить</Btn>
+        {saved && <span style={{ fontSize: 12, color: T.green, fontWeight: 600 }}>Сохранено</span>}
+      </div>
+    </div> : <div style={{ fontSize: 12, color: T.textMuted }}>Загрузка…</div>}
+    {error && <div style={{ ...formErrorBox, marginTop: 10 }}>{error}</div>}
   </div>;
 }
 

@@ -5,7 +5,9 @@ import { T, F, pdfToolBtn } from "../../styles/index.js";
 import { formatDateTimeRu } from "../../utils/format.js";
 import { Btn } from "../../components/Btn.jsx";
 import { Spinner } from "../../components/Spinner.jsx";
+import { Dropdown } from "../../components/Dropdown.jsx";
 import { DownloadIcon } from "../../components/icons.jsx";
+import { FORM_OF_STUDY_OPTIONS, DEGREE_LEVEL_OPTIONS } from "../../utils/options.js";
 
 import { SEC_KEYS, SIDEBAR_KEYS, PARENT_SECTION } from "./constants.js";
 import { GenPlaque } from "./GenPlaque.jsx";
@@ -758,10 +760,32 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     setGenAll(true);
     setGenBatch(true);
     try {
-      const keys = ["goals", "objects", "requirements", "learning_outcomes", "content"];
-      if (practiceHoursTotal > 0) keys.push("topics_practice");
-      if (labHoursTotal > 0) keys.push("topics_lab");
-      keys.push("educational_tech", "methodical_recommendations", "literature_printed_main");
+      const stopped = () => genCancelRef.current || genBatchRef.current !== myBatch;
+      const runKey = async (k) => {
+        if (stopped()) return false;
+        let r = { reason: "" };
+        try { r = await runGenerate(k); } catch { }
+        return !(stopped() || (r && r.reason === "cancelled"));
+      };
+
+      for (const k of ["goals", "objects", "requirements", "learning_outcomes", "content"]) {
+        if (!await runKey(k)) return;
+      }
+
+      let practiceAfterContent = practiceHoursTotal;
+      let labAfterContent = labHoursTotal;
+      try {
+        const secs = (await api.getRpd(rpdId)).data.sections || [];
+        practiceAfterContent = secs.reduce((a, s) => a + (s.practice_hours || 0), 0);
+        labAfterContent = secs.reduce((a, s) => a + (s.lab_hours || 0), 0);
+      } catch { }
+      if (practiceAfterContent > 0 && !await runKey("topics_practice")) return;
+      if (labAfterContent > 0 && !await runKey("topics_lab")) return;
+
+      for (const k of ["educational_tech", "methodical_recommendations", "literature_printed_main"]) {
+        if (!await runKey(k)) return;
+      }
+
       const lit = rpd.literature || [];
       const optionalPrinted = [
         "literature_printed_additional", "literature_periodicals", "literature_normative",
@@ -769,15 +793,14 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       ];
       for (const sk of optionalPrinted) {
         const st = _PRINTED_TYPE[sk];
-        if (st && lit.some(l => !l.url && l.source_type === st)) keys.push(sk);
+        if (st && lit.some(l => !l.url && l.source_type === st)) {
+          if (!await runKey(sk)) return;
+        }
       }
-      if (electronicLiteratureCount > 0) keys.push("literature_electronic");
-      keys.push("databases", "software", "material_tech");
-      for (const k of keys) {
-        if (genCancelRef.current || genBatchRef.current !== myBatch) break;
-        let r = { reason: "" };
-        try { r = await runGenerate(k); } catch { }
-        if (genCancelRef.current || genBatchRef.current !== myBatch || (r && r.reason === "cancelled")) break;
+      if (electronicLiteratureCount > 0 && !await runKey("literature_electronic")) return;
+
+      for (const k of ["databases", "software", "material_tech"]) {
+        if (!await runKey(k)) return;
       }
     } finally {
       if (genBatchRef.current === myBatch) {
@@ -855,6 +878,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const canManageSources = api.userCan(user, "sources.manage");
   const canEdit = !!rpd && (rpd.status === "Черновик" || rpd.status === "На доработке"
     || (rpd.status === "На согласовании" && api.userCan(user, "rpd.edit_meta")));
+  const canEditMeta = !!rpd && rpd.status !== "Согласовано" && api.userCan(user, "rpd.edit_meta");
   const genBusy = !!generating || genAll;
 
   const fnRef = useRef({});
@@ -1125,6 +1149,8 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
                   <div style={{ fontSize: 13, color: T.textMuted, marginTop: 8 }}>Учебный год: {rpd.academic_year}</div>
                 </div>
                 <BupAttachmentsBlock bds={rpd.bup_disciplines || []} />
+                <HeaderMetaFields rpd={rpd} rpdId={rpdId} canEditMeta={canEditMeta}
+                  onSaved={async () => { await load(true); onAfterSave?.(); }} />
               </div>
               <HR />
 
@@ -1386,7 +1412,6 @@ function BupAttachmentsBlock({ bds }) {
         Направление: {b.direction_code || "—"} {b.direction_name || ""}
       </div>
       <div style={{ fontSize: 13, color: T.textMuted }}>Профиль: {b.direction_profile || "—"}</div>
-      <div style={{ fontSize: 13, color: T.textMuted }}>Форма обучения: {b.form_of_study || "—"}</div>
       {volumeParts.length > 0 && (
         <div style={{ fontSize: 13, color: T.textMuted }}>Объём: {volumeParts.join(" · ")}</div>
       )}
@@ -1404,11 +1429,58 @@ function BupAttachmentsBlock({ bds }) {
             {b.direction_code || "—"} {b.direction_name || ""}
           </span>
           {b.direction_profile ? ` · ${b.direction_profile}` : ""}
-          {` · форма обучения: ${b.form_of_study || "—"}`}
           {" · "}
           {b.bup_name || "БУП"}{b.code ? ` · ${b.code}` : ""}
         </div>
       ))}
+    </div>
+  </div>;
+}
+
+function HeaderMetaFields({ rpd, rpdId, canEditMeta, onSaved }) {
+  const rep = (rpd.bup_disciplines || [])[0] || null;
+  const formOfStudy = rep?.form_of_study || "";
+  const degreeLevel = rep?.degree_level || "";
+  const [saving, setSaving] = useState(false);
+
+  async function save(patch) {
+    setSaving(true);
+    try {
+      await api.updateRpdHeaderMeta(rpdId, patch);
+      await onSaved?.();
+    } catch { }
+    setSaving(false);
+  }
+
+  if (!canEditMeta) {
+    return <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 2 }}>
+      <div style={{ fontSize: 13, color: T.textMuted }}>Форма обучения: {formOfStudy || "—"}</div>
+      <div style={{ fontSize: 13, color: T.textMuted }}>Уровень образования: {degreeLevel || "—"}</div>
+    </div>;
+  }
+
+  return <div style={{ marginTop: 12, display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap", textAlign: "left" }}>
+    <div style={{ minWidth: 200 }}>
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Форма обучения</div>
+      <Dropdown
+        value={formOfStudy}
+        options={FORM_OF_STUDY_OPTIONS}
+        onChange={v => save({ form_of_study: v })}
+        placeholder="— не указано —"
+        clearLabel="— не указано —"
+        disabled={saving}
+      />
+    </div>
+    <div style={{ minWidth: 220 }}>
+      <div style={{ fontSize: 11, color: T.textMuted, marginBottom: 3 }}>Уровень образования</div>
+      <Dropdown
+        value={degreeLevel}
+        options={DEGREE_LEVEL_OPTIONS}
+        onChange={v => save({ degree_level: v })}
+        placeholder="— не указано —"
+        clearLabel="— не указано —"
+        disabled={saving}
+      />
     </div>
   </div>;
 }

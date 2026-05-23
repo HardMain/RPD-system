@@ -112,20 +112,12 @@ function SemBlock({ sem, dist, showHeader }) {
       </td>
     </tr>}
     <tr>
-      <td style={{ ...bCell, color: T.textMuted }}>По плану</td>
-      <td style={numCell}>{planTotal}</td>
-      <td style={numCell}>{z(sem.lec)}</td>
-      <td style={numCell}>{z(sem.lab)}</td>
-      <td style={numCell}>{z(sem.pr)}</td>
-      <td style={numCell}>{z(sem.srs)}</td>
-    </tr>
-    <tr>
-      <td style={{ ...bCell, color: T.textMuted }}>Распределено</td>
-      <td style={mismatch(distTotal, planTotal)}>{distTotal}</td>
-      <td style={mismatch(dist.lec, z(sem.lec))}>{dist.lec}</td>
-      <td style={mismatch(dist.lab, z(sem.lab))}>{dist.lab}</td>
-      <td style={mismatch(dist.pr,  z(sem.pr))}>{dist.pr}</td>
-      <td style={mismatch(dist.srs, z(sem.srs))}>{dist.srs}</td>
+      <td style={{ ...bCell, color: T.textMuted }}>Распределено / план</td>
+      <td style={mismatch(distTotal, planTotal)}>{distTotal} / {planTotal}</td>
+      <td style={mismatch(dist.lec, z(sem.lec))}>{dist.lec} / {z(sem.lec)}</td>
+      <td style={mismatch(dist.lab, z(sem.lab))}>{dist.lab} / {z(sem.lab)}</td>
+      <td style={mismatch(dist.pr,  z(sem.pr))}>{dist.pr} / {z(sem.pr)}</td>
+      <td style={mismatch(dist.srs, z(sem.srs))}>{dist.srs} / {z(sem.srs)}</td>
     </tr>
   </>;
 }
@@ -135,12 +127,12 @@ function TotalRow({ plan, dist }) {
   const planTotal = plan.lec + plan.lab + plan.pr + plan.srs;
   const distTotal = dist.lec + dist.lab + dist.pr + dist.srs;
   return <tr>
-    <td style={{ ...bCell, fontWeight: 700, color: T.text, background: T.bg }}>Всего по дисциплине</td>
-    <td style={mismatchTotal(distTotal, planTotal)}>{planTotal}</td>
-    <td style={mismatchTotal(dist.lec, plan.lec)}>{plan.lec}</td>
-    <td style={mismatchTotal(dist.lab, plan.lab)}>{plan.lab}</td>
-    <td style={mismatchTotal(dist.pr,  plan.pr)}>{plan.pr}</td>
-    <td style={mismatchTotal(dist.srs, plan.srs)}>{plan.srs}</td>
+    <td style={{ ...bCell, fontWeight: 700, color: T.text, background: T.bg }}>Всего по дисциплине (распределено / план)</td>
+    <td style={mismatchTotal(distTotal, planTotal)}>{distTotal} / {planTotal}</td>
+    <td style={mismatchTotal(dist.lec, plan.lec)}>{dist.lec} / {plan.lec}</td>
+    <td style={mismatchTotal(dist.lab, plan.lab)}>{dist.lab} / {plan.lab}</td>
+    <td style={mismatchTotal(dist.pr,  plan.pr)}>{dist.pr} / {plan.pr}</td>
+    <td style={mismatchTotal(dist.srs, plan.srs)}>{dist.srs} / {plan.srs}</td>
   </tr>;
 }
 

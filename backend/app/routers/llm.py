@@ -14,6 +14,7 @@ from app.models import (
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
 from app.services.llm_service import generate_section, extract_text_from_file, CONTEXT_CHAR_LIMIT
 from app.services.approved_context import approved_rpd_example
+from app.services.dictionary_context import dictionary_catalog
 from app.services.structured_generation import (
     parse_json_array,
     apply_content_sections,
@@ -55,8 +56,35 @@ async def generate(
     assert_rpd_editable(rpd, user)
 
     disc = rpd.discipline
-    bd = next((l.bup_discipline for l in rpd.bup_links if l.bup_discipline), None)
+    link = next(iter(rpd.bup_links or []), None)
+    bd = link.bup_discipline if link else None
     direc = bd.bup.direction if bd and bd.bup else None
+
+    def _hours(attr: str) -> int:
+        v = getattr(link, attr, None) if link is not None else None
+        if v is None and bd is not None:
+            v = getattr(bd, attr, None)
+        return v or 0
+
+    def _pick_str(*candidates: str | None) -> str:
+        for c in candidates:
+            if c:
+                s = c.strip() if isinstance(c, str) else c
+                if s:
+                    return s
+        return ""
+
+    direction_name = _pick_str(
+        link.direction_name if link else None,
+        direc.name if direc else None,
+    )
+    profile_text = _pick_str(
+        link.bup_profile if link else None,
+        bd.bup.profile if bd and bd.bup else None,
+        link.direction_profile if link else None,
+        direc.profile if direc else None,
+    )
+    sem_data_for_prompt = (link.semesters_data if link else None) or (bd.semesters_data if bd else None) or []
 
     extra_context = data.context or ""
     assessment_tools_str = ""
@@ -97,6 +125,12 @@ async def generate(
         assessment_tools_str = "; ".join(tools)
 
     context_sources: list[str] = []
+
+    catalog = await dictionary_catalog(db, data.section, disc.id_discipline if disc else None)
+    if catalog:
+        catalog_block, catalog_src = catalog
+        extra_context += ("\n\n" if extra_context.strip() else "") + catalog_block
+        context_sources.append(catalog_src)
 
     sections_res = await db.execute(
         select(UploadedDocumentSection, UploadedDocument)
@@ -139,7 +173,7 @@ async def generate(
     semesters_plan: dict[int, dict] = {}
     semesters_plan_text = ""
     if data.section == "content":
-        sem_data = (bd.semesters_data or []) if bd else []
+        sem_data = sem_data_for_prompt
         if len(sem_data) > 1:
             lines = [
                 f"Дисциплина охватывает {len(sem_data)} семестра(-ов). "
@@ -179,13 +213,13 @@ async def generate(
     gen = await generate_section(
         section=data.section,
         discipline=disc.name,
-        direction=direc.name if direc else "",
-        profile=(bd.bup.profile if bd and bd.bup else None) or (direc.profile if direc else "") or "",
-        total_hours=(bd.total_hours if bd else 0) or 0,
-        lecture_hours=(bd.lecture_hours if bd else 0) or 0,
-        practice_hours=(bd.practice_hours if bd else 0) or 0,
-        lab_hours=(bd.lab_hours if bd else 0) or 0,
-        self_study_hours=(bd.self_study_hours if bd else 0) or 0,
+        direction=direction_name,
+        profile=profile_text,
+        total_hours=_hours("total_hours"),
+        lecture_hours=_hours("lecture_hours"),
+        practice_hours=_hours("practice_hours"),
+        lab_hours=_hours("lab_hours"),
+        self_study_hours=_hours("self_study_hours"),
         extra_context=extra_context,
         semesters_plan=semesters_plan_text,
         assessment_tools=assessment_tools_str,
@@ -214,10 +248,10 @@ async def generate(
                 structural_created = await apply_content_sections(
                     db, rpd, items,
                     semester_plan=semesters_plan,
-                    total_lecture=(bd.lecture_hours if bd else 0) or 0,
-                    total_practice=(bd.practice_hours if bd else 0) or 0,
-                    total_lab=(bd.lab_hours if bd else 0) or 0,
-                    total_srs=(bd.self_study_hours if bd else 0) or 0,
+                    total_lecture=_hours("lecture_hours"),
+                    total_practice=_hours("practice_hours"),
+                    total_lab=_hours("lab_hours"),
+                    total_srs=_hours("self_study_hours"),
                 )
             elif data.section in _TOPIC_SECTION_KEYS:
                 structural_created = await apply_topics(
