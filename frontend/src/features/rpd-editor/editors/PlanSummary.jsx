@@ -7,25 +7,42 @@ export function PlanSummary({ bupDisciplines, sections }) {
     </div>;
   }
 
-  return <div style={{ marginBottom: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-    {bupDisciplines.map(bd => (
-      <BdCard key={bd.id_bup_discipline ?? bd.bup_name} bd={bd} sections={sections} />
-    ))}
+  return <div style={{ marginBottom: 14 }}>
+    <MergedBdCard bds={bupDisciplines} sections={sections} />
   </div>;
 }
 
-function BdCard({ bd, sections }) {
+function _semestersOf(bd) {
+  if (bd.semesters_data && bd.semesters_data.length > 0) {
+    return bd.semesters_data.map(s => ({
+      number: s.number,
+      lec: s.lecture, lab: s.lab, pr: s.practice, ksr: s.ksr, srs: s.srs,
+    }));
+  }
+  return [{
+    number: parseInt(String(bd.semester || "1").split(/[,\s\-]/)[0], 10) || 1,
+    lec: bd.lecture_hours, lab: bd.lab_hours, pr: bd.practice_hours,
+    ksr: bd.ksr_hours, srs: bd.self_study_hours,
+  }];
+}
 
-  const semesters = (bd.semesters_data && bd.semesters_data.length > 0)
-    ? bd.semesters_data.map(s => ({
-        number: s.number,
-        lec: s.lecture, lab: s.lab, pr: s.practice, ksr: s.ksr, srs: s.srs,
-      }))
-    : [{
-        number: parseInt(String(bd.semester || "1").split(/[,\s\-]/)[0], 10) || 1,
-        lec: bd.lecture_hours, lab: bd.lab_hours, pr: bd.practice_hours,
-        ksr: bd.ksr_hours, srs: bd.self_study_hours,
-      }];
+function MergedBdCard({ bds, sections }) {
+  const semestersByNum = new Map();
+  const conflicts = new Set();
+  for (const bd of bds) {
+    for (const sem of _semestersOf(bd)) {
+      if (sem.number == null) continue;
+      const existing = semestersByNum.get(sem.number);
+      if (!existing) {
+        semestersByNum.set(sem.number, sem);
+      } else {
+        for (const k of ["lec", "lab", "pr", "ksr", "srs"]) {
+          if (z(existing[k]) !== z(sem[k])) conflicts.add(sem.number);
+        }
+      }
+    }
+  }
+  const semesters = [...semestersByNum.values()].sort((a, b) => a.number - b.number);
   const isMulti = semesters.length > 1;
   const fallbackSem = semesters[0]?.number ?? 1;
 
@@ -34,7 +51,6 @@ function BdCard({ bd, sections }) {
       const sec = s.semester ?? fallbackSem;
       return sec === semNum;
     });
-
     return {
       lec: inGroup.reduce((a, s) => a + (s.lecture_hours || 0), 0),
       lab: inGroup.reduce((a, s) => a + (s.lab_hours || 0), 0),
@@ -46,20 +62,36 @@ function BdCard({ bd, sections }) {
   const planAll = sumPlanOver(semesters);
   const distAll = sumDistOver(semesters.map(s => distributedFor(s.number)));
 
-  const semesterLines = formatSemesterControlLines(bd, semesters);
+  const mergedControlBySem = new Map();
+  for (const bd of bds) {
+    const perBd = parseControlBySemester(bd?.control_form || "");
+    for (const [sem, labels] of perBd) {
+      if (!mergedControlBySem.has(sem)) mergedControlBySem.set(sem, new Set());
+      for (const l of labels) mergedControlBySem.get(sem).add(l);
+    }
+  }
+  const controlLines = [...mergedControlBySem.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([sem, labels]) => ({ sem, label: [...labels].join(", ") }));
 
   return <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
-
-    <div style={{ padding: "8px 12px", background: T.bg, borderBottom: "1px solid " + T.borderLight }}>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
-        <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px" }}>{bd.code || (bd.is_manual ? "Ручной ввод" : "—")}</span>
-        <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{bd.bup_name || ""}</span>
-      </div>
-      {semesterLines.length > 0 && (
-        <div style={{ marginTop: 6, fontSize: 11, color: T.textMuted, lineHeight: 1.65 }}>
-          {semesterLines.map((line, i) => (
-            <div key={i}>Семестр {line.sems} — <b style={{ color: T.text }}>{line.label}</b></div>
+    <div style={{ padding: "8px 12px", background: T.bg, borderBottom: "1px solid " + T.borderLight, display: "flex", flexDirection: "column", gap: 6 }}>
+      {bds.map(bd => (
+        <div key={bd.id_bup_discipline ?? bd.bup_name} style={{ display: "flex", flexWrap: "wrap", gap: "4px 14px", alignItems: "baseline" }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: T.textMuted, textTransform: "uppercase", letterSpacing: ".4px" }}>{bd.code || (bd.is_manual ? "Ручной ввод" : "—")}</span>
+          <span style={{ fontSize: 12, color: T.text, fontWeight: 600 }}>{bd.bup_name || ""}</span>
+        </div>
+      ))}
+      {controlLines.length > 0 && (
+        <div style={{ marginTop: 2, fontSize: 11, color: T.textMuted, lineHeight: 1.65 }}>
+          {controlLines.map(line => (
+            <div key={line.sem}>Семестр {line.sem} — <b style={{ color: T.text }}>{line.label}</b></div>
           ))}
+        </div>
+      )}
+      {conflicts.size > 0 && (
+        <div style={{ fontSize: 11, color: T.orange, fontWeight: 600 }}>
+          В привязанных БУПах разные плановые часы по семестрам {[...conflicts].sort((a, b) => a - b).join(", ")} — ниже показан план первой привязки.
         </div>
       )}
     </div>
@@ -136,12 +168,9 @@ function TotalRow({ plan, dist }) {
   </tr>;
 }
 
-function formatSemesterControlLines(bd, semesters) {
-  const raw = bd?.control_form || "";
-
-  const groups = [];
-
-  const order = new Map();
+function parseControlBySemester(raw) {
+  const out = new Map();
+  if (!raw) return out;
   const re = /([А-Яа-яёЁ.\s]+?)\s*\(\s*([\d,\s]+)\s*\)/g;
   let m;
   while ((m = re.exec(raw)) !== null) {
@@ -151,24 +180,12 @@ function formatSemesterControlLines(bd, semesters) {
       .filter(Boolean)
       .map(t => parseInt(t, 10))
       .filter(n => !isNaN(n));
-    if (!order.has(label)) {
-      const idx = groups.length;
-      order.set(label, idx);
-      groups.push({ label, sems: [] });
+    for (const n of sems) {
+      if (!out.has(n)) out.set(n, new Set());
+      out.get(n).add(label);
     }
-    const g = groups[order.get(label)];
-    for (const n of sems) if (!g.sems.includes(n)) g.sems.push(n);
   }
-  if (groups.length === 0) {
-
-    if (!semesters || semesters.length === 0) return [];
-    const sems = semesters.map(s => s.number).sort((a, b) => a - b);
-    return [{ sems: sems.join(", "), label: raw.trim() || "форма контроля не указана" }];
-  }
-  return groups.map(g => ({
-    sems: g.sems.sort((a, b) => a - b).join(", "),
-    label: g.label,
-  }));
+  return out;
 }
 
 function normalizeControlLabel(s) {

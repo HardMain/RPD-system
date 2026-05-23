@@ -48,6 +48,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
         outcomes.append(LearningOutcomeOut(
             id_outcome=lo.id_outcome,
             id_indicator=lo.id_indicator,
+            id_rpd_bup_discipline=lo.id_rpd_bup_discipline,
             indicator_code=lo.indicator_code or (ind.code if ind else None),
             indicator_description=lo.indicator_description or (ind.description if ind else None),
             competency_code=lo.competency_code or (comp.code if comp else None),
@@ -481,34 +482,47 @@ async def _autofill_outcomes_from_bup_disciplines(
 ) -> None:
     if not bd_ids:
         return
+    link_rows = await db.execute(
+        select(RpdBupDiscipline)
+        .where(RpdBupDiscipline.id_rpd == rpd.id_rpd)
+        .where(RpdBupDiscipline.id_bup_discipline.in_(bd_ids))
+    )
+    links_by_bd = {l.id_bup_discipline: l for l in link_rows.scalars().all()}
     existing = await db.execute(
         select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd.id_rpd)
     )
-    existing_by_ind: set[int] = set()
-    existing_by_snap: set[tuple[str, str]] = set()
+    existing_by_scope: set[tuple[int | None, int]] = set()
+    existing_snap_by_scope: set[tuple[int | None, str, str]] = set()
     for lo in existing.scalars().all():
         if lo.id_indicator is not None:
-            existing_by_ind.add(lo.id_indicator)
+            existing_by_scope.add((lo.id_rpd_bup_discipline, lo.id_indicator))
         if lo.indicator_code:
-            existing_by_snap.add((lo.competency_code or "", lo.indicator_code))
+            existing_snap_by_scope.add((lo.id_rpd_bup_discipline, lo.competency_code or "", lo.indicator_code))
 
     res = await db.execute(
-        select(CompetencyIndicator)
+        select(CompetencyIndicator, BupDisciplineCompetency.id_bup_discipline)
         .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
         .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
         .where(BupDisciplineCompetency.id_bup_discipline.in_(bd_ids))
         .options(selectinload(CompetencyIndicator.competency))
-        .distinct()
     )
-    for ind in res.scalars().all():
-        if ind.id_indicator in existing_by_ind:
+    seen_pairs: set[tuple[int, int]] = set()
+    for ind, bd_id in res.all():
+        pair = (bd_id, ind.id_indicator)
+        if pair in seen_pairs:
+            continue
+        seen_pairs.add(pair)
+        link = links_by_bd.get(bd_id)
+        link_id = link.id_rpd_bup_discipline if link else None
+        if (link_id, ind.id_indicator) in existing_by_scope:
             continue
         comp = ind.competency
-        snap_key = (comp.code if comp else "", ind.code or "")
-        if ind.code and snap_key in existing_by_snap:
+        snap_key = (link_id, comp.code if comp else "", ind.code or "")
+        if ind.code and snap_key in existing_snap_by_scope:
             continue
         lo = RpdLearningOutcome(
-            id_rpd=rpd.id_rpd, id_indicator=ind.id_indicator,
+            id_rpd=rpd.id_rpd, id_rpd_bup_discipline=link_id,
+            id_indicator=ind.id_indicator,
             outcome_text=None, assessment_tool=None,
         )
         _fill_outcome_snapshot(lo, ind)
@@ -979,6 +993,7 @@ async def add_outcome(rpd_id: int, data: LearningOutcomeCreate, db: AsyncSession
     comp = ind.competency if ind else None
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        id_rpd_bup_discipline=lo.id_rpd_bup_discipline,
         indicator_code=lo.indicator_code or (ind.code if ind else None),
         indicator_description=lo.indicator_description or (ind.description if ind else None),
         competency_code=lo.competency_code or (comp.code if comp else None),
@@ -1009,6 +1024,7 @@ async def update_outcome(outcome_id: int, data: LearningOutcomeCreate, db: Async
     comp = ind.competency if ind else None
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        id_rpd_bup_discipline=lo.id_rpd_bup_discipline,
         indicator_code=lo.indicator_code or (ind.code if ind else None),
         indicator_description=lo.indicator_description or (ind.description if ind else None),
         competency_code=lo.competency_code or (comp.code if comp else None),
@@ -1112,18 +1128,35 @@ async def add_manual_outcome(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    rpd = await db.get(Rpd, rpd_id)
+    rpd_res = await db.execute(
+        select(Rpd).where(Rpd.id_rpd == rpd_id)
+        .options(selectinload(Rpd.bup_links))
+    )
+    rpd = rpd_res.scalar_one_or_none()
     assert_rpd_editable(rpd, user)
+    target_link_id: int | None = None
+    if data.id_bup_discipline is not None:
+        target_link_id = next(
+            (l.id_rpd_bup_discipline for l in (rpd.bup_links or [])
+             if l.id_bup_discipline == data.id_bup_discipline),
+            None,
+        )
     if data.id_indicator is not None:
-        dup_res = await db.execute(
+        dup_q = (
             select(RpdLearningOutcome.id_outcome)
             .where(RpdLearningOutcome.id_rpd == rpd_id)
             .where(RpdLearningOutcome.id_indicator == data.id_indicator)
         )
+        if target_link_id is not None:
+            dup_q = dup_q.where(RpdLearningOutcome.id_rpd_bup_discipline == target_link_id)
+        else:
+            dup_q = dup_q.where(RpdLearningOutcome.id_rpd_bup_discipline.is_(None))
+        dup_res = await db.execute(dup_q)
         if dup_res.scalar_one_or_none() is not None:
             raise HTTPException(status_code=400, detail="Эта компетенция уже добавлена в таблицу")
     lo = RpdLearningOutcome(
         id_rpd=rpd_id,
+        id_rpd_bup_discipline=target_link_id,
         id_indicator=data.id_indicator,
         outcome_text=(data.outcome_text or "").strip() or None,
         assessment_tool=(data.assessment_tool or "").strip() or None,
@@ -1147,6 +1180,7 @@ async def add_manual_outcome(
     await db.commit()
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        id_rpd_bup_discipline=lo.id_rpd_bup_discipline,
         indicator_code=lo.indicator_code,
         indicator_description=lo.indicator_description,
         competency_code=lo.competency_code,
@@ -1182,6 +1216,7 @@ async def patch_outcome_snapshot(
     await db.commit()
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        id_rpd_bup_discipline=lo.id_rpd_bup_discipline,
         indicator_code=lo.indicator_code,
         indicator_description=lo.indicator_description,
         competency_code=lo.competency_code,
@@ -1283,12 +1318,19 @@ async def get_outcomes_table(
 
     snapshots_backfilled = _backfill_outcome_snapshots(rpd.learning_outcomes)
 
-    bind_res = await db.execute(
-        select(RpdBupDiscipline.id_bup_discipline)
+    links_res = await db.execute(
+        select(RpdBupDiscipline)
         .where(RpdBupDiscipline.id_rpd == rpd_id)
-        .where(RpdBupDiscipline.id_bup_discipline.is_not(None))
     )
-    bound_bd_ids = [b for (b,) in bind_res.all()]
+    links = list(links_res.scalars().all())
+    bound_bd_ids = [l.id_bup_discipline for l in links if l.id_bup_discipline is not None]
+
+    selected_link_id: int | None = None
+    if bd_id is not None and len(links) > 1:
+        selected_link_id = next(
+            (l.id_rpd_bup_discipline for l in links if l.id_bup_discipline == bd_id),
+            None,
+        )
 
     selected_inds: set[int] | None = None
     all_bound_inds: set[int] = set()
@@ -1305,6 +1347,12 @@ async def get_outcomes_table(
         all_bound_inds = await _binding_indicators(bound_bd_ids)
 
     def _visible(lo) -> bool:
+        if selected_link_id is not None:
+            if lo.id_rpd_bup_discipline == selected_link_id:
+                return True
+            if lo.id_rpd_bup_discipline is None and (lo.id_indicator is None or lo.id_indicator not in all_bound_inds):
+                return True
+            return False
         if selected_inds is None:
             return True
         if lo.id_indicator is None:
@@ -1328,9 +1376,9 @@ async def get_outcomes_table(
         ind = lo.indicator
         comp = ind.competency if ind else None
         if lo.id_indicator is not None:
-            key = ("ind", lo.id_indicator)
+            key = ("ind", lo.id_rpd_bup_discipline, lo.id_indicator)
         elif lo.competency_code or lo.indicator_code:
-            key = ("snap", lo.competency_code or "", lo.indicator_code or "")
+            key = ("snap", lo.id_rpd_bup_discipline, lo.competency_code or "", lo.indicator_code or "")
         else:
             key = ("out", lo.id_outcome)
         if key in seen_keys:
@@ -1338,6 +1386,7 @@ async def get_outcomes_table(
         seen_keys.add(key)
         rows.append(OutcomeRowOut(
             id_indicator=lo.id_indicator,
+            id_rpd_bup_discipline=lo.id_rpd_bup_discipline,
             indicator_code=lo.indicator_code if lo.indicator_code is not None else ((ind.code if ind else "") or ""),
             indicator_description=lo.indicator_description if lo.indicator_description is not None else ((ind.description if ind else "") or ""),
             competency_code=lo.competency_code if lo.competency_code is not None else ((comp.code if comp else "") or ""),
@@ -1406,6 +1455,7 @@ async def upsert_outcome(
     comp = ind.competency if ind else None
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
+        id_rpd_bup_discipline=lo.id_rpd_bup_discipline,
         indicator_code=lo.indicator_code or (ind.code if ind else None),
         indicator_description=lo.indicator_description or (ind.description if ind else None),
         competency_code=lo.competency_code or (comp.code if comp else None),

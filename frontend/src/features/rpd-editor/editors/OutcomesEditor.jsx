@@ -50,7 +50,7 @@ function compareOutcomeRows(a, b) {
 }
 
 function OutcomesEditorBase() {
-  const { rpd, rpdId, isEdit, canEdit, canManageSources, reload, setOutcomesVisibleIds } = useRpdEditor();
+  const { rpd, rpdId, isEdit, canEdit, canManageSources, reload, setOutcomesVisibleIds, setOutcomesCurrentBdId } = useRpdEditor();
   const [rows, setRows] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [pendingDelete, setPendingDelete] = useState(null);
@@ -66,6 +66,11 @@ function OutcomesEditorBase() {
       setCurrentBdId(bds[0].id_bup_discipline);
     }
   }, [bds, currentBdId]);
+
+  useEffect(() => {
+    setOutcomesCurrentBdId?.(currentBdId);
+    return () => setOutcomesCurrentBdId?.(null);
+  }, [currentBdId, setOutcomesCurrentBdId]);
 
   const reloadRows = useCallback(async () => {
     try {
@@ -89,18 +94,23 @@ function OutcomesEditorBase() {
   const tableActiveRef = useRef(false);
   const reloadPendingRef = useRef(false);
   const reorderPendingRef = useRef(false);
+  const pendingSavesRef = useRef(0);
   const prevUpdatedAt = useRef(rpd?.updated_at);
   useEffect(() => {
     if (!loaded) return;
     const curr = rpd?.updated_at;
     if (curr === prevUpdatedAt.current) return;
     prevUpdatedAt.current = curr;
-    if (tableActiveRef.current) { reloadPendingRef.current = true; return; }
+    if (tableActiveRef.current || pendingSavesRef.current > 0) {
+      reloadPendingRef.current = true;
+      return;
+    }
     reloadRowsRef.current();
   }, [rpd?.updated_at, loaded]);
 
   function flushReorder() {
     if (reloadPendingRef.current) {
+      if (pendingSavesRef.current > 0 || tableActiveRef.current) return;
       reloadPendingRef.current = false;
       reorderPendingRef.current = false;
       reloadRowsRef.current();
@@ -108,6 +118,15 @@ function OutcomesEditorBase() {
       reorderPendingRef.current = false;
       setRows(prev => [...prev].sort(compareOutcomeRows));
     }
+  }
+
+  function maybeFlushDeferredReload() {
+    if (pendingSavesRef.current > 0) return;
+    if (!reloadPendingRef.current) return;
+    if (tableActiveRef.current) return;
+    reloadPendingRef.current = false;
+    reorderPendingRef.current = false;
+    reloadRowsRef.current();
   }
   function handleTableFocus() {
     tableActiveRef.current = true;
@@ -119,7 +138,7 @@ function OutcomesEditorBase() {
     const toRow = (to && to.closest) ? to.closest("tr") : null;
     const stillInTable = !!(to && wrap && wrap.contains(to));
     if (!stillInTable) tableActiveRef.current = false;
-    if (!toRow || toRow !== fromRow) flushReorder();
+    if (!toRow || toRow !== fromRow) setTimeout(flushReorder, 0);
   }
 
   const autoAddedRef = useRef(false);
@@ -135,6 +154,7 @@ function OutcomesEditorBase() {
     const row = rows[idx];
     const next = { ...row, ...patch };
     setRows(prev => prev.map((r, i) => i === idx ? next : r));
+    pendingSavesRef.current += 1;
     try {
       const isSnapshotPatch = "competency_code" in patch || "competency_name" in patch
         || "indicator_code" in patch || "indicator_description" in patch;
@@ -156,6 +176,9 @@ function OutcomesEditorBase() {
     } catch (e) {
       setRows(prev => prev.map((r, i) => i === idx ? row : r));
       setErrorMsg("Не удалось сохранить: " + (e?.response?.data?.detail || e.message));
+    } finally {
+      pendingSavesRef.current = Math.max(0, pendingSavesRef.current - 1);
+      maybeFlushDeferredReload();
     }
   }
 
@@ -163,6 +186,7 @@ function OutcomesEditorBase() {
     try {
       const r = await api.addManualOutcome(rpdId, {
         id_indicator: seed.id_indicator || null,
+        id_bup_discipline: currentBdId || null,
         competency_code: seed.competency_code || "",
         competency_name: seed.competency_name || "",
         indicator_code: seed.indicator_code || "",
@@ -296,7 +320,8 @@ function OutcomesEditorBase() {
           const codeEditable = editable && (!fromBase || canManageSources);
           const descIsPlaceholder = isPlaceholderDescription(r.indicator_description);
           const descEditable = editable;
-          const trProps = (structuralEditing && r.id_outcome)
+          const deletable = rows.length > 1;
+          const trProps = (structuralEditing && r.id_outcome && deletable)
             ? { "data-trash-row": "", "data-trash-id": String(r.id_outcome) }
             : {};
           return <tr key={r.id_outcome || `ind-${r.id_indicator}` || `idx-${idx}`} {...trProps}>

@@ -157,6 +157,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
 
   const [pdfBdId, setPdfBdId] = useState(null);
   const [outcomesVisibleIds, setOutcomesVisibleIds] = useState(null);
+  const [outcomesCurrentBdId, setOutcomesCurrentBdId] = useState(null);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1.1);
@@ -690,7 +691,11 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     const controller = new AbortController();
     genAbortRef.current = controller;
     try {
-      const res = await api.generateSection(rpdId, { section: key }, { signal: controller.signal });
+      const payload = { section: key };
+      if (key === "learning_outcomes" && outcomesCurrentBdId != null) {
+        payload.id_bup_discipline = outcomesCurrentBdId;
+      }
+      const res = await api.generateSection(rpdId, payload, { signal: controller.signal });
       if (genCancelRef.current || !_owns(seq)) return { ok: false, reason: "cancelled" };
       const data = res.data || {};
       const notFallback = data.model !== "fallback";
@@ -894,9 +899,10 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     rpd, rpdId, isEdit, canEdit, canManageSources,
     generating, genResult, genBusy, genBatch,
     editTexts, setEditTexts, editing, setEditing,
-    isCollapsed, toggleCollapse, setOutcomesVisibleIds,
+    isCollapsed, toggleCollapse, setOutcomesVisibleIds, setOutcomesCurrentBdId,
+    outcomesCurrentBdId,
     ...stableFns,
-  }), [rpd, rpdId, isEdit, canEdit, canManageSources, generating, genResult, genBusy, genBatch, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, setOutcomesVisibleIds, stableFns]);
+  }), [rpd, rpdId, isEdit, canEdit, canManageSources, generating, genResult, genBusy, genBatch, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, setOutcomesVisibleIds, setOutcomesCurrentBdId, outcomesCurrentBdId, stableFns]);
 
   if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}><Spinner size={40} /></div>;
   if (!rpd) return <div style={{ flex: 1, padding: 40, textAlign: "center", background: T.bg }}>РПД не найдена</div>;
@@ -972,6 +978,12 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     if (key === "literature_electronic") { try { await api.addLiterature(rpdId, { source_type: "", title: "", url: " ", availability: [] }); } catch { } return; }
     if (key === "software") { try { await api.addSoftware(rpdId, { name: "", license_type: null }); } catch { } return; }
     if (key === "databases") { try { await api.addDatabase(rpdId, { name: "", url: "" }); } catch { } return; }
+    if (key === "material_tech") { try { await api.addMaterialTech(rpdId, { room_type: "", equipment: "", quantity: 0 }); } catch { } return; }
+    if (key === "learning_outcomes") {
+      if (!outcomesStructural) return;
+      try { await api.addManualOutcome(rpdId, { id_indicator: null, id_bup_discipline: outcomesCurrentBdId || null, competency_code: "", competency_name: "", indicator_code: "", indicator_description: "", outcome_text: "", assessment_tool: "" }); } catch { }
+      return;
+    }
   }
 
   function clearCount(key) {
@@ -1004,6 +1016,22 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       const rows = rpd.databases || [];
       const meaningful = rows.filter(d => (d.name || "").trim() || (d.url || "").trim()).length;
       return Math.max(meaningful, rows.length - 1);
+    }
+    if (key === "material_tech") {
+      const rows = rpd.material_tech || [];
+      const meaningful = rows.filter(m => (m.room_type || "").trim() || (m.equipment || "").trim() || (m.quantity || 0) > 0).length;
+      return Math.max(meaningful, rows.length - 1);
+    }
+    if (key === "learning_outcomes") {
+      const allLos = rpd.learning_outcomes || [];
+      const los = outcomesVisibleIds
+        ? allLos.filter(o => outcomesVisibleIds.includes(o.id_outcome))
+        : allLos;
+      if (outcomesStructural) {
+        const meaningful = los.filter(o => (o.outcome_text || "").trim() || (o.assessment_tool || "").trim() || (o.competency_code || "").trim() || (o.indicator_code || "").trim() || (o.indicator_description || "").trim()).length;
+        return Math.max(meaningful, los.length - 1);
+      }
+      return los.filter(o => (o.outcome_text || "").trim() || (o.assessment_tool || "").trim()).length;
     }
     return _clearOps(key).length;
   }

@@ -187,10 +187,17 @@ def build_context(rpd, bd=None, link=None, approver=None) -> dict:
                     out.add(ci.id_indicator)
         return out
 
-    bound_bds = [
-        l.bup_discipline for l in (rpd.bup_links or [])
-        if l.bup_discipline is not None
-    ]
+    bound_links = list(rpd.bup_links or [])
+    bound_bds = [l.bup_discipline for l in bound_links if l.bup_discipline is not None]
+
+    selected_link_id: int | None = None
+    if bd is not None and len(bound_links) > 1:
+        selected_link_id = next(
+            (l.id_rpd_bup_discipline for l in bound_links
+             if l.bup_discipline is not None and l.bup_discipline.id_bup_discipline == bd.id_bup_discipline),
+            None,
+        )
+
     selected_inds: set[int] | None = None
     all_bound_inds: set[int] = set()
     if bd is not None and len(bound_bds) > 1:
@@ -199,6 +206,12 @@ def build_context(rpd, bd=None, link=None, approver=None) -> dict:
             all_bound_inds |= _bd_indicator_ids(b)
 
     def _lo_visible(lo) -> bool:
+        if selected_link_id is not None:
+            if lo.id_rpd_bup_discipline == selected_link_id:
+                return True
+            if lo.id_rpd_bup_discipline is None and (lo.id_indicator is None or lo.id_indicator not in all_bound_inds):
+                return True
+            return False
         if selected_inds is None:
             return True
         if lo.id_indicator is None:
@@ -215,9 +228,9 @@ def build_context(rpd, bd=None, link=None, approver=None) -> dict:
         ind = lo.indicator if lo.id_indicator is not None else None
         comp = ind.competency if ind else None
         if lo.id_indicator is not None:
-            key = ("ind", lo.id_indicator)
+            key = ("ind", lo.id_rpd_bup_discipline, lo.id_indicator)
         else:
-            key = ("snap", lo.competency_code or "", lo.indicator_code or "")
+            key = ("snap", lo.id_rpd_bup_discipline, lo.competency_code or "", lo.indicator_code or "")
         if key in seen_keys:
             continue
         comp_code = lo.competency_code or (comp.code if comp else "") or ""

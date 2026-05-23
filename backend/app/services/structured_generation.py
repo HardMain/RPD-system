@@ -2,13 +2,14 @@ import json
 import re
 from collections import defaultdict
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models import (
     Rpd, RpdSection, RpdTopic, RpdLiterature, RpdSoftware, RpdMaterialTech,
     RpdDatabase, RpdLearningOutcome, RpdBupDiscipline, CompetencyIndicator,
+    Competency, BupDisciplineCompetency,
 )
 
 
@@ -337,18 +338,95 @@ async def apply_material_tech(db: AsyncSession, rpd_id: int, items: list[dict]) 
 
 
 async def apply_learning_outcomes(
-    db: AsyncSession, rpd_id: int, items: list[dict], structural: bool = True
+    db: AsyncSession, rpd_id: int, items: list[dict],
+    id_bup_discipline: int | None = None,
 ) -> int:
-    candidate_codes = [
-        (it, it["indicator_code"].strip())
-        for it in items
-        if (it.get("indicator_code") or "").strip()
-    ]
-    if not candidate_codes:
+    items_by_code: dict[str, dict] = {}
+    for it in items:
+        code = (it.get("indicator_code") or "").strip()
+        if code and code not in items_by_code:
+            items_by_code[code] = it
+
+    rpd_res = await db.execute(
+        select(Rpd).where(Rpd.id_rpd == rpd_id)
+        .options(selectinload(Rpd.bup_links))
+    )
+    rpd = rpd_res.scalar_one_or_none()
+    if rpd is None:
+        return 0
+
+    bup_links_by_bd = {
+        l.id_bup_discipline: l for l in (rpd.bup_links or [])
+        if l.id_bup_discipline is not None and not getattr(l, "is_manual", False)
+    }
+
+    if bup_links_by_bd:
+        if id_bup_discipline is not None and id_bup_discipline in bup_links_by_bd:
+            scope_bd_ids = [id_bup_discipline]
+        else:
+            scope_bd_ids = list(bup_links_by_bd.keys())
+
+        ind_res = await db.execute(
+            select(CompetencyIndicator, BupDisciplineCompetency.id_bup_discipline)
+            .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
+            .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+            .where(BupDisciplineCompetency.id_bup_discipline.in_(scope_bd_ids))
+            .options(selectinload(CompetencyIndicator.competency))
+            .order_by(BupDisciplineCompetency.id_bup_discipline, Competency.code, CompetencyIndicator.code)
+        )
+        target: list[tuple[int, CompetencyIndicator]] = []
+        seen: set[tuple[int, int]] = set()
+        for ind, bd_id in ind_res.all():
+            key = (bd_id, ind.id_indicator)
+            if key in seen:
+                continue
+            seen.add(key)
+            target.append((bd_id, ind))
+        if not target:
+            return 0
+
+        if len(scope_bd_ids) == len(bup_links_by_bd):
+            await db.execute(delete(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id))
+        else:
+            scope_link_ids = [bup_links_by_bd[bd].id_rpd_bup_discipline for bd in scope_bd_ids]
+            target_ind_ids = list({ind.id_indicator for _, ind in target})
+            await db.execute(
+                delete(RpdLearningOutcome)
+                .where(RpdLearningOutcome.id_rpd == rpd_id)
+                .where(
+                    or_(
+                        RpdLearningOutcome.id_rpd_bup_discipline.in_(scope_link_ids),
+                        and_(
+                            RpdLearningOutcome.id_rpd_bup_discipline.is_(None),
+                            RpdLearningOutcome.id_indicator.in_(target_ind_ids),
+                        ),
+                    )
+                )
+            )
+        await db.flush()
+
+        for bd_id, ind in target:
+            link = bup_links_by_bd[bd_id]
+            it = items_by_code.get((ind.code or "").strip(), {})
+            db.add(RpdLearningOutcome(
+                id_rpd=rpd_id,
+                id_rpd_bup_discipline=link.id_rpd_bup_discipline,
+                id_indicator=ind.id_indicator,
+                indicator_code=ind.code,
+                indicator_description=(ind.description or None),
+                competency_code=(ind.competency.code if ind.competency else None),
+                competency_name=(ind.competency.name if ind.competency else None),
+                outcome_text=(it.get("outcome_text") or "").strip() or None,
+                assessment_tool=(it.get("assessment_tool") or "").strip() or None,
+            ))
+        await db.commit()
+        return len(target)
+
+    if not items_by_code:
         return 0
 
     resolved: list[tuple[dict, CompetencyIndicator]] = []
-    for item, code in candidate_codes:
+    for code, item in items_by_code.items():
         ind_res = await db.execute(
             select(CompetencyIndicator)
             .where(CompetencyIndicator.code == code)
@@ -357,42 +435,8 @@ async def apply_learning_outcomes(
         indicator = ind_res.scalars().first()
         if indicator is not None:
             resolved.append((item, indicator))
-
     if not resolved:
         return 0
-
-    if not structural:
-        existing_res = await db.execute(
-            select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id)
-        )
-        existing = existing_res.scalars().all()
-        by_ind_id = {lo.id_indicator: lo for lo in existing if lo.id_indicator is not None}
-        by_code: dict[str, RpdLearningOutcome] = {}
-        for lo in existing:
-            c = (lo.indicator_code or "").strip().lower()
-            if c and c not in by_code:
-                by_code[c] = lo
-        updated = 0
-        for item, indicator in resolved:
-            lo = by_ind_id.get(indicator.id_indicator) or by_code.get(
-                (indicator.code or "").strip().lower()
-            )
-            if lo is None:
-                continue
-            text = (item.get("outcome_text") or "").strip()
-            tool = (item.get("assessment_tool") or "").strip()
-            changed = False
-            if text and text != lo.outcome_text:
-                lo.outcome_text = text
-                changed = True
-            if tool and tool != lo.assessment_tool:
-                lo.assessment_tool = tool
-                changed = True
-            if changed:
-                updated += 1
-        if updated:
-            await db.commit()
-        return updated
 
     await db.execute(delete(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id))
     await db.flush()
@@ -403,11 +447,10 @@ async def apply_learning_outcomes(
             id_indicator=indicator.id_indicator,
             indicator_code=indicator.code,
             indicator_description=indicator.description or None,
-            competency_code=indicator.competency.code,
-            competency_name=indicator.competency.name,
+            competency_code=indicator.competency.code if indicator.competency else None,
+            competency_name=indicator.competency.name if indicator.competency else None,
             outcome_text=(item.get("outcome_text") or "").strip() or None,
             assessment_tool=(item.get("assessment_tool") or "").strip() or None,
         ))
-
     await db.commit()
     return len(resolved)

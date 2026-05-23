@@ -87,6 +87,10 @@ class RpdLearningOutcome(Base):
     __tablename__ = "rpd_learning_outcomes"
     id_outcome = Column(Integer, primary_key=True, autoincrement=True)
     id_rpd = Column(Integer, ForeignKey("rpd.id_rpd"), nullable=False)
+    id_rpd_bup_discipline = Column(
+        Integer, ForeignKey("rpd_bup_disciplines.id_rpd_bup_discipline", ondelete="CASCADE"),
+        nullable=True,
+    )
     id_indicator = Column(
         Integer, ForeignKey("competency_indicators.id_indicator", ondelete="SET NULL"),
         nullable=True,
@@ -99,6 +103,7 @@ class RpdLearningOutcome(Base):
     competency_name = Column(Text)
     rpd = relationship("Rpd", back_populates="learning_outcomes")
     indicator = relationship("CompetencyIndicator")
+    bup_link = relationship("RpdBupDiscipline")
 
 class RpdLiterature(Base):
     __tablename__ = "rpd_literature"

@@ -47,6 +47,7 @@ class ManualOutcomeCreate(BaseModel):
     outcome_text: str | None = None
     assessment_tool: str | None = None
     id_indicator: int | None = None
+    id_bup_discipline: int | None = None
 
 class RpdCreate(BaseModel):
     id_discipline: int | None = None
@@ -85,6 +86,7 @@ class FosFileSelect(BaseModel):
 
 class OutcomeRowOut(BaseModel):
     id_indicator: int | None = None
+    id_rpd_bup_discipline: int | None = None
     indicator_code: str
     indicator_description: str
     competency_code: str
@@ -225,6 +227,7 @@ class LearningOutcomeCreate(BaseModel):
 class LearningOutcomeOut(BaseModel):
     id_outcome: int
     id_indicator: int | None = None
+    id_rpd_bup_discipline: int | None = None
     indicator_code: str | None = None
     indicator_description: str | None = None
     competency_code: str | None = None
@@ -303,6 +306,7 @@ class ReviewerCandidateOut(BaseModel):
 class LlmGenerateRequest(BaseModel):
     section: str
     context: str | None = None
+    id_bup_discipline: int | None = None
 
 class LlmGenerateResponse(BaseModel):
     section: str

@@ -57,6 +57,7 @@ function MtechEditorBase() {
               key={item.id_material_tech}
               item={item}
               editable={editable}
+              deletable={items.length > 1}
               onSave={(patch) => saveRow(item, patch)}
             />
           ))}
@@ -79,7 +80,7 @@ function MtechEditorBase() {
   </div>;
 }
 
-function MtechRow({ item, editable, onSave }) {
+function MtechRow({ item, editable, deletable = true, onSave }) {
   const [quantity, setQuantity] = useState(item.quantity ?? 0);
   const qtyRef = useRef(item.quantity ?? 0);
   useEffect(() => {
@@ -111,7 +112,8 @@ function MtechRow({ item, editable, onSave }) {
     </tr>;
   }
 
-  return <tr data-trash-row data-trash-id={item.id_material_tech}>
+  const trashProps = deletable ? { "data-trash-row": "", "data-trash-id": item.id_material_tech } : {};
+  return <tr {...trashProps}>
     <td style={{ ...td, padding: 4 }}>
       <Combobox
         value={item.room_type || ""}

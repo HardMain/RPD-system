@@ -21,7 +21,12 @@ export function RowTrashOverlay({ tbodyRef, onDelete, title = "Удалить", 
           top: r.top - overlayTop + r.height / 2,
         };
       });
-      setRows(next);
+      setRows(prev => {
+        if (prev.length === next.length && prev.every((p, i) => p.id === next[i].id && p.top === next[i].top)) {
+          return prev;
+        }
+        return next;
+      });
     };
 
     recompute();
@@ -38,7 +43,7 @@ export function RowTrashOverlay({ tbodyRef, onDelete, title = "Удалить", 
       ro.disconnect();
       mo.disconnect();
     };
-  });
+  }, [tbodyRef]);
 
   return <div ref={overlayRef} style={{ position: "absolute", top: 0, right: 0, bottom: 0, width: 0, pointerEvents: "none" }}>
     {rows.map(row => (

@@ -7,12 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
-from app.core.auth import get_current_user, user_can
+from app.core.auth import get_current_user
 from app.core.crud import assert_rpd_editable
 from app.models import (
     User, Rpd, Discipline, Direction, Bup, BupDiscipline, LlmGenerationLog,
     UploadedDocument, UploadedDocumentSection, RpdBupDiscipline, LlmPrompt,
-    RpdLearningOutcome, CompetencyIndicator, AssessmentTool,
+    RpdLearningOutcome, CompetencyIndicator, Competency, BupDisciplineCompetency,
+    AssessmentTool,
 )
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
 from app.services.llm_service import generate_section, extract_text_from_file, CONTEXT_CHAR_LIMIT
@@ -40,10 +41,58 @@ _SHORT_NEGATIVE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_CONTROL_FORM_RE = re.compile(r"([а-яёА-ЯЁ\.\s]+?)\s*\(\s*[\d,\s]+\s*\)")
+
 
 def _is_short_negative(text: str) -> bool:
     clean = (text or "").strip()
     return 0 < len(clean) <= 60 and bool(_SHORT_NEGATIVE_RE.search(clean))
+
+
+def _filter_assessment_tools(tools: list[str], control_form: str | None,
+                             lab_total: int, practice_total: int) -> list[str]:
+    has_exam = False
+    has_zachet = False
+    has_diff_zachet = False
+    has_course_project = False
+    has_course_work = False
+    has_control_work = False
+    for m in _CONTROL_FORM_RE.finditer((control_form or "").lower()):
+        label = m.group(1).strip()
+        if "экзамен" in label:
+            has_exam = True
+        elif "диф" in label and "зач" in label:
+            has_diff_zachet = True
+        elif "зач" in label:
+            has_zachet = True
+        elif "курсов" in label and "проект" in label:
+            has_course_project = True
+        elif "курсов" in label and "работ" in label:
+            has_course_work = True
+        elif "контрольн" in label and "работ" in label:
+            has_control_work = True
+
+    def _keep(name: str) -> bool:
+        nl = name.lower().strip()
+        if nl == "экзамен":
+            return has_exam
+        if nl in ("зачёт", "зачет"):
+            return has_zachet
+        if "дифференцир" in nl or nl.startswith("диф"):
+            return has_diff_zachet
+        if "курсов" in nl and "проект" in nl:
+            return has_course_project
+        if "курсов" in nl and "работ" in nl:
+            return has_course_work
+        if "контрольн" in nl and "работ" in nl:
+            return has_control_work
+        if "лаборатор" in nl:
+            return lab_total > 0
+        if "практическ" in nl:
+            return practice_total > 0
+        return True
+
+    return [t for t in tools if _keep(t)]
 
 
 @router.post("/{rpd_id}/generate", response_model=LlmGenerateResponse)
@@ -69,7 +118,14 @@ async def generate(
     assert_rpd_editable(rpd, user)
 
     disc = rpd.discipline
-    link = next(iter(rpd.bup_links or []), None)
+    link = None
+    if data.id_bup_discipline is not None:
+        link = next(
+            (l for l in (rpd.bup_links or []) if l.id_bup_discipline == data.id_bup_discipline),
+            None,
+        )
+    if link is None:
+        link = next(iter(rpd.bup_links or []), None)
     bd = link.bup_discipline if link else None
     direc = bd.bup.direction if bd and bd.bup else None
 
@@ -103,23 +159,44 @@ async def generate(
     assessment_tools_str = ""
 
     if data.section == "learning_outcomes":
+        all_bup_bd_ids = [
+            l.id_bup_discipline for l in (rpd.bup_links or [])
+            if l.id_bup_discipline is not None and not getattr(l, "is_manual", False)
+        ]
+        if data.id_bup_discipline is not None and data.id_bup_discipline in all_bup_bd_ids:
+            bup_bd_ids = [data.id_bup_discipline]
+        else:
+            bup_bd_ids = all_bup_bd_ids
+        bup_indicators: list[CompetencyIndicator] = []
+        if bup_bd_ids:
+            ind_res = await db.execute(
+                select(CompetencyIndicator)
+                .join(Competency, Competency.id_competency == CompetencyIndicator.id_competency)
+                .join(BupDisciplineCompetency, BupDisciplineCompetency.id_competency == Competency.id_competency)
+                .where(BupDisciplineCompetency.id_bup_discipline.in_(bup_bd_ids))
+                .options(selectinload(CompetencyIndicator.competency))
+                .order_by(Competency.code, CompetencyIndicator.code)
+            )
+            seen_inds: set[int] = set()
+            for ind in ind_res.scalars().all():
+                if ind.id_indicator in seen_inds:
+                    continue
+                seen_inds.add(ind.id_indicator)
+                bup_indicators.append(ind)
+            if bup_indicators:
+                lines = [
+                    "Индикаторы компетенций дисциплины (нужно заполнить для КАЖДОГО, не пропускай ни один и не добавляй чужих):"
+                ]
+                for ind in bup_indicators:
+                    comp_code = ind.competency.code if ind.competency else ""
+                    desc = (ind.description or "").strip()
+                    lines.append(f"  {ind.code} ({comp_code}): {desc}")
+                extra_context = "\n".join(lines) + "\n\n" + extra_context
+
         lo_res = await db.execute(
-            select(RpdLearningOutcome)
-            .where(RpdLearningOutcome.id_rpd == rpd_id)
-            .options(selectinload(RpdLearningOutcome.indicator))
+            select(RpdLearningOutcome).where(RpdLearningOutcome.id_rpd == rpd_id)
         )
         lo_list = lo_res.scalars().all()
-        if lo_list:
-            lines = ["Индикаторы компетенций дисциплины (нужно заполнить для каждого):"]
-            for lo in lo_list:
-                ind = lo.indicator
-                code = lo.indicator_code or (ind.code if ind else None)
-                comp_code = lo.competency_code or ""
-                desc = (ind.description if ind else None) or ""
-                if code:
-                    lines.append(f"  {code} ({comp_code}): {desc}")
-            extra_context = "\n".join(lines) + "\n\n" + extra_context
-
         catalog = (await db.execute(
             select(AssessmentTool.name).order_by(AssessmentTool.name)
         )).scalars().all()
@@ -135,7 +212,33 @@ async def generate(
             if name and key not in seen:
                 seen.add(key)
                 tools.append(name)
+        control_form_for_filter = _pick_str(
+            link.control_form if link else None,
+            bd.control_form if bd else None,
+        )
+        lab_total_for_filter = 0
+        practice_total_for_filter = 0
+        sem_source = (link.semesters_data if link else None) or (bd.semesters_data if bd else None) or []
+        if sem_source:
+            for s in sem_source:
+                lab_total_for_filter += (s.get("lab") or 0)
+                practice_total_for_filter += (s.get("practice") or 0)
+        else:
+            lab_total_for_filter = (link.lab_hours if link else None) or (bd.lab_hours if bd else 0) or 0
+            practice_total_for_filter = (link.practice_hours if link else None) or (bd.practice_hours if bd else 0) or 0
+        tools = _filter_assessment_tools(
+            tools, control_form_for_filter,
+            lab_total_for_filter, practice_total_for_filter,
+        )
         assessment_tools_str = "; ".join(tools)
+        extra_context += (
+            ("\n\n" if extra_context.strip() else "")
+            + "ВАЖНО про assessment_tool: список «Доступные средства оценки» уже отфильтрован "
+            + "под реальную структуру дисциплины (формы промежуточной аттестации из учебного плана "
+            + "и распределение часов по видам работ). Чего нет в этом списке — того нет и в дисциплине. "
+            + "Не пиши «Экзамен», если его в списке нет; не пиши «Защита лабораторной работы», "
+            + "если нет лабораторных часов; и так далее. Бери assessment_tool СТРОГО из приведённого списка."
+        )
 
     context_sources: list[str] = []
 
@@ -305,12 +408,8 @@ async def generate(
             elif data.section == "material_tech":
                 structural_created = await apply_material_tech(db, rpd_id, items)
             elif data.section == "learning_outcomes":
-                outcomes_structural = (
-                    any(getattr(l, "is_manual", False) for l in rpd.bup_links)
-                    or user_can(user, "sources.manage")
-                )
                 structural_created = await apply_learning_outcomes(
-                    db, rpd_id, items, outcomes_structural
+                    db, rpd_id, items, id_bup_discipline=data.id_bup_discipline,
                 )
                 if structural_created:
                     from datetime import datetime, timezone
