@@ -19,7 +19,9 @@ class LlmPromptOut(BaseModel):
     section_label: str
     is_structural: bool
     system_prompt: str | None = None
+    default_system_prompt: str | None = None
     user_prompt_template: str
+    default_user_prompt_template: str
     description: str | None = None
     order_index: int
     updated_at: datetime | None = None
@@ -37,6 +39,11 @@ class LlmPromptUpdate(BaseModel):
 
 def _ensure_perm(user: User) -> None:
     ensure_permission(user, "users.manage", "sources.manage")
+
+
+def _ensure_admin(user: User) -> None:
+    if not user_can(user, "*"):
+        raise HTTPException(status_code=403, detail="Только администратору")
 
 
 @router.get("/", response_model=list[LlmPromptOut])
@@ -63,6 +70,38 @@ async def update_prompt(
     payload = data.model_dump(exclude_unset=True)
     for key, value in payload.items():
         setattr(prompt, key, value)
+    await db.commit()
+    await db.refresh(prompt)
+    return prompt
+
+
+@router.post("/{id_prompt}/save-default", response_model=LlmPromptOut)
+async def save_prompt_default(
+    id_prompt: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _ensure_admin(user)
+    prompt = await get_or_404(db, LlmPrompt, id_prompt, "Промпт не найден")
+    prompt.default_user_prompt_template = prompt.user_prompt_template
+    prompt.default_system_prompt = prompt.system_prompt
+    await db.commit()
+    await db.refresh(prompt)
+    return prompt
+
+
+@router.post("/{id_prompt}/restore-default", response_model=LlmPromptOut)
+async def restore_prompt_default(
+    id_prompt: int,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _ensure_admin(user)
+    prompt = await get_or_404(db, LlmPrompt, id_prompt, "Промпт не найден")
+    if not prompt.default_user_prompt_template:
+        raise HTTPException(status_code=400, detail="Дефолтный промпт ещё не сохранён")
+    prompt.user_prompt_template = prompt.default_user_prompt_template
+    prompt.system_prompt = prompt.default_system_prompt
     await db.commit()
     await db.refresh(prompt)
     return prompt

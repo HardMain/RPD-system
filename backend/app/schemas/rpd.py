@@ -226,7 +226,9 @@ class LearningOutcomeOut(BaseModel):
     id_outcome: int
     id_indicator: int | None = None
     indicator_code: str | None = None
+    indicator_description: str | None = None
     competency_code: str | None = None
+    competency_name: str | None = None
     outcome_text: str | None = None
     assessment_tool: str | None = None
 

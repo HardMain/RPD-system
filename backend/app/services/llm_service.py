@@ -1,10 +1,14 @@
+import os
 import re
+import sys
 import time
 import asyncio
 import hashlib
 from openai import AsyncOpenAI
 from app.core.config import settings
-from app.services.app_settings import get_llm_model
+from app.services.app_settings import get_llm_model, get_system_prompt
+
+LLM_DEBUG = os.getenv("LLM_DEBUG", "").lower() in ("1", "true", "yes", "on")
 
 client = AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_URL)
 
@@ -13,21 +17,25 @@ _llm_semaphore = asyncio.Semaphore(max(1, settings.LLM_MAX_CONCURRENCY))
 CONTEXT_CHAR_LIMIT = 12000
 WHOLE_DOC_CHAR_LIMIT = 8000
 
-SYSTEM_PROMPT = """Ты — эксперт по составлению рабочих программ дисциплин (РПД) для российских вузов.
-Генерируй текст на русском языке в академическом стиле, соответствующий требованиям ФГОС ВО.
-Текст должен быть конкретным, содержательным и соответствовать указанной дисциплине и направлению подготовки.
+DEFAULT_TEMPERATURE = 0.7
+FACTUAL_TEMPERATURE = 0.2
 
-Тебе могут передать справочные материалы — это разнородные документы: образцы РПД по другим дисциплинам, методические пособия, учебники, выдержки по отдельным разделам. Они релевантны лишь частично: бери из них только то, что относится к формируемому разделу, остальное игнорируй. Не переноси текст дословно — адаптируй содержание под указанную дисциплину и направление.
+_LOW_TEMPERATURE_SECTIONS = {
+    "literature_printed_main",
+    "literature_printed_additional",
+    "literature_periodicals",
+    "literature_normative",
+    "literature_methodical_students",
+    "literature_methodical_self_study",
+    "literature_electronic",
+    "software",
+    "databases",
+    "material_tech",
+}
 
-Правила оформления вывода (КРИТИЧНО — соблюдай всегда, любая модель):
-- Вывод вставляется ДОСЛОВНО в готовый шаблон Word. Всё оформление (шрифт, размер, жирность, заголовки, отступы) уже задано в шаблоне. Возвращай ТОЛЬКО простой текст.
-- Категорически запрещена любая markdown-разметка и спецсимволы оформления: «#», «*», «**», «***», «_», «__», «~~», обратные кавычки «`», «>», таблицы «|». Не выделяй текст жирным или курсивом — весь текст одинаковый, обычный.
-- Маркированный список: каждый пункт с новой строки, начинается с «- » (дефис и пробел). Никаких «*», «•», «‣» в качестве маркера.
-- Нумерованный список — только если важен порядок: «1. », «2. »; иначе используй дефисы.
-- Не пиши заголовок раздела (например, «1.1 Цели и задачи», «### 1.1...») — он уже есть в РПД. Подзаголовки внутри текста, если нужны, — обычной строкой без символов разметки.
-- Не добавляй итоговый абзац-резюме («Таким образом, ...», «В заключение, ...»).
-- Если в дополнительных материалах есть пример этого же раздела для другой дисциплины — копируй его структуру (тот же тип списка через «- », та же средняя длина), подставляя содержание под новую дисциплину.
-- Если примера в материалах нет — используй стандартную для РПД структуру."""
+
+def _temperature_for(section: str) -> float:
+    return FACTUAL_TEMPERATURE if section in _LOW_TEMPERATURE_SECTIONS else DEFAULT_TEMPERATURE
 
 
 _MD_HEADER_RE = re.compile(r"^\s*#{1,6}\s+.+$", re.MULTILINE)
@@ -222,14 +230,27 @@ async def generate_section(
     prompt = prompt_template.format_map(fmt_vars)
     if extra_context:
         prompt += (
-            "\n\nСправочные материалы ниже разнородны (образцы РПД, методички, "
-            "учебники) и относятся к делу лишь частично. Используй только то, "
-            "что относится к формируемому сейчас разделу; не относящееся — игнорируй:\n"
+            "\n\nНиже — дополнительные материалы. Каждый блок начинается со строки "
+            "«=== ИСТОЧНИК — ... ===» с пометкой типа и происхождения. Применяй их строго "
+            "согласно правилам в системной инструкции для соответствующего типа источника:\n"
             + extra_context[:CONTEXT_CHAR_LIMIT]
         )
 
     prompt_hash = hashlib.sha256(prompt.encode()).hexdigest()[:16]
-    system_message = system_prompt_override if system_prompt_override is not None else SYSTEM_PROMPT
+    system_message = system_prompt_override if system_prompt_override is not None else await get_system_prompt()
+
+    temperature = _temperature_for(section)
+
+    if LLM_DEBUG:
+        bar = "=" * 100
+        print(f"\n{bar}", file=sys.stderr, flush=True)
+        print(f"[LLM DEBUG] section={section!r} discipline={discipline!r} direction={direction!r} temperature={temperature}", file=sys.stderr, flush=True)
+        print(f"[LLM DEBUG] prompt_hash={prompt_hash} prompt_len={len(prompt)} extra_ctx_len={len(extra_context)}", file=sys.stderr, flush=True)
+        print(f"{bar}\n--- SYSTEM MESSAGE ---", file=sys.stderr, flush=True)
+        print(system_message, file=sys.stderr, flush=True)
+        print(f"--- USER MESSAGE ---", file=sys.stderr, flush=True)
+        print(prompt, file=sys.stderr, flush=True)
+        print(f"{bar}\n", file=sys.stderr, flush=True)
 
     start = time.time()
     try:
@@ -244,13 +265,21 @@ async def generate_section(
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.7,
+                temperature=temperature,
                 max_tokens=2000,
             )
-        text = _clean_llm_output(response.choices[0].message.content)
+        raw_text = response.choices[0].message.content
+        text = _clean_llm_output(raw_text)
         tokens = response.usage.total_tokens if response.usage else 0
         model = getattr(response, "model", None) or current_model
-    except Exception:
+        if LLM_DEBUG:
+            bar = "=" * 100
+            print(f"\n{bar}\n[LLM DEBUG] RESPONSE for section={section!r} model={model} tokens={tokens}", file=sys.stderr, flush=True)
+            print(raw_text, file=sys.stderr, flush=True)
+            print(f"{bar}\n", file=sys.stderr, flush=True)
+    except Exception as exc:
+        if LLM_DEBUG:
+            print(f"[LLM DEBUG] FALLBACK for section={section!r} reason={exc!r}", file=sys.stderr, flush=True)
         fallback_tmpl = FALLBACK.get(section, "Раздел «{discipline}» — текст для заполнения.")
         text = fallback_tmpl.format(discipline=discipline, direction=direction)
         tokens = 0

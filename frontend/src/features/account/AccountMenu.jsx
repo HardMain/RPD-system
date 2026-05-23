@@ -2,13 +2,15 @@ import { useRef, useState } from "react";
 import { T, F, SH } from "../../styles/index.js";
 import { Avatar } from "../../components/Avatar.jsx";
 import { useDismiss } from "../../hooks/useDismiss.js";
-import { KeyIcon, LogoutIcon, InfoIcon, GearIcon, ThemeIcon, ChevronDownIcon } from "../../components/icons.jsx";
+import { userCan } from "../../api/client.js";
+import { KeyIcon, LogoutIcon, InfoIcon, GearIcon, ThemeIcon, ChevronDownIcon, SparkleIcon } from "../../components/icons.jsx";
 
 export function AccountMenu({ user, onOpenProfile, onLogout }) {
   const [open, setOpen] = useState(false);
   const [hover, setHover] = useState(false);
   const wrapRef = useRef(null);
   useDismiss(open, () => setOpen(false), wrapRef);
+  const isAdmin = userCan(user, "*");
 
   const go = (section) => { setOpen(false); onOpenProfile(section); };
 
@@ -48,6 +50,7 @@ export function AccountMenu({ user, onOpenProfile, onLogout }) {
         <MenuItem icon={<KeyIcon size={16} />} label="Сменить пароль" onClick={() => go("security")} />
         <MenuItem icon={<ThemeIcon size={16} />} label="Внешний вид" onClick={() => go("appearance")} />
         <MenuItem icon={<InfoIcon size={16} />} label="Системная информация" onClick={() => go("system")} />
+        {isAdmin && <MenuItem icon={<SparkleIcon />} label="Настройки LLM" onClick={() => go("llm")} />}
       </div>
       <div style={{ padding: 6, borderTop: "1px solid " + T.borderLight }}>
         <MenuItem icon={<LogoutIcon size={16} />} label="Выйти" danger onClick={() => { setOpen(false); onLogout(); }} />

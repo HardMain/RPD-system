@@ -118,6 +118,10 @@ export const adminListLlmPrompts = () => api.get('/admin/llm-prompts/');
 export const adminListLlmLogs = () => api.get('/admin/llm-prompts/logs');
 export const adminUpdateLlmPrompt = (idPrompt, data) =>
   api.patch(`/admin/llm-prompts/${idPrompt}`, data);
+export const adminSaveLlmPromptDefault = (idPrompt) =>
+  api.post(`/admin/llm-prompts/${idPrompt}/save-default`);
+export const adminRestoreLlmPromptDefault = (idPrompt) =>
+  api.post(`/admin/llm-prompts/${idPrompt}/restore-default`);
 
 export const adminListGlobalDocuments = () =>
   api.get('/admin/documents/');
@@ -276,5 +280,10 @@ export const adminSetLlmModel = (model) => api.patch('/admin/system/llm-model', 
 
 export const adminGetApprover = () => api.get('/admin/system/approver');
 export const adminSetApprover = (position, name) => api.patch('/admin/system/approver', { position, name });
+
+export const adminGetSystemPrompt = () => api.get('/admin/system/system-prompt');
+export const adminSetSystemPrompt = (prompt) => api.patch('/admin/system/system-prompt', { prompt });
+export const adminSaveSystemPromptDefault = () => api.post('/admin/system/system-prompt/save-default');
+export const adminRestoreSystemPromptDefault = () => api.post('/admin/system/system-prompt/restore-default');
 
 export default api;

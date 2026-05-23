@@ -27,8 +27,9 @@ const SUBS = [
   { id: "logs", label: "Журнал генерации" },
 ];
 
-export function AdminLlmPage() {
+export function AdminLlmPage({ user }) {
   const [sub, setSub] = useStickyState("adminLlm.sub.v1", "prompts");
+  const isAdmin = !!user && api.userCan(user, "*");
   return <div style={pageContainer}>
     <div style={pageToolbar}>
       {SUBS.map(s => (
@@ -36,7 +37,7 @@ export function AdminLlmPage() {
       ))}
     </div>
     <div style={pageScroll}>
-      {sub === "prompts" && <LlmPromptsContent />}
+      {sub === "prompts" && <LlmPromptsContent isAdmin={isAdmin} />}
       {sub === "logs" && <LlmLogsContent />}
     </div>
   </div>;
@@ -94,7 +95,7 @@ function LlmLogsContent() {
   </div>;
 }
 
-function LlmPromptsContent() {
+function LlmPromptsContent({ isAdmin }) {
   const [prompts, setPrompts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState(null);
@@ -118,6 +119,24 @@ function LlmPromptsContent() {
     }
   }
 
+  async function saveDefault(idPrompt) {
+    try {
+      await api.adminSaveLlmPromptDefault(idPrompt);
+      fetchAll(true);
+    } catch (err) {
+      setErrorMsg("Не удалось обновить дефолт: " + (err?.response?.data?.detail || err.message));
+    }
+  }
+
+  async function restoreDefault(idPrompt) {
+    try {
+      await api.adminRestoreLlmPromptDefault(idPrompt);
+      fetchAll(true);
+    } catch (err) {
+      setErrorMsg("Не удалось восстановить дефолт: " + (err?.response?.data?.detail || err.message));
+    }
+  }
+
   if (loading) {
     return <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>;
   }
@@ -129,13 +148,14 @@ function LlmPromptsContent() {
 
   return <>
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {prompts.map(p => <PromptCard key={p.id_prompt} prompt={p} onSave={saveField} />)}
+      {prompts.map(p => <PromptCard key={p.id_prompt} prompt={p} isAdmin={isAdmin}
+        onSave={saveField} onSaveDefault={saveDefault} onRestoreDefault={restoreDefault} />)}
     </div>
     {errorMsg && <AlertModal title="Ошибка" message={errorMsg} onClose={() => setErrorMsg(null)} />}
   </>;
 }
 
-function PromptCard({ prompt, onSave }) {
+function PromptCard({ prompt, isAdmin, onSave, onSaveDefault, onRestoreDefault }) {
   const [systemPrompt, setSystemPrompt] = useState(prompt.system_prompt || "");
   const [userPromptTemplate, setUserPromptTemplate] = useState(prompt.user_prompt_template || "");
   const [description, setDescription] = useState(prompt.description || "");
@@ -159,6 +179,9 @@ function PromptCard({ prompt, onSave }) {
   }
 
   const updatedAt = prompt.updated_at ? formatDateTimeRu(prompt.updated_at) : null;
+  const matchesDefault =
+    (prompt.user_prompt_template || "") === (prompt.default_user_prompt_template || "")
+    && (prompt.system_prompt || "") === (prompt.default_system_prompt || "");
 
   return <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, overflow: "hidden" }}>
     <button type="button" onClick={() => setCollapsed(c => !c)}
@@ -213,7 +236,13 @@ function PromptCard({ prompt, onSave }) {
           style={{ ...textareaStyle, fontFamily: "monospace", fontSize: 12 }}
         />
       </div>
-      {updatedAt && <div style={{ fontSize: 10, color: T.textMuted, textAlign: "right", fontStyle: "italic" }}>
+      {isAdmin && <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 4, borderTop: "1px dashed " + T.borderLight, marginTop: 4 }}>
+        <Btn small primary onClick={() => onSaveDefault(prompt.id_prompt)} disabled={matchesDefault}>Обновить дефолт</Btn>
+        <Btn small onClick={() => onRestoreDefault(prompt.id_prompt)} disabled={matchesDefault || !prompt.default_user_prompt_template}>Восстановить дефолт</Btn>
+        {!matchesDefault && <span style={{ fontSize: 11, color: T.orange, fontWeight: 600 }}>Текущий промпт отличается от дефолтного</span>}
+        {updatedAt && <span style={{ fontSize: 10, color: T.textMuted, fontStyle: "italic", marginLeft: "auto" }}>Обновлено: {updatedAt}</span>}
+      </div>}
+      {!isAdmin && updatedAt && <div style={{ fontSize: 10, color: T.textMuted, textAlign: "right", fontStyle: "italic" }}>
         Обновлено: {updatedAt}
       </div>}
     </div>}

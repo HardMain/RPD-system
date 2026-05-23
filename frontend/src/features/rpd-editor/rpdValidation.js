@@ -56,24 +56,36 @@ function topicsState(rpd, type) {
   return nonEmpty.every(t => f(t.title));
 }
 
+function _outcomeDescriptionFilled(desc) {
+  return f(desc) && !(desc || "").toLowerCase().includes("требуется заполнение");
+}
+
 function outcomesState(rpd) {
   const rows = rpd.learning_outcomes || [];
   if (rows.length === 0) return false;
-  return rows.every(o => f(o.outcome_text) && f(o.assessment_tool));
+  return rows.every(o =>
+    f(o.competency_code) && f(o.indicator_code) && _outcomeDescriptionFilled(o.indicator_description)
+    && f(o.outcome_text) && f(o.assessment_tool)
+  );
 }
 
 function printedLitState(rpd) {
   const rows = (rpd.literature || []).filter(l => !f(l.url));
-  const nonEmpty = rows.filter(l => f(l.title) || l.copies_count);
+  const nonEmpty = rows.filter(l => f(l.title) || (l.copies_count || 0) > 0);
   if (nonEmpty.length === 0) return false;
-  return nonEmpty.every(l => f(l.title));
+  return nonEmpty.every(l => f(l.title) && (l.copies_count || 0) > 0);
 }
 
 function electronicLitState(rpd) {
   const rows = (rpd.literature || []).filter(l => f(l.url));
-  const nonEmpty = rows.filter(l => f(l.title) || f(l.url));
+  const nonEmpty = rows.filter(l =>
+    f(l.source_type) || f(l.title) || f(l.url) || (Array.isArray(l.availability) && l.availability.length > 0)
+  );
   if (nonEmpty.length === 0) return false;
-  return nonEmpty.every(l => f(l.title) && f(l.url));
+  return nonEmpty.every(l =>
+    f(l.source_type) && f(l.title) && f(l.url)
+    && Array.isArray(l.availability) && l.availability.length > 0
+  );
 }
 
 function softwareState(rpd) {
@@ -92,9 +104,9 @@ function databasesState(rpd) {
 
 function mtechState(rpd) {
   const rows = rpd.material_tech || [];
-  const nonEmpty = rows.filter(m => f(m.room_type) || f(m.equipment) || m.quantity);
+  const nonEmpty = rows.filter(m => f(m.room_type) || f(m.equipment) || (m.quantity || 0) > 0);
   if (nonEmpty.length === 0) return false;
-  return nonEmpty.every(m => f(m.room_type) && f(m.equipment));
+  return nonEmpty.every(m => f(m.room_type) && f(m.equipment) && (m.quantity || 0) > 0);
 }
 
 export function getValidationErrors(rpd, editTexts) {
@@ -107,7 +119,7 @@ export function getValidationErrors(rpd, editTexts) {
   if (!f(editTexts.objects)) e.push({ secKey: "1.2", label: "1.2 Изучаемые объекты" });
   if (!f(editTexts.requirements)) e.push({ secKey: "1.3", label: "1.3 Входные требования" });
 
-  if (!outcomesState(rpd)) e.push({ secKey: "2", label: "2. Результаты обучения — для каждого индикатора заполните результат и средство оценки" });
+  if (!outcomesState(rpd)) e.push({ secKey: "2", label: "2. Результаты обучения — в каждой строке заполните компетенцию, индекс индикатора, его описание (без «требуется заполнение»), результат обучения и средство оценки" });
 
   if (!_sectionRowsAllComplete(rpd)) {
     e.push({ secKey: "4", label: "4. Содержание — в каждой строке должны быть заполнены название и краткое содержание" });
@@ -123,11 +135,11 @@ export function getValidationErrors(rpd, editTexts) {
   if (!f(editTexts.educational_tech)) e.push({ secKey: "5.1", label: "5.1 Образовательные технологии" });
   if (!f(editTexts.methodical_recommendations)) e.push({ secKey: "5.2", label: "5.2 Методические указания" });
 
-  if (!printedLitState(rpd)) e.push({ secKey: "6.1", label: "6.1 Печатная литература — заполните название в каждой строке" });
-  if (!electronicLitState(rpd)) e.push({ secKey: "6.2", label: "6.2 Электронная литература — заполните название и ссылку в каждой строке" });
+  if (!printedLitState(rpd)) e.push({ secKey: "6.1", label: "6.1 Печатная литература — в каждой строке заполните название и укажите количество экземпляров больше 0" });
+  if (!electronicLitState(rpd)) e.push({ secKey: "6.2", label: "6.2 Электронная литература — в каждой строке выберите вид, заполните наименование, ссылку и хотя бы одну позицию доступности" });
   if (!softwareState(rpd)) e.push({ secKey: "6.3", label: "6.3 ПО — заполните вид и наименование в каждой строке" });
   if (!databasesState(rpd)) e.push({ secKey: "6.4", label: "6.4 БД и ИСС — заполните наименование и ссылку в каждой строке" });
-  if (!mtechState(rpd)) e.push({ secKey: "7", label: "7. МТО — заполните тип помещения и оборудование в каждой строке" });
+  if (!mtechState(rpd)) e.push({ secKey: "7", label: "7. МТО — в каждой строке заполните вид занятий, оборудование и количество единиц больше 0" });
 
   if (!rpd.fos_main && !(rpd.fos_other || []).length) e.push({ secKey: "8", label: "8. Фонд оценочных средств (прикрепите файл)" });
   if (!(rpd.developers || []).length) e.push({ secKey: "developers", label: "Не добавлен ни один разработчик (откройте «Свойства РПД»)" });

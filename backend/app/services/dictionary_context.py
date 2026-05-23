@@ -146,4 +146,5 @@ async def dictionary_catalog(
         return None
     if not block:
         return None
-    return block[:_CATALOG_CHAR_LIMIT], label
+    marked = f"=== ИСТОЧНИК — справочник наименований ===\n" + block
+    return marked[:_CATALOG_CHAR_LIMIT], label

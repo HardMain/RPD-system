@@ -1,3 +1,6 @@
+import random
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -31,6 +34,16 @@ router = APIRouter(prefix="/api/llm", tags=["llm"])
 
 _LITERATURE_SECTION_KEYS = set(_PRINTED_SOURCE_TYPES.keys()) | {"literature_electronic"}
 _TOPIC_SECTION_KEYS = {"topics_practice": "practice", "topics_lab": "lab"}
+
+_SHORT_NEGATIVE_RE = re.compile(
+    r"(не\s+предусмотр|не\s+треб|не\s+устан|отсутству|не\s+примен|нет\s+таковых|нет\b)",
+    re.IGNORECASE,
+)
+
+
+def _is_short_negative(text: str) -> bool:
+    clean = (text or "").strip()
+    return 0 < len(clean) <= 60 and bool(_SHORT_NEGATIVE_RE.search(clean))
 
 
 @router.post("/{rpd_id}/generate", response_model=LlmGenerateResponse)
@@ -145,7 +158,10 @@ async def generate(
     if section_rows:
         examples = []
         for chunk, doc in section_rows:
-            examples.append(f"--- Пример этого же раздела из «{doc.filename}» ---\n{chunk.content}")
+            examples.append(
+                f"=== ИСТОЧНИК — документ преподавателя «{doc.filename}», распознанный раздел ===\n"
+                + chunk.content
+            )
             context_sources.append(f"Документ: {doc.filename} (раздел)")
         extra_context += ("\n\n" if extra_context.strip() else "") + "\n\n".join(examples)
     else:
@@ -155,16 +171,39 @@ async def generate(
             for doc in docs_to_use[:5]:
                 text = await extract_text_from_file(doc.file_path)
                 if text:
-                    doc_texts.append(f"--- {doc.filename} ---\n{text}")
+                    doc_texts.append(
+                        f"=== ИСТОЧНИК — документ преподавателя «{doc.filename}», без разметки разделов ===\n"
+                        + text
+                    )
                     context_sources.append(f"Документ: {doc.filename} (целиком)")
             if doc_texts:
                 extra_context += ("\n\n" if extra_context.strip() else "") + "\n\n".join(doc_texts)
 
     approved = await approved_rpd_example(db, rpd, data.section)
     if approved:
-        approved_block, approved_src = approved
+        approved_block, approved_src, approved_text = approved
         extra_context += ("\n\n" if extra_context.strip() else "") + approved_block
         context_sources.append(approved_src)
+        if _is_short_negative(approved_text):
+            if random.random() < 0.5:
+                mode_label = "краткий ответ"
+                extra_context += (
+                    "\n\nЗАМЕЧАНИЕ к образцу выше: в нём раздел заполнен лаконичным "
+                    "отказом («" + approved_text.strip() + "»). Это допустимый способ "
+                    "оформления — ответь так же коротко, без расширения и без выдумывания "
+                    "содержания. Достаточно одной короткой фразы аналогичного смысла."
+                )
+            else:
+                mode_label = "развёрнутый ответ"
+                extra_context += (
+                    "\n\nЗАМЕЧАНИЕ к образцу выше: в нём раздел заполнен лаконичным "
+                    "отказом («" + approved_text.strip() + "»), но для текущей "
+                    "дисциплины сформулируй РЕАЛЬНОЕ содержание раздела (например, "
+                    "для входных требований — необходимые пререквизиты, ранее изученные "
+                    "дисциплины и базовые знания). Не повторяй короткий отказ из "
+                    "образца — напиши развёрнутый осмысленный текст по предмету."
+                )
+            context_sources[-1] = approved_src + " — режим: " + mode_label
 
     prompt_row = (await db.execute(
         select(LlmPrompt).where(LlmPrompt.section_key == data.section)

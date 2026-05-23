@@ -1,23 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F, fieldLabel, inputBase, formErrorBox, sectionLabel, THEMES, applyTheme, THEME_LIGHT, THEME_DARK } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { PasswordField } from "../components/PasswordField.jsx";
 import { Avatar, AVATAR_COLORS } from "../components/Avatar.jsx";
-import { KeyIcon, InfoIcon, GearIcon, ThemeIcon } from "../components/icons.jsx";
+import { KeyIcon, InfoIcon, GearIcon, ThemeIcon, SparkleIcon } from "../components/icons.jsx";
 
-const SECTIONS = [
+const BASE_SECTIONS = [
   { id: "profile", label: "Профиль", icon: <GearIcon size={15} /> },
   { id: "security", label: "Безопасность", icon: <KeyIcon size={15} /> },
   { id: "appearance", label: "Внешний вид", icon: <ThemeIcon size={15} /> },
   { id: "system", label: "Система", icon: <InfoIcon size={15} /> },
 ];
+const LLM_SECTION = { id: "llm", label: "LLM", icon: <SparkleIcon /> };
 
 export function ProfilePage({ user, section = "profile", onUserUpdated, onBack }) {
-  const [active, setActive] = useState(SECTIONS.some(s => s.id === section) ? section : "profile");
+  const isAdmin = api.userCan(user, "*");
+  const sections = useMemo(() => isAdmin ? [...BASE_SECTIONS, LLM_SECTION] : BASE_SECTIONS, [isAdmin]);
+  const [active, setActive] = useState(sections.some(s => s.id === section) ? section : "profile");
   useEffect(() => {
-    if (SECTIONS.some(s => s.id === section)) setActive(section);
-  }, [section]);
+    if (sections.some(s => s.id === section)) setActive(section);
+  }, [section, sections]);
 
   return <div style={{ flex: 1, overflow: "auto", scrollbarGutter: "stable", background: T.bg }}>
     {onBack && <div style={{ maxWidth: 880, margin: "20px auto 0", padding: "0 24px" }}>
@@ -25,7 +28,7 @@ export function ProfilePage({ user, section = "profile", onUserUpdated, onBack }
     </div>}
     <div style={{ maxWidth: 880, margin: onBack ? "14px auto 24px" : "24px auto", padding: "0 24px", display: "flex", gap: 24, alignItems: "flex-start" }}>
       <div style={{ flex: "0 0 200px", background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 10, padding: 8, position: "sticky", top: 24 }}>
-        {SECTIONS.map(s => (
+        {sections.map(s => (
           <button key={s.id} onClick={() => setActive(s.id)} style={{
             display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left",
             padding: "10px 12px", border: "none", borderRadius: 7,
@@ -45,6 +48,7 @@ export function ProfilePage({ user, section = "profile", onUserUpdated, onBack }
         {active === "security" && <SecuritySection />}
         {active === "appearance" && <AppearanceSection user={user} onUserUpdated={onUserUpdated} />}
         {active === "system" && <SystemSection user={user} />}
+        {active === "llm" && isAdmin && <LlmSection />}
       </div>
     </div>
   </div>;
@@ -237,9 +241,7 @@ function SystemSection({ user }) {
   const [h, setH] = useState(null);
   useEffect(() => { api.getHealth().then(r => setH(r.data)).catch(() => {}); }, []);
   const llmOnline = h?.llm?.mode === "online";
-  const isAdmin = api.userCan(user, "*");
-  const canEditSettings = isAdmin || api.userCan(user, "users.create");
-  const reloadHealth = () => api.getHealth().then(r => setH(r.data)).catch(() => {});
+  const canEditSettings = api.userCan(user, "*") || api.userCan(user, "users.create");
   const cards = [
     { title: "Статус", rows: [
       ["Сервер", h ? "online" : "…", h ? T.green : T.orange],
@@ -261,31 +263,123 @@ function SystemSection({ user }) {
         </div>)}
       </div>)}
       {canEditSettings && <ApproverSettings />}
-      {isAdmin && <LlmModelSelector onChanged={reloadHealth} />}
     </div>
+  </div>;
+}
+
+function LlmSection() {
+  return <div>
+    <Heading>Настройки LLM</Heading>
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <LlmModelSelector />
+      <SystemPromptEditor />
+    </div>
+  </div>;
+}
+
+function SystemPromptEditor() {
+  const [prompt, setPrompt] = useState("");
+  const [savedPrompt, setSavedPrompt] = useState("");
+  const [savedDefault, setSavedDefault] = useState("");
+  const [loaded, setLoaded] = useState(false);
+  const [busy, setBusy] = useState(null);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState(null);
+
+  const applyOut = (data) => {
+    setPrompt(data.prompt || "");
+    setSavedPrompt(data.prompt || "");
+    setSavedDefault(data.saved_default || "");
+  };
+
+  useEffect(() => {
+    api.adminGetSystemPrompt()
+      .then(r => { applyOut(r.data); setLoaded(true); })
+      .catch(() => setError("Не удалось загрузить системный промпт"));
+  }, []);
+
+  const matchesDefault = (savedPrompt || "").trim() === (savedDefault || "").trim();
+
+  async function run(action, fn) {
+    setBusy(action);
+    setError(null);
+    setSaved(false);
+    try {
+      const r = await fn();
+      applyOut(r.data);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      setError(e?.response?.data?.detail || "Не удалось выполнить действие");
+    }
+    setBusy(null);
+  }
+
+  function commit() {
+    if (prompt === savedPrompt) return;
+    if (!prompt.trim()) { setError("Системный промпт не может быть пустым"); setPrompt(savedPrompt); return; }
+    run("save", () => api.adminSetSystemPrompt(prompt));
+  }
+  const saveDefault = () => run("save-default", () => api.adminSaveSystemPromptDefault());
+  const restoreDefault = () => run("restore-default", () => api.adminRestoreSystemPromptDefault());
+
+  return <div style={{ background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 16 }}>
+    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Системный промпт</div>
+    <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
+      Базовая инструкция модели для всех разделов РПД. Сохраняется автоматически при потере фокуса. Per-section промпты из админ-вкладки «LLM → Промпты по разделам» имеют приоритет.
+    </div>
+    {loaded ? <>
+      <textarea value={prompt} onChange={e => setPrompt(e.target.value)} onBlur={commit} disabled={busy !== null}
+        style={{
+          width: "100%", minHeight: 280, padding: "10px 12px", border: "1px solid " + T.border,
+          borderRadius: 6, background: T.surface, fontSize: 12, fontFamily: F, color: T.text,
+          outline: "none", resize: "vertical", lineHeight: 1.5, boxSizing: "border-box",
+        }} />
+      <div style={{ marginTop: 10, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <Btn small onClick={saveDefault} disabled={busy !== null || matchesDefault} title="Сделать текущий промпт сохранённым дефолтом">
+          {busy === "save-default" ? "..." : "Обновить дефолт"}
+        </Btn>
+        <Btn small onClick={restoreDefault} disabled={busy !== null || matchesDefault} title="Откатить промпт к сохранённому дефолту">
+          {busy === "restore-default" ? "..." : "Восстановить дефолт"}
+        </Btn>
+        {saved && <span style={{ fontSize: 12, color: T.green, fontWeight: 600 }}>Сохранено</span>}
+        {!matchesDefault && !saved && <span style={{ fontSize: 12, color: T.orange, fontWeight: 600 }}>Текущий промпт отличается от дефолтного</span>}
+      </div>
+    </> : <div style={{ fontSize: 12, color: T.textMuted }}>Загрузка…</div>}
+    {error && <div style={{ ...formErrorBox, marginTop: 10 }}>{error}</div>}
   </div>;
 }
 
 function ApproverSettings() {
   const [position, setPosition] = useState("");
   const [name, setName] = useState("");
+  const [savedPosition, setSavedPosition] = useState("");
+  const [savedName, setSavedName] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState(null);
   useEffect(() => {
     api.adminGetApprover()
-      .then(r => { setPosition(r.data.position || ""); setName(r.data.name || ""); setLoaded(true); })
+      .then(r => {
+        const p = r.data.position || "", n = r.data.name || "";
+        setPosition(p); setSavedPosition(p);
+        setName(n); setSavedName(n);
+        setLoaded(true);
+      })
       .catch(() => setError("Не удалось загрузить настройку"));
   }, []);
-  async function save() {
+  async function commit(nextPosition, nextName) {
+    const p = nextPosition.trim(), n = nextName.trim();
+    if (p === savedPosition && n === savedName) return;
     setSaving(true);
     setError(null);
     setSaved(false);
     try {
-      const r = await api.adminSetApprover(position.trim(), name.trim());
-      setPosition(r.data.position || "");
-      setName(r.data.name || "");
+      const r = await api.adminSetApprover(p, n);
+      const rp = r.data.position || "", rn = r.data.name || "";
+      setPosition(rp); setSavedPosition(rp);
+      setName(rn); setSavedName(rn);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
@@ -294,24 +388,25 @@ function ApproverSettings() {
     setSaving(false);
   }
   return <div style={{ background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 16 }}>
-    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Утверждающий (блок «УТВЕРЖДАЮ»)</div>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12, gap: 12 }}>
+      <div style={{ fontSize: 13, fontWeight: 700 }}>Утверждающий (блок «УТВЕРЖДАЮ»)</div>
+      {saved && <span style={{ fontSize: 12, color: T.green, fontWeight: 600 }}>Сохранено</span>}
+    </div>
     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 12 }}>
-      Должность и ФИО лица, утверждающего РПД. Подставляются в шапку всех документов при скачивании.
+      Должность и ФИО лица, утверждающего РПД. Сохраняется автоматически при потере фокуса. Подставляются в шапку всех документов при скачивании.
     </div>
     {loaded ? <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div>
         <div style={fieldLabel}>Должность</div>
-        <input value={position} onChange={e => setPosition(e.target.value)} disabled={saving}
+        <input value={position} onChange={e => setPosition(e.target.value)}
+          onBlur={() => commit(position, name)} disabled={saving}
           placeholder="Проректор по образовательной деятельности" style={inputBase} />
       </div>
       <div>
         <div style={fieldLabel}>ФИО</div>
-        <input value={name} onChange={e => setName(e.target.value)} disabled={saving}
+        <input value={name} onChange={e => setName(e.target.value)}
+          onBlur={() => commit(position, name)} disabled={saving}
           placeholder="И.Ю.Черникова" style={inputBase} />
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <Btn small primary onClick={save} disabled={saving}>Сохранить</Btn>
-        {saved && <span style={{ fontSize: 12, color: T.green, fontWeight: 600 }}>Сохранено</span>}
       </div>
     </div> : <div style={{ fontSize: 12, color: T.textMuted }}>Загрузка…</div>}
     {error && <div style={{ ...formErrorBox, marginTop: 10 }}>{error}</div>}

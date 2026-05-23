@@ -283,10 +283,13 @@ async def apply_software(db: AsyncSession, rpd_id: int, items: list[dict]) -> in
         name = (item.get("name") or "").strip()
         if not name:
             continue
+        lic = (item.get("license_type") or "").strip()
+        if lic.startswith("[") and lic.endswith("]"):
+            lic = lic[1:-1].strip()
         db.add(RpdSoftware(
             id_rpd=rpd_id,
             name=name[:300],
-            license_type=(item.get("license_type") or "").strip() or None,
+            license_type=lic or None,
         ))
         created += 1
     if created:

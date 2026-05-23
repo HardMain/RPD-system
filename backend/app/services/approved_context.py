@@ -25,17 +25,10 @@ _LIT_SOURCE_TYPE = {
 
 
 def _fmt_lit(lit) -> str:
-    parts = [lit.title]
-    extra = ", ".join(
-        x for x in [lit.authors, str(lit.year) if lit.year else None, lit.publisher] if x
-    )
-    if extra:
-        parts.append(f"({extra})")
-    if lit.copies_count:
-        parts.append(f"[{lit.copies_count} экз.]")
+    parts = [lit.title or ""]
     if lit.url:
         parts.append(lit.url)
-    return " ".join(p for p in parts if p)
+    return " ".join(p for p in parts if p).strip()
 
 
 def _section_text(rpd: Rpd, section_key: str) -> str:
@@ -111,11 +104,11 @@ _LOADS = (
 
 async def approved_rpd_example(
     db: AsyncSession, current_rpd: Rpd, section_key: str, *, max_chars: int = 4000
-) -> str | None:
+) -> tuple[str, str, str] | None:
     link = current_rpd.bup_links[0] if current_rpd.bup_links else None
     dir_code = link.direction_code if link else None
 
-    same_disc = (
+    same_disc_stmt = (
         select(Rpd)
         .where(
             Rpd.status == APPROVED_STATUS,
@@ -123,38 +116,52 @@ async def approved_rpd_example(
             Rpd.id_discipline == current_rpd.id_discipline,
         )
         .order_by(Rpd.updated_at.desc())
-        .limit(3)
+        .limit(10)
         .options(*_LOADS)
     )
-    candidates = list((await db.execute(same_disc)).scalars().all())
-    label = "по той же дисциплине"
-
-    if not candidates and dir_code:
-        same_dir = (
-            select(Rpd)
-            .join(RpdBupDiscipline, RpdBupDiscipline.id_rpd == Rpd.id_rpd)
-            .where(
-                Rpd.status == APPROVED_STATUS,
-                Rpd.id_rpd != current_rpd.id_rpd,
-                RpdBupDiscipline.direction_code == dir_code,
-            )
-            .order_by(Rpd.updated_at.desc())
-            .limit(3)
-            .distinct()
-            .options(*_LOADS)
+    same_dir_stmt = (
+        select(Rpd)
+        .join(RpdBupDiscipline, RpdBupDiscipline.id_rpd == Rpd.id_rpd)
+        .where(
+            Rpd.status == APPROVED_STATUS,
+            Rpd.id_rpd != current_rpd.id_rpd,
+            RpdBupDiscipline.direction_code == dir_code,
         )
-        candidates = list((await db.execute(same_dir)).scalars().all())
-        label = "по тому же направлению"
+        .order_by(Rpd.updated_at.desc())
+        .limit(10)
+        .distinct()
+        .options(*_LOADS)
+    ) if dir_code else None
+    any_appr_stmt = (
+        select(Rpd)
+        .where(
+            Rpd.status == APPROVED_STATUS,
+            Rpd.id_rpd != current_rpd.id_rpd,
+        )
+        .order_by(Rpd.updated_at.desc())
+        .limit(20)
+        .options(*_LOADS)
+    )
 
-    for cand in candidates:
-        text = _section_text(cand, section_key)
-        if text and len(text) >= 20:
-            disc = cand.discipline.name if cand.discipline else "дисциплина"
-            block = (
-                f"--- Образец этого раздела из согласованной РПД {label} "
-                f"(дисциплина «{disc}»). Это вспомогательный ориентир: если в "
-                f"прикреплённых документах примера нет — опирайся на его структуру, "
-                f"содержание адаптируй под текущую дисциплину ---\n" + text[:max_chars]
-            )
-            return block, f"Согласованная РПД «{disc}» ({label})"
+    levels: list[tuple[str, object]] = [("по той же дисциплине", same_disc_stmt)]
+    if same_dir_stmt is not None:
+        levels.append(("по тому же направлению", same_dir_stmt))
+    levels.append(("образец заполнения раздела (другая дисциплина)", any_appr_stmt))
+
+    seen_ids: set[int] = set()
+    for label, stmt in levels:
+        candidates = list((await db.execute(stmt)).scalars().all())
+        for cand in candidates:
+            if cand.id_rpd in seen_ids:
+                continue
+            seen_ids.add(cand.id_rpd)
+            text = _section_text(cand, section_key)
+            if text and len(text) >= 3:
+                disc = cand.discipline.name if cand.discipline else "дисциплина"
+                trimmed = text[:max_chars]
+                block = (
+                    f"=== ИСТОЧНИК — согласованная РПД «{disc}», {label} ===\n"
+                    + trimmed
+                )
+                return block, f"Согласованная РПД «{disc}» ({label})", trimmed
     return None

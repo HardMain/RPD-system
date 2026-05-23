@@ -120,12 +120,12 @@ async def make_sendable_rpd(client, headers, *, developer_id, reviewers,
         assert tl.status_code == 201, tl.text
 
     lit = await client.post(f"/api/rpd/{rid}/literature", headers=headers, json={
-        "source_type": "Учебные и научные издания", "title": "Учебник",
+        "source_type": "Учебные и научные издания", "title": "Учебник", "copies_count": 5,
     })
     assert lit.status_code == 201, lit.text
 
     mt = await client.post(f"/api/rpd/{rid}/material-tech", headers=headers, json={
-        "room_type": "Лекция", "equipment": "Проектор",
+        "room_type": "Лекция", "equipment": "Проектор", "quantity": 1,
     })
     assert mt.status_code == 201, mt.text
 

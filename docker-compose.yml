@@ -41,6 +41,7 @@ services:
       LLM_API_KEY: ${LLM_API_KEY:-demo}
       LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
       LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+      LLM_DEBUG: ${LLM_DEBUG:-0}
       SECRET_KEY: ${SECRET_KEY:-super-secret-dev-key-change-in-prod}
       UPLOAD_DIR: /app/uploads
       STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}

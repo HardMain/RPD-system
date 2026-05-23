@@ -44,11 +44,14 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
     outcomes = []
     for lo in r.learning_outcomes:
         ind = lo.indicator
+        comp = ind.competency if ind else None
         outcomes.append(LearningOutcomeOut(
             id_outcome=lo.id_outcome,
             id_indicator=lo.id_indicator,
             indicator_code=lo.indicator_code or (ind.code if ind else None),
-            competency_code=lo.competency_code or (ind.competency.code if ind and ind.competency else None),
+            indicator_description=lo.indicator_description or (ind.description if ind else None),
+            competency_code=lo.competency_code or (comp.code if comp else None),
+            competency_name=lo.competency_name or (comp.name if comp else None),
             outcome_text=lo.outcome_text,
             assessment_tool=lo.assessment_tool,
         ))
@@ -973,10 +976,13 @@ async def add_outcome(rpd_id: int, data: LearningOutcomeCreate, db: AsyncSession
     if ind is not None:
         _fill_outcome_snapshot(lo, ind)
     await db.commit()
+    comp = ind.competency if ind else None
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
-        indicator_code=ind.code if ind else None,
-        competency_code=ind.competency.code if ind and ind.competency else None,
+        indicator_code=lo.indicator_code or (ind.code if ind else None),
+        indicator_description=lo.indicator_description or (ind.description if ind else None),
+        competency_code=lo.competency_code or (comp.code if comp else None),
+        competency_name=lo.competency_name or (comp.name if comp else None),
         outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
     )
 
@@ -1000,10 +1006,13 @@ async def update_outcome(outcome_id: int, data: LearningOutcomeCreate, db: Async
     )
     lo = result.scalar_one()
     ind = lo.indicator
+    comp = ind.competency if ind else None
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
-        indicator_code=ind.code if ind else None,
-        competency_code=ind.competency.code if ind and ind.competency else None,
+        indicator_code=lo.indicator_code or (ind.code if ind else None),
+        indicator_description=lo.indicator_description or (ind.description if ind else None),
+        competency_code=lo.competency_code or (comp.code if comp else None),
+        competency_name=lo.competency_name or (comp.name if comp else None),
         outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
     )
 
@@ -1139,7 +1148,9 @@ async def add_manual_outcome(
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
         indicator_code=lo.indicator_code,
+        indicator_description=lo.indicator_description,
         competency_code=lo.competency_code,
+        competency_name=lo.competency_name,
         outcome_text=lo.outcome_text,
         assessment_tool=lo.assessment_tool,
     )
@@ -1172,7 +1183,9 @@ async def patch_outcome_snapshot(
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
         indicator_code=lo.indicator_code,
+        indicator_description=lo.indicator_description,
         competency_code=lo.competency_code,
+        competency_name=lo.competency_name,
         outcome_text=lo.outcome_text,
         assessment_tool=lo.assessment_tool,
     )
@@ -1390,10 +1403,13 @@ async def upsert_outcome(
     if rpd_row:
         rpd_row.updated_at = datetime.now(timezone.utc)
     await db.commit()
+    comp = ind.competency if ind else None
     return LearningOutcomeOut(
         id_outcome=lo.id_outcome, id_indicator=lo.id_indicator,
         indicator_code=lo.indicator_code or (ind.code if ind else None),
-        competency_code=lo.competency_code or (ind.competency.code if ind and ind.competency else None),
+        indicator_description=lo.indicator_description or (ind.description if ind else None),
+        competency_code=lo.competency_code or (comp.code if comp else None),
+        competency_name=lo.competency_name or (comp.name if comp else None),
         outcome_text=lo.outcome_text, assessment_tool=lo.assessment_tool,
     )
 
@@ -1500,25 +1516,41 @@ def _topics_complete(rpd: Rpd, kind: str) -> bool:
     non_empty = [t for t in rows if _f(t.title)]
     return bool(non_empty)
 
+def _outcome_description_filled(desc) -> bool:
+    return _f(desc) and "требуется заполнение" not in (desc or "").lower()
+
 def _outcomes_complete(rpd: Rpd) -> bool:
     rows = rpd.learning_outcomes or []
     if not rows:
         return False
-    return all(_f(o.outcome_text) and _f(o.assessment_tool) for o in rows)
+    return all(
+        _f(o.competency_code) and _f(o.indicator_code)
+        and _outcome_description_filled(o.indicator_description)
+        and _f(o.outcome_text) and _f(o.assessment_tool)
+        for o in rows
+    )
 
 def _printed_lit_complete(rpd: Rpd) -> bool:
     rows = [l for l in (rpd.literature or []) if not (l.url or "").strip()]
-    non_empty = [l for l in rows if _f(l.title) or l.copies_count]
+    non_empty = [l for l in rows if _f(l.title) or (l.copies_count or 0) > 0]
     if not non_empty:
         return False
-    return all(_f(l.title) for l in non_empty)
+    return all(_f(l.title) and (l.copies_count or 0) > 0 for l in non_empty)
 
 def _electronic_lit_complete(rpd: Rpd) -> bool:
     rows = [l for l in (rpd.literature or []) if (l.url or "").strip()]
-    non_empty = [l for l in rows if _f(l.title) or _f(l.url)]
+    non_empty = [
+        l for l in rows
+        if _f(l.source_type) or _f(l.title) or _f(l.url)
+        or (isinstance(l.availability, list) and len(l.availability) > 0)
+    ]
     if not non_empty:
         return False
-    return all(_f(l.title) and _f(l.url) for l in non_empty)
+    return all(
+        _f(l.source_type) and _f(l.title) and _f(l.url)
+        and isinstance(l.availability, list) and len(l.availability) > 0
+        for l in non_empty
+    )
 
 def _software_complete(rpd: Rpd) -> bool:
     rows = rpd.software or []
@@ -1536,10 +1568,10 @@ def _databases_complete(rpd: Rpd) -> bool:
 
 def _mtech_complete(rpd: Rpd) -> bool:
     rows = rpd.material_tech or []
-    non_empty = [m for m in rows if _f(m.room_type) or _f(m.equipment) or m.quantity]
+    non_empty = [m for m in rows if _f(m.room_type) or _f(m.equipment) or (m.quantity or 0) > 0]
     if not non_empty:
         return False
-    return all(_f(m.room_type) and _f(m.equipment) for m in non_empty)
+    return all(_f(m.room_type) and _f(m.equipment) and (m.quantity or 0) > 0 for m in non_empty)
 
 def _incomplete_sections(rpd: Rpd) -> list[str]:
     missing: list[str] = []
@@ -1556,7 +1588,7 @@ def _incomplete_sections(rpd: Rpd) -> list[str]:
     if not _f(rpd.requirements_text):
         missing.append("1.3 Входные требования")
     if not _outcomes_complete(rpd):
-        missing.append("2. Результаты обучения — для каждого индикатора заполните результат и средство оценки")
+        missing.append("2. Результаты обучения — в каждой строке заполните компетенцию, индекс индикатора, его описание (без «требуется заполнение»), результат обучения и средство оценки")
     if not _section_rows_complete(rpd):
         missing.append("4. Содержание — в каждой строке должны быть заполнены название и краткое содержание")
     elif not _section_hours_match(rpd):
@@ -1571,15 +1603,15 @@ def _incomplete_sections(rpd: Rpd) -> list[str]:
     if not _f(rpd.methodical_recommendations):
         missing.append("5.2 Методические указания")
     if not _printed_lit_complete(rpd):
-        missing.append("6.1 Печатная литература — заполните название в каждой строке")
+        missing.append("6.1 Печатная литература — в каждой строке заполните название и укажите количество экземпляров больше 0")
     if not _electronic_lit_complete(rpd):
-        missing.append("6.2 Электронная литература — заполните название и ссылку в каждой строке")
+        missing.append("6.2 Электронная литература — в каждой строке выберите вид, заполните наименование, ссылку и хотя бы одну позицию доступности")
     if not _software_complete(rpd):
         missing.append("6.3 ПО — заполните вид и наименование в каждой строке")
     if not _databases_complete(rpd):
         missing.append("6.4 БД и ИСС — заполните наименование и ссылку в каждой строке")
     if not _mtech_complete(rpd):
-        missing.append("7. МТО — заполните тип помещения и оборудование в каждой строке")
+        missing.append("7. МТО — в каждой строке заполните вид занятий, оборудование и количество единиц больше 0")
     if not (rpd.fos_files or []):
         missing.append("8. Фонд оценочных средств (прикрепите файл)")
     return missing
