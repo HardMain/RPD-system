@@ -15,12 +15,20 @@ function box(border, bg) {
 }
 
 export function GenPlaque({ skey, keys, children }) {
-  const { generating, genResult } = useRpdEditor();
+  const { generating, genResult, outcomesGenProgress } = useRpdEditor();
   const ks = keys || (skey ? [skey] : []);
   if (generating && ks.includes(generating)) {
-    return <div style={box(T.accent, T.accentLight)}>Генерация содержания с помощью LLM…</div>;
+    let text = "Генерация содержания с помощью LLM…";
+    if (generating === "learning_outcomes" && outcomesGenProgress) {
+      const { index, total, label } = outcomesGenProgress;
+      text = `Генерация раздела 2 (${index} из ${total}): ${label}…`;
+    }
+    return <div style={box(T.accent, T.accentLight)}>{text}</div>;
   }
   if (genResult && ks.includes(genResult.key)) {
+    if (genResult.ok && genResult.reason === "empty_ok") {
+      return <div style={box(T.blue, T.blueLight)}>ℹ Модель не нашла данных для этого раздела — заполните вручную при необходимости</div>;
+    }
     if (genResult.ok) {
       return <div style={box(T.green, T.greenLight)}>✓ Раздел сгенерирован</div>;
     }

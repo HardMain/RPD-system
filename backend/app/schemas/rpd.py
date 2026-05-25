@@ -314,6 +314,7 @@ class LlmGenerateResponse(BaseModel):
     model: str
     tokens_used: int | None = None
     structural_created: int = 0
+    parsed_items_count: int | None = None
     context_chars: int = 0
     context_limit: int = 0
     context_sources: list[str] = []

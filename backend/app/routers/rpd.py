@@ -602,6 +602,45 @@ async def _replace_approval_route(db: AsyncSession, rpd: Rpd, reviewer_ids: list
             id_rpd=rpd.id_rpd, step_order=i, id_reviewer=uid, status="waiting",
         ))
 
+DEFAULT_REQUIREMENTS_TEXT = "Не предусмотрены"
+
+DEFAULT_EDUCATIONAL_TECH = (
+    "Проведение лекционных занятий по дисциплине основывается на активном методе обучения, "
+    "при котором учащиеся не пассивные слушатели, а активные участники занятия, отвечающие на "
+    "вопросы преподавателя. Вопросы преподавателя нацелены на активизацию процессов усвоения "
+    "материала, а также на развитие логического мышления. Преподаватель заранее намечает список "
+    "вопросов, стимулирующих ассоциативное мышление и установление связей с ранее освоенным "
+    "материалом.\n\n"
+    "Практические занятия проводятся на основе реализации метода обучения действием: "
+    "определяются проблемные области, формируются группы. При проведении практических занятий "
+    "преследуются следующие цели: применение знаний отдельных дисциплин и креативных методов "
+    "для решения проблем и приятия решений; отработка у обучающихся навыков командной работы, "
+    "межличностных коммуникаций и развитие лидерских качеств; закрепление основ теоретических "
+    "знаний.\n\n"
+    "При проведении учебных занятий используются интерактивные лекции, групповые дискуссии, "
+    "ролевые игры, тренинги и анализ ситуаций и имитационных моделей."
+)
+
+DEFAULT_METHODICAL_RECOMMENDATIONS = (
+    "При изучении дисциплины обучающимся целесообразно выполнять следующие рекомендации:\n"
+    "1. Изучение учебной дисциплины должно вестись систематически.\n"
+    "2. После изучения какого-либо раздела по учебнику или конспектным материалам "
+    "рекомендуется по памяти воспроизвести основные термины, определения, понятия раздела.\n"
+    "3. Особое внимание следует уделить выполнению отчетов по практическим занятиям и "
+    "индивидуальным комплексным заданиям на самостоятельную работу.\n"
+    "4. Вся тематика вопросов, изучаемых самостоятельно, задается на лекциях преподавателем. "
+    "Им же даются источники (в первую очередь вновь изданные в периодической научной литературе) "
+    "для более детального понимания вопросов, озвученных на лекции."
+)
+
+def _apply_default_boilerplate(rpd: Rpd) -> None:
+    if not (rpd.requirements_text or "").strip():
+        rpd.requirements_text = DEFAULT_REQUIREMENTS_TEXT
+    if not (rpd.educational_tech or "").strip():
+        rpd.educational_tech = DEFAULT_EDUCATIONAL_TECH
+    if not (rpd.methodical_recommendations or "").strip():
+        rpd.methodical_recommendations = DEFAULT_METHODICAL_RECOMMENDATIONS
+
 @router.post("/", response_model=RpdDetailOut, status_code=201)
 async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: User = Depends(get_current_user)):
     if not user_can(user, "rpd.create"):
@@ -621,6 +660,7 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
             status="Черновик",
             based_on_rpd_id=data.based_on_rpd_id,
         )
+        _apply_default_boilerplate(rpd)
         db.add(rpd)
         await db.flush()
         link = RpdBupDiscipline(id_rpd=rpd.id_rpd, id_bup_discipline=None)
@@ -684,6 +724,7 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
         status="Черновик",
         based_on_rpd_id=data.based_on_rpd_id,
     )
+    _apply_default_boilerplate(rpd)
     if data.based_on_rpd_id:
         base_result = await db.execute(
             select(Rpd).where(Rpd.id_rpd == data.based_on_rpd_id)
@@ -700,7 +741,9 @@ async def create_rpd(data: RpdCreate, db: AsyncSession = Depends(get_db), user: 
         if base:
             for field in ["goals_text", "tasks_text", "objects_text", "requirements_text",
                           "educational_tech", "methodical_recommendations"]:
-                setattr(rpd, field, getattr(base, field))
+                value = getattr(base, field)
+                if value:
+                    setattr(rpd, field, value)
             db.add(rpd)
             await db.flush()
 

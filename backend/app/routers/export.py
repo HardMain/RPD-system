@@ -20,7 +20,10 @@ from app.models import (
 from app.services import storage_service
 from app.services.docx_renderer import render_rpd_pdf_bytes
 from app.services.rpd_template_context import build_context
-from app.services.app_settings import get_approver, get_approver_signature_file_id
+from app.services.app_settings import (
+    get_approver, get_approver_signature_file_id, get_approver_signature_position,
+)
+from app.services.pdf_overlay import overlay_signature
 
 router = APIRouter(prefix="/api/export", tags=["export"])
 
@@ -135,9 +138,19 @@ async def _render(rpd: Rpd, link: RpdBupDiscipline | None, db: AsyncSession) -> 
     approval_date = _final_approval_date(rpd)
     context = build_context(rpd, bd=bd, link=link, approver=approver, approval_date=approval_date)
     try:
-        rpd_pdf = await asyncio.to_thread(render_rpd_pdf_bytes, template_path, context, signature_bytes)
+        rpd_pdf = await asyncio.to_thread(render_rpd_pdf_bytes, template_path, context, None)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Ошибка рендера PDF: {exc}")
+    if signature_bytes:
+        position = await get_approver_signature_position()
+        try:
+            rpd_pdf = await asyncio.to_thread(
+                overlay_signature, rpd_pdf, signature_bytes,
+                position["x"], position["y"],
+                position["width_mm"], position["height_mm"],
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Ошибка наложения подписи: {exc}")
     fos_bytes = _load_fos_main_bytes(rpd)
     if fos_bytes:
         try:

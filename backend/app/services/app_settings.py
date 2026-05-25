@@ -10,8 +10,18 @@ LLM_MODEL_KEY = "llm_model"
 APPROVER_POSITION_KEY = "approver_position"
 APPROVER_NAME_KEY = "approver_name"
 APPROVER_SIGNATURE_FILE_ID_KEY = "approver_signature_file_id"
+APPROVER_SIGNATURE_X_KEY = "approver_signature_x"
+APPROVER_SIGNATURE_Y_KEY = "approver_signature_y"
+APPROVER_SIGNATURE_WIDTH_MM_KEY = "approver_signature_width_mm"
+APPROVER_SIGNATURE_HEIGHT_MM_KEY = "approver_signature_height_mm"
 DEFAULT_APPROVER_POSITION = "Проректор по образовательной деятельности"
 DEFAULT_APPROVER_NAME = "И.Ю.Черникова"
+DEFAULT_APPROVER_SIGNATURE_X = 0.62
+DEFAULT_APPROVER_SIGNATURE_Y = 0.085
+DEFAULT_APPROVER_SIGNATURE_WIDTH_MM = 25.0
+DEFAULT_APPROVER_SIGNATURE_HEIGHT_MM = 10.0
+SIGNATURE_MIN_MM = 5.0
+SIGNATURE_MAX_MM = 80.0
 
 LLM_SYSTEM_PROMPT_KEY = "llm_system_prompt"
 LLM_SYSTEM_PROMPT_DEFAULT_KEY = "llm_system_prompt_default"
@@ -111,3 +121,44 @@ async def get_approver_signature_file_id() -> int | None:
         return int(raw)
     except (TypeError, ValueError):
         return None
+
+
+def _parse_fraction(value: str | None, default: float) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    if f < 0.0:
+        return 0.0
+    if f > 1.0:
+        return 1.0
+    return f
+
+
+def _parse_mm(value: str | None, default: float) -> float:
+    if value is None or value == "":
+        return default
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return default
+    if f < SIGNATURE_MIN_MM:
+        return SIGNATURE_MIN_MM
+    if f > SIGNATURE_MAX_MM:
+        return SIGNATURE_MAX_MM
+    return f
+
+
+async def get_approver_signature_position() -> dict[str, float]:
+    x_raw = await get_setting(APPROVER_SIGNATURE_X_KEY, None)
+    y_raw = await get_setting(APPROVER_SIGNATURE_Y_KEY, None)
+    w_raw = await get_setting(APPROVER_SIGNATURE_WIDTH_MM_KEY, None)
+    h_raw = await get_setting(APPROVER_SIGNATURE_HEIGHT_MM_KEY, None)
+    return {
+        "x": _parse_fraction(x_raw, DEFAULT_APPROVER_SIGNATURE_X),
+        "y": _parse_fraction(y_raw, DEFAULT_APPROVER_SIGNATURE_Y),
+        "width_mm": _parse_mm(w_raw, DEFAULT_APPROVER_SIGNATURE_WIDTH_MM),
+        "height_mm": _parse_mm(h_raw, DEFAULT_APPROVER_SIGNATURE_HEIGHT_MM),
+    }

@@ -296,6 +296,9 @@ export const adminUploadApproverSignature = (file) => {
   return api.post('/admin/system/approver-signature', form, { headers: { 'Content-Type': 'multipart/form-data' } });
 };
 export const adminDeleteApproverSignature = () => api.delete('/admin/system/approver-signature');
+export const adminGetApproverSignaturePosition = () => api.get('/admin/system/approver-signature/position');
+export const adminSetApproverSignaturePosition = (patch) => api.patch('/admin/system/approver-signature/position', patch);
+export const adminGetTitlePagePreview = () => api.get('/admin/system/approver-signature/title-page-preview');
 
 export const adminGetSystemPrompt = () => api.get('/admin/system/system-prompt');
 export const adminSetSystemPrompt = (prompt) => api.patch('/admin/system/system-prompt', { prompt });

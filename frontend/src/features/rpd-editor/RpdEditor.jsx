@@ -158,6 +158,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
   const [pdfBdId, setPdfBdId] = useState(null);
   const [outcomesVisibleIds, setOutcomesVisibleIds] = useState(null);
   const [outcomesCurrentBdId, setOutcomesCurrentBdId] = useState(null);
+  const [outcomesGenProgress, setOutcomesGenProgress] = useState(null);
   const [pdfNumPages, setPdfNumPages] = useState(0);
   const [pdfCurrentPage, setPdfCurrentPage] = useState(1);
   const [pdfScale, setPdfScale] = useState(1.1);
@@ -681,19 +682,21 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     setGenerating(null);
     setGenAll(false);
     setGenBatch(false);
+    setOutcomesGenProgress(null);
     if (k) {
       setGenResult({ key: k, ok: false, reason: "cancelled" });
       setTimeout(() => setGenResult(r => (r && r.key === k && r.reason === "cancelled" ? null : r)), 1400);
     }
   }
 
-  async function _attemptGenerate(key, seq) {
+  async function _attemptGenerate(key, seq, explicitBdId) {
     const controller = new AbortController();
     genAbortRef.current = controller;
     try {
       const payload = { section: key };
-      if (key === "learning_outcomes" && outcomesCurrentBdId != null) {
-        payload.id_bup_discipline = outcomesCurrentBdId;
+      if (key === "learning_outcomes") {
+        const bdId = explicitBdId !== undefined ? explicitBdId : outcomesCurrentBdId;
+        if (bdId != null) payload.id_bup_discipline = bdId;
       }
       const res = await api.generateSection(rpdId, payload, { signal: controller.signal });
       if (genCancelRef.current || !_owns(seq)) return { ok: false, reason: "cancelled" };
@@ -717,6 +720,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         if (onAfterSave) onAfterSave();
         return { ok: true };
       }
+      if (notFallback && data.parsed_items_count === 0) {
+        return { ok: true, reason: "empty_ok" };
+      }
       return { ok: false, reason: notFallback ? "empty" : "llm" };
     } catch {
       return { ok: false, reason: genCancelRef.current ? "cancelled" : "llm" };
@@ -725,7 +731,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     }
   }
 
-  async function runGenerate(key) {
+  async function runGenerate(key, explicitBdId) {
     const mySeq = ++genSeqRef.current;
     genKeyRef.current = key;
     setGenResult(null);
@@ -733,7 +739,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     let res = { ok: false, reason: "llm" };
     for (let attempt = 1; attempt <= GEN_MAX_ATTEMPTS; attempt++) {
       if (genCancelRef.current || !_owns(mySeq)) { res = { ok: false, reason: "cancelled" }; break; }
-      res = await _attemptGenerate(key, mySeq);
+      res = await _attemptGenerate(key, mySeq, explicitBdId);
       if (res.ok || res.reason === "cancelled" || !_owns(mySeq)) break;
       if (attempt < GEN_MAX_ATTEMPTS) {
         await new Promise(r => setTimeout(r, GEN_RETRY_MS));
@@ -766,16 +772,37 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     setGenBatch(true);
     try {
       const stopped = () => genCancelRef.current || genBatchRef.current !== myBatch;
-      const runKey = async (k) => {
+      const runKey = async (k, explicitBdId) => {
         if (stopped()) return false;
         let r = { reason: "" };
-        try { r = await runGenerate(k); } catch { }
+        try { r = await runGenerate(k, explicitBdId); } catch { }
         return !(stopped() || (r && r.reason === "cancelled"));
       };
 
-      for (const k of ["goals", "objects", "requirements", "learning_outcomes", "content"]) {
+      const isFilled = (s) => (s || "").trim().length > 0;
+
+      for (const k of ["goals", "objects"]) {
         if (!await runKey(k)) return;
       }
+      if (!isFilled(editTexts.requirements) && !await runKey("requirements")) return;
+
+      const outcomeBds = (rpd.bup_disciplines || [])
+        .filter(b => !b.is_manual && b.id_bup_discipline != null);
+      const bdLabel = (b) => {
+        const dir = `${b.direction_code || ""} ${b.direction_name || ""}`.trim();
+        if (dir) return dir;
+        return `${b.bup_name || "БУП"}${b.code ? ` · ${b.code}` : ""}`;
+      };
+      if (outcomeBds.length > 1) {
+        for (let i = 0; i < outcomeBds.length; i++) {
+          const bd = outcomeBds[i];
+          setOutcomesGenProgress({ index: i + 1, total: outcomeBds.length, label: bdLabel(bd) });
+          if (!await runKey("learning_outcomes", bd.id_bup_discipline)) return;
+        }
+      } else {
+        if (!await runKey("learning_outcomes")) return;
+      }
+      if (!await runKey("content")) return;
 
       let practiceAfterContent = practiceHoursTotal;
       let labAfterContent = labHoursTotal;
@@ -787,9 +814,10 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       if (practiceAfterContent > 0 && !await runKey("topics_practice")) return;
       if (labAfterContent > 0 && !await runKey("topics_lab")) return;
 
-      for (const k of ["educational_tech", "methodical_recommendations", "literature_printed_main"]) {
-        if (!await runKey(k)) return;
-      }
+      if (!isFilled(editTexts.educational_tech) && !await runKey("educational_tech")) return;
+      if (!isFilled(editTexts.methodical_recommendations) && !await runKey("methodical_recommendations")) return;
+
+      if (!await runKey("literature_printed_main")) return;
 
       const lit = rpd.literature || [];
       const optionalPrinted = [
@@ -804,7 +832,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
       }
       if (electronicLiteratureCount > 0 && !await runKey("literature_electronic")) return;
 
-      for (const k of ["databases", "software", "material_tech"]) {
+      for (const k of ["software", "databases", "material_tech"]) {
         if (!await runKey(k)) return;
       }
     } finally {
@@ -813,6 +841,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
         setGenBatch(false);
         genCancelRef.current = false;
       }
+      setOutcomesGenProgress(null);
     }
   }
 
@@ -900,9 +929,9 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
     generating, genResult, genBusy, genBatch,
     editTexts, setEditTexts, editing, setEditing,
     isCollapsed, toggleCollapse, setOutcomesVisibleIds, setOutcomesCurrentBdId,
-    outcomesCurrentBdId,
+    outcomesCurrentBdId, outcomesGenProgress,
     ...stableFns,
-  }), [rpd, rpdId, isEdit, canEdit, canManageSources, generating, genResult, genBusy, genBatch, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, setOutcomesVisibleIds, setOutcomesCurrentBdId, outcomesCurrentBdId, stableFns]);
+  }), [rpd, rpdId, isEdit, canEdit, canManageSources, generating, genResult, genBusy, genBatch, editTexts, setEditTexts, editing, setEditing, isCollapsed, toggleCollapse, setOutcomesVisibleIds, setOutcomesCurrentBdId, outcomesCurrentBdId, outcomesGenProgress, stableFns]);
 
   if (loading) return <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}><Spinner size={40} /></div>;
   if (!rpd) return <div style={{ flex: 1, padding: 40, textAlign: "center", background: T.bg }}>РПД не найдена</div>;
@@ -1066,6 +1095,7 @@ export function RpdEditor({ rpdId, tabId, editMode, hasPair = false, reloadKey =
           hasPracticeTopics={hasPracticeTopics}
           isCollapsed={isCollapsed}
           generating={generating}
+          genResult={genResult}
           genBusy={genBusy}
           genBatch={genBatch}
           onCancelGen={cancelGeneration}

@@ -10,7 +10,7 @@ export function Sidebar({
   validationErrors, activeSec,
   hasLabTopics, hasPracticeTopics,
   isCollapsed,
-  generating, genBusy, genBatch, onCancelGen,
+  generating, genResult, genBusy, genBatch, onCancelGen,
   onToggleMode, onOpenPair, onGoTo, onOpenMeta, onAutoFillAll,
   onOpenDocs, docsCount = 0,
   onExpand,
@@ -82,7 +82,11 @@ export function Sidebar({
       onMouseLeave={e => e.currentTarget.style.background = "transparent"}
     >ⓘ Свойства РПД</button>}
 
-    <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{(() => { const genSec = generating ? GEN_SEC_KEY[generating] : null; return SIDEBAR_KEYS.map(k => {
+    <div style={{ flex: 1, overflowY: "auto", paddingTop: 8 }}>{(() => {
+      const genSec = generating ? GEN_SEC_KEY[generating] : null;
+      const okSec = (genResult && genResult.ok) ? GEN_SEC_KEY[genResult.key] : null;
+      const okIsEmpty = !!(genResult && genResult.ok && genResult.reason === "empty_ok");
+      return SIDEBAR_KEYS.map(k => {
 
       if (!isEdit && NON_PDF_KEYS.has(k)) return null;
 
@@ -95,10 +99,26 @@ export function Sidebar({
       const parentCollapsed = isEdit && parentKey && isCollapsed && isCollapsed(parentKey);
       const isActive = activeSec === k;
       const isGen = !!genSec && genSec === k;
-      const accentLeft = hasErr ? "3px solid " + T.red : (isGen || isActive) ? "3px solid " + T.accent : "3px solid transparent";
-      const baseBg = isGen ? T.accentLight : isActive ? T.accentLight : (parentCollapsed ? T.bg : "transparent");
-      const baseColor = hasErr ? T.red : (isGen || isActive) ? T.accent : parentCollapsed ? T.textMuted : isSub ? T.textMuted : T.text;
-      return <button key={k} onClick={() => onGoTo(k)} title={isGen ? "Идёт генерация этого раздела…" : undefined} style={{
+      const isOk = !isGen && !!okSec && okSec === k;
+      const okColor = okIsEmpty ? T.blue : T.green;
+      const okBg = okIsEmpty ? T.blueLight : T.greenLight;
+      const accentLeft = hasErr ? "3px solid " + T.red
+        : isOk ? "3px solid " + okColor
+        : (isGen || isActive) ? "3px solid " + T.accent
+        : "3px solid transparent";
+      const baseBg = isOk ? okBg
+        : isGen ? T.accentLight
+        : isActive ? T.accentLight
+        : (parentCollapsed ? T.bg : "transparent");
+      const baseColor = hasErr ? T.red
+        : isOk ? okColor
+        : (isGen || isActive) ? T.accent
+        : parentCollapsed ? T.textMuted
+        : isSub ? T.textMuted
+        : T.text;
+      const okMark = okIsEmpty ? "ℹ" : "✓";
+      const okTitle = okIsEmpty ? "Модель не нашла данных — заполните вручную" : "Раздел сгенерирован";
+      return <button key={k} onClick={() => onGoTo(k)} title={isGen ? "Идёт генерация этого раздела…" : isOk ? okTitle : undefined} style={{
         display: "flex", width: "100%",
         padding: isSub ? "6px 12px 6px 28px" : "8px 12px",
         border: "none",
@@ -106,17 +126,20 @@ export function Sidebar({
         background: baseBg,
         cursor: "pointer", fontSize: isSub ? 10 : 11, fontFamily: F,
         fontStyle: isSub ? "italic" : "normal",
-        fontWeight: (isGen || isActive) ? 700 : 400,
+        fontWeight: (isGen || isOk || isActive) ? 700 : 400,
         color: baseColor,
         alignItems: "center", gap: 6, boxSizing: "border-box", textAlign: "left",
+        transition: "background .2s, color .2s, border-left-color .2s",
       }}>
         {isSub && <span style={{ color: T.textLight, flexShrink: 0 }}>›</span>}
         <span style={{ flex: 1, textAlign: "left", lineHeight: 1.3, wordBreak: "break-word" }}>{SEC_LABELS[k]}</span>
         {isGen && <Spinner size={11} />}
-        {!isGen && parentCollapsed && !hasErr && <span title="Раздел свёрнут — кликните, чтобы раскрыть" style={{ fontSize: 9, color: T.textLight, flexShrink: 0 }}>▸</span>}
-        {!isGen && hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
+        {isOk && <span style={{ fontSize: 11, color: okColor, flexShrink: 0, lineHeight: 1 }}>{okMark}</span>}
+        {!isGen && !isOk && parentCollapsed && !hasErr && <span title="Раздел свёрнут — кликните, чтобы раскрыть" style={{ fontSize: 9, color: T.textLight, flexShrink: 0 }}>▸</span>}
+        {!isGen && !isOk && hasErr && <span style={{ fontSize: 7, color: T.red, flexShrink: 0 }}>●</span>}
       </button>;
-    }); })()}</div>
+      });
+    })()}</div>
 
     {onAutoFillAll && isEdit && canEdit && <div style={{ padding: 10, borderTop: "1px solid " + T.border, flexShrink: 0, display: "flex", flexDirection: "column", gap: 6 }}>
       {onOpenDocs && <button

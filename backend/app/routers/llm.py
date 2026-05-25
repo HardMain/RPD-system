@@ -185,12 +185,15 @@ async def generate(
                 bup_indicators.append(ind)
             if bup_indicators:
                 lines = [
-                    "Индикаторы компетенций дисциплины (нужно заполнить для КАЖДОГО, не пропускай ни один и не добавляй чужих):"
+                    "Индикаторы компетенций дисциплины (нужно заполнить для КАЖДОГО, не пропускай ни один и не добавляй чужих).",
+                    "В JSON-ответе indicator_code должен быть ТОЛЬКО код индикатора без пояснений и скобок.",
                 ]
                 for ind in bup_indicators:
                     comp_code = ind.competency.code if ind.competency else ""
                     desc = (ind.description or "").strip()
-                    lines.append(f"  {ind.code} ({comp_code}): {desc}")
+                    lines.append(
+                        f'  - indicator_code="{ind.code}", competency_code="{comp_code}": {desc}'
+                    )
                 extra_context = "\n".join(lines) + "\n\n" + extra_context
 
         lo_res = await db.execute(
@@ -382,9 +385,11 @@ async def generate(
     await db.commit()
 
     structural_created = 0
+    parsed_items_count: int | None = None
     cancelled = await request.is_disconnected()
     if gen["model"] != "fallback" and not cancelled:
         items = parse_json_array(gen["generated_text"])
+        parsed_items_count = len(items) if items is not None else None
         if items:
             if data.section == "content":
                 structural_created = await apply_content_sections(
@@ -422,6 +427,7 @@ async def generate(
         model=gen["model"],
         tokens_used=gen["tokens_used"],
         structural_created=structural_created,
+        parsed_items_count=parsed_items_count,
         context_chars=min(len(extra_context), CONTEXT_CHAR_LIMIT),
         context_limit=CONTEXT_CHAR_LIMIT,
         context_sources=context_sources,

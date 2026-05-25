@@ -3,7 +3,7 @@ import { T, F, SH } from "../../styles/index.js";
 import { Avatar } from "../../components/Avatar.jsx";
 import { useDismiss } from "../../hooks/useDismiss.js";
 import { userCan } from "../../api/client.js";
-import { KeyIcon, LogoutIcon, InfoIcon, GearIcon, ThemeIcon, ChevronDownIcon, SparkleIcon } from "../../components/icons.jsx";
+import { KeyIcon, LogoutIcon, InfoIcon, GearIcon, ThemeIcon, ChevronDownIcon, SparkleIcon, BuildingIcon } from "../../components/icons.jsx";
 
 export function AccountMenu({ user, onOpenProfile, onLogout }) {
   const [open, setOpen] = useState(false);
@@ -11,6 +11,7 @@ export function AccountMenu({ user, onOpenProfile, onLogout }) {
   const wrapRef = useRef(null);
   useDismiss(open, () => setOpen(false), wrapRef);
   const isAdmin = userCan(user, "*");
+  const canManageOrg = isAdmin || userCan(user, "users.create");
 
   const go = (section) => { setOpen(false); onOpenProfile(section); };
 
@@ -49,6 +50,7 @@ export function AccountMenu({ user, onOpenProfile, onLogout }) {
         <MenuItem icon={<GearIcon size={16} />} label="Профиль и настройки" onClick={() => go("profile")} />
         <MenuItem icon={<KeyIcon size={16} />} label="Сменить пароль" onClick={() => go("security")} />
         <MenuItem icon={<ThemeIcon size={16} />} label="Внешний вид" onClick={() => go("appearance")} />
+        {canManageOrg && <MenuItem icon={<BuildingIcon size={16} />} label="Организация" onClick={() => go("organization")} />}
         <MenuItem icon={<InfoIcon size={16} />} label="Системная информация" onClick={() => go("system")} />
         {isAdmin && <MenuItem icon={<SparkleIcon />} label="Настройки LLM" onClick={() => go("llm")} />}
       </div>

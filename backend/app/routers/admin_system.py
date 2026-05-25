@@ -1,21 +1,38 @@
+import asyncio
 import base64
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi.responses import Response
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.core.auth import get_current_user, user_can
 from app.core.database import get_db
-from app.models import User, StoredFile
+from app.models import (
+    User, StoredFile, Rpd, Discipline, Bup, BupDiscipline, BupDisciplineCompetency,
+    RpdSection, RpdTopic, RpdLiterature, RpdSoftware, RpdMaterialTech, RpdDatabase,
+    RpdLearningOutcome, RpdDeveloper, CompetencyIndicator, Competency,
+    RpdBupDiscipline, RpdApprovalRoute,
+)
 from app.services import storage_service
 from app.services.app_settings import (
     LLM_MODEL_CHOICES, get_llm_model, set_setting, LLM_MODEL_KEY,
     get_approver, APPROVER_POSITION_KEY, APPROVER_NAME_KEY,
     APPROVER_SIGNATURE_FILE_ID_KEY, get_approver_signature_file_id,
+    APPROVER_SIGNATURE_X_KEY, APPROVER_SIGNATURE_Y_KEY,
+    APPROVER_SIGNATURE_WIDTH_MM_KEY, APPROVER_SIGNATURE_HEIGHT_MM_KEY,
+    SIGNATURE_MIN_MM, SIGNATURE_MAX_MM,
+    get_approver_signature_position,
     get_system_prompt, get_saved_system_prompt_default,
     LLM_SYSTEM_PROMPT_KEY, LLM_SYSTEM_PROMPT_DEFAULT_KEY,
     DEFAULT_LLM_SYSTEM_PROMPT,
 )
+from app.services.docx_renderer import render_rpd_pdf_bytes
+from app.services.pdf_overlay import render_first_page_png, get_page_size_pt
+from app.services.rpd_template_context import build_context
 
 SIGNATURE_MAX_BYTES = 2_000_000
 
@@ -240,3 +257,126 @@ async def delete_approver_signature(
             await db.delete(old)
     await db.commit()
     return await _signature_out(db)
+
+
+class SignaturePositionOut(BaseModel):
+    x: float
+    y: float
+    width_mm: float
+    height_mm: float
+
+
+class SignaturePositionIn(BaseModel):
+    x: float | None = None
+    y: float | None = None
+    width_mm: float | None = None
+    height_mm: float | None = None
+
+
+@router.get("/approver-signature/position", response_model=SignaturePositionOut)
+async def get_signature_position(user: User = Depends(get_current_user)):
+    _require_settings_access(user)
+    p = await get_approver_signature_position()
+    return SignaturePositionOut(**p)
+
+
+@router.patch("/approver-signature/position", response_model=SignaturePositionOut)
+async def set_signature_position(
+    payload: SignaturePositionIn,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_settings_access(user)
+    if payload.x is not None:
+        x = max(0.0, min(1.0, float(payload.x)))
+        await set_setting(db, APPROVER_SIGNATURE_X_KEY, f"{x:.5f}")
+    if payload.y is not None:
+        y = max(0.0, min(1.0, float(payload.y)))
+        await set_setting(db, APPROVER_SIGNATURE_Y_KEY, f"{y:.5f}")
+    if payload.width_mm is not None:
+        w = max(SIGNATURE_MIN_MM, min(SIGNATURE_MAX_MM, float(payload.width_mm)))
+        await set_setting(db, APPROVER_SIGNATURE_WIDTH_MM_KEY, f"{w:.3f}")
+    if payload.height_mm is not None:
+        h = max(SIGNATURE_MIN_MM, min(SIGNATURE_MAX_MM, float(payload.height_mm)))
+        await set_setting(db, APPROVER_SIGNATURE_HEIGHT_MM_KEY, f"{h:.3f}")
+    p = await get_approver_signature_position()
+    return SignaturePositionOut(**p)
+
+
+_TEMPLATES_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), "..", "templates")
+)
+_TEMPLATE_APPROVED = os.path.join(_TEMPLATES_DIR, "rpd_template.docx")
+
+
+async def _load_sample_rpd_for_preview(db: AsyncSession) -> Rpd | None:
+    res = await db.execute(
+        select(Rpd)
+        .order_by(Rpd.id_rpd.asc())
+        .options(
+            selectinload(Rpd.discipline),
+            selectinload(Rpd.bup_links)
+                .selectinload(RpdBupDiscipline.bup_discipline)
+                .selectinload(BupDiscipline.bup)
+                .selectinload(Bup.direction),
+            selectinload(Rpd.bup_links)
+                .selectinload(RpdBupDiscipline.bup_discipline)
+                .selectinload(BupDiscipline.competencies)
+                .selectinload(BupDisciplineCompetency.competency)
+                .selectinload(Competency.indicators),
+            selectinload(Rpd.author),
+            selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
+            selectinload(Rpd.sections),
+            selectinload(Rpd.topics),
+            selectinload(Rpd.literature),
+            selectinload(Rpd.software),
+            selectinload(Rpd.material_tech),
+            selectinload(Rpd.databases),
+            selectinload(Rpd.learning_outcomes)
+                .selectinload(RpdLearningOutcome.indicator)
+                .selectinload(CompetencyIndicator.competency),
+            selectinload(Rpd.approval_route),
+        )
+        .limit(1)
+    )
+    return res.scalars().first()
+
+
+class SignaturePreviewOut(BaseModel):
+    image_data_url: str
+    page_w_pt: float
+    page_h_pt: float
+
+
+@router.get("/approver-signature/title-page-preview", response_model=SignaturePreviewOut)
+async def get_title_page_preview(
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _require_settings_access(user)
+    rpd = await _load_sample_rpd_for_preview(db)
+    if rpd is None:
+        raise HTTPException(status_code=404, detail="Нет ни одной РПД для построения превью")
+    if not os.path.exists(_TEMPLATE_APPROVED):
+        raise HTTPException(status_code=500, detail=f"Шаблон не найден: {_TEMPLATE_APPROVED}")
+    link = next(iter(rpd.bup_links or []), None)
+    bd = link.bup_discipline if link else None
+    approver = await get_approver()
+    context = build_context(rpd, bd=bd, link=link, approver=approver, approval_date=None)
+    try:
+        pdf_bytes = await asyncio.to_thread(
+            render_rpd_pdf_bytes, _TEMPLATE_APPROVED, context, None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ошибка рендера превью: {exc}")
+    try:
+        png_bytes = await asyncio.to_thread(render_first_page_png, pdf_bytes, 110)
+        w_pt, h_pt = get_page_size_pt(pdf_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Ошибка извлечения первой страницы: {exc}")
+    b64 = base64.b64encode(png_bytes).decode("ascii")
+    return SignaturePreviewOut(
+        image_data_url=f"data:image/png;base64,{b64}",
+        page_w_pt=w_pt,
+        page_h_pt=h_pt,
+    )

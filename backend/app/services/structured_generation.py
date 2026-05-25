@@ -15,6 +15,41 @@ from app.models import (
 
 _JSON_FENCE_RE = re.compile(r"```(?:json)?\s*(.+?)\s*```", re.DOTALL | re.IGNORECASE)
 
+_INDICATOR_CODE_KEYS = (
+    "indicator_code", "indicatorCode", "code", "indicator",
+    "indicator_id", "id", "Код", "код",
+)
+_OUTCOME_TEXT_KEYS = (
+    "outcome_text", "outcomeText", "outcome", "text", "result",
+    "description", "формулировка", "результат",
+)
+_ASSESSMENT_TOOL_KEYS = (
+    "assessment_tool", "assessmentTool", "tool", "assessment",
+    "evaluation", "средство_оценки", "средство",
+)
+_COMPETENCY_CODE_KEYS = (
+    "competency_code", "competencyCode", "competency",
+    "компетенция", "comp_code",
+)
+
+
+def _normalize_code(value) -> str:
+    if value is None:
+        return ""
+    s = str(value).strip()
+    s = re.sub(r"\s*\([^)]*\)\s*$", "", s)
+    s = re.sub(r"\s+", "", s)
+    s = s.replace("–", "-").replace("—", "-").replace("‐", "-").replace("‑", "-")
+    return s.lower()
+
+
+def _pick_first(item: dict, keys) -> str:
+    for k in keys:
+        v = item.get(k)
+        if v is not None and str(v).strip():
+            return str(v).strip()
+    return ""
+
 
 def parse_json_array(text: str) -> list[dict] | None:
     if not text:
@@ -260,12 +295,15 @@ async def apply_literature(db: AsyncSession, rpd_id: int, items: list[dict], sec
         stype = source_type or (item.get("source_type") or "Электронный ресурс").strip()
         copies_raw = item.get("copies_count")
         year_raw = item.get("year")
+        url_norm = (item.get("url") or "").strip() or None
+        if section_key == "literature_electronic" and url_norm is None:
+            url_norm = " "
         db.add(RpdLiterature(
             id_rpd=rpd_id,
             source_type=stype,
             title=title,
             copies_count=_coerce_int(copies_raw) if copies_raw is not None else None,
-            url=(item.get("url") or "").strip() or None,
+            url=url_norm,
             availability=item.get("availability") or None,
             authors=(item.get("authors") or "").strip() or None,
             year=_coerce_int(year_raw) if year_raw is not None else None,
@@ -342,10 +380,19 @@ async def apply_learning_outcomes(
     id_bup_discipline: int | None = None,
 ) -> int:
     items_by_code: dict[str, dict] = {}
+    items_by_comp_index: dict[tuple[str, int], dict] = {}
+    comp_seen_index: dict[str, int] = defaultdict(int)
     for it in items:
-        code = (it.get("indicator_code") or "").strip()
-        if code and code not in items_by_code:
-            items_by_code[code] = it
+        raw_code = _pick_first(it, _INDICATOR_CODE_KEYS)
+        comp_code = _pick_first(it, _COMPETENCY_CODE_KEYS)
+        norm = _normalize_code(raw_code)
+        if norm and norm not in items_by_code:
+            items_by_code[norm] = it
+        comp_norm = _normalize_code(comp_code)
+        if comp_norm:
+            idx = comp_seen_index[comp_norm]
+            items_by_comp_index[(comp_norm, idx)] = it
+            comp_seen_index[comp_norm] = idx + 1
 
     rpd_res = await db.execute(
         select(Rpd).where(Rpd.id_rpd == rpd_id)
@@ -359,6 +406,17 @@ async def apply_learning_outcomes(
         l.id_bup_discipline: l for l in (rpd.bup_links or [])
         if l.id_bup_discipline is not None and not getattr(l, "is_manual", False)
     }
+
+    def _lookup_item(ind: CompetencyIndicator, comp_indices: dict[str, int]) -> dict:
+        norm = _normalize_code(ind.code)
+        if norm and norm in items_by_code:
+            return items_by_code[norm]
+        comp_norm = _normalize_code(ind.competency.code) if ind.competency else ""
+        if comp_norm:
+            idx = comp_indices[comp_norm]
+            comp_indices[comp_norm] = idx + 1
+            return items_by_comp_index.get((comp_norm, idx), {})
+        return {}
 
     if bup_links_by_bd:
         if id_bup_discipline is not None and id_bup_discipline in bup_links_by_bd:
@@ -405,9 +463,10 @@ async def apply_learning_outcomes(
             )
         await db.flush()
 
+        comp_indices: dict[str, int] = defaultdict(int)
         for bd_id, ind in target:
             link = bup_links_by_bd[bd_id]
-            it = items_by_code.get((ind.code or "").strip(), {})
+            it = _lookup_item(ind, comp_indices)
             db.add(RpdLearningOutcome(
                 id_rpd=rpd_id,
                 id_rpd_bup_discipline=link.id_rpd_bup_discipline,
@@ -416,8 +475,8 @@ async def apply_learning_outcomes(
                 indicator_description=(ind.description or None),
                 competency_code=(ind.competency.code if ind.competency else None),
                 competency_name=(ind.competency.name if ind.competency else None),
-                outcome_text=(it.get("outcome_text") or "").strip() or None,
-                assessment_tool=(it.get("assessment_tool") or "").strip() or None,
+                outcome_text=_pick_first(it, _OUTCOME_TEXT_KEYS) or None,
+                assessment_tool=_pick_first(it, _ASSESSMENT_TOOL_KEYS) or None,
             ))
         await db.commit()
         return len(target)
@@ -426,13 +485,19 @@ async def apply_learning_outcomes(
         return 0
 
     resolved: list[tuple[dict, CompetencyIndicator]] = []
+    seen_codes: set[str] = set()
     for code, item in items_by_code.items():
+        if code in seen_codes:
+            continue
+        seen_codes.add(code)
         ind_res = await db.execute(
             select(CompetencyIndicator)
-            .where(CompetencyIndicator.code == code)
             .options(selectinload(CompetencyIndicator.competency))
         )
-        indicator = ind_res.scalars().first()
+        indicator = next(
+            (ind for ind in ind_res.scalars().all() if _normalize_code(ind.code) == code),
+            None,
+        )
         if indicator is not None:
             resolved.append((item, indicator))
     if not resolved:
@@ -449,8 +514,8 @@ async def apply_learning_outcomes(
             indicator_description=indicator.description or None,
             competency_code=indicator.competency.code if indicator.competency else None,
             competency_name=indicator.competency.name if indicator.competency else None,
-            outcome_text=(item.get("outcome_text") or "").strip() or None,
-            assessment_tool=(item.get("assessment_tool") or "").strip() or None,
+            outcome_text=_pick_first(item, _OUTCOME_TEXT_KEYS) or None,
+            assessment_tool=_pick_first(item, _ASSESSMENT_TOOL_KEYS) or None,
         ))
     await db.commit()
     return len(resolved)
