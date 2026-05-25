@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import * as api from "../../../api/client.js";
-import { T } from "../../../styles/index.js";
+import { T, iconBtnDelete } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { TrashIcon, ChevronDownIcon, ChevronUpIcon } from "../../../components/icons.jsx";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
@@ -11,7 +11,7 @@ const CONTEXT_LIMIT = 12000;
 const SEC_ORDER = [
   "goals", "objects", "requirements", "learning_outcomes", "content",
   "topics_practice", "topics_lab", "educational_tech", "methodical_recommendations",
-  "literature_printed_main", "literature_printed_additional", "literature_additional_books",
+  "literature_printed_main", "literature_additional_books",
   "literature_periodicals", "literature_normative", "literature_methodical_students", "literature_methodical_self_study",
   "literature_electronic", "software", "databases", "material_tech",
 ];
@@ -28,7 +28,6 @@ const SEC_LABELS = {
   educational_tech: "5.1 Образовательные технологии",
   methodical_recommendations: "5.2 Методические указания",
   literature_printed_main: "6.1 Литература (основная)",
-  literature_printed_additional: "6.1 Литература (доп.)",
   literature_additional_books: "6.1 Учебные/научные изд.",
   literature_periodicals: "6.1 Периодические издания",
   literature_normative: "6.1 Нормативные документы",
@@ -176,7 +175,7 @@ export function DocsUpload() {
               {[...d.parsed_sections].sort((a, b) => secOrder(a.section_key) - secOrder(b.section_key)).map(s => secLabel(s.section_key)).join(" · ")}
             </div>}
           </div>
-          {isEdit && canEdit && <button onClick={() => setPendingDelete(d)} disabled={busy} title="Удалить документ" style={{ border: "none", background: "none", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, flexShrink: 0 }}><TrashIcon /></button>}
+          {isEdit && canEdit && <button onClick={() => setPendingDelete(d)} disabled={busy} title="Удалить документ" style={{ ...iconBtnDelete, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, flexShrink: 0 }}><TrashIcon /></button>}
         </div>
         {isOpen && <div style={{ padding: "0 14px 12px 14px" }}>
           {loadingSec && !sectionsCache[d.id_document] ? <div style={{ fontSize: 12, color: T.textMuted }}>Загрузка разбора…</div>
@@ -198,7 +197,7 @@ export function DocsUpload() {
                       onClick={() => setPendingSecDelete({ docId: d.id_document, chunk: s })}
                       disabled={busy}
                       title="Убрать этот раздел из контекста"
-                      style={{ border: "none", background: "none", cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, padding: "6px 10px", flexShrink: 0 }}
+                      style={{ ...iconBtnDelete, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1, flexShrink: 0, marginRight: 6 }}
                     ><TrashIcon /></button>}
                   </div>
                   {open && <div style={{ padding: "8px 10px", fontSize: 12, color: T.textMuted, whiteSpace: "pre-wrap", lineHeight: 1.5, borderTop: "1px solid " + T.borderLight }}>

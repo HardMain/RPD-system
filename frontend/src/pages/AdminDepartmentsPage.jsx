@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, hdr, tcell, iconBtn, fieldLabel, formErrorBox, adminAddField, adminAddLabel, adminAddBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
+import { T, hdr, tcell, iconBtnEdit, iconBtnDelete, fieldLabel, formErrorBox, adminAddField, adminAddLabel, adminAddBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
+import { useColumnWidths, ResizeHandle } from "../hooks/useColumnWidths.jsx";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
@@ -13,7 +14,7 @@ const DEPT_ACCESSORS = {
   faculty: d => d.faculty || "",
   usage: d => (d.users_count || 0) + (d.bup_disciplines_count || 0),
 };
-import { TrashIcon, PencilIcon, PlusIcon } from "../components/icons.jsx";
+import { TrashIcon, PencilIcon, PlusIcon, ResetIcon } from "../components/icons.jsx";
 import { Dropdown } from "../components/Dropdown.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
@@ -84,6 +85,8 @@ export function DepartmentsContent() {
   const sorted = useMemo(() => sortItems(filtered, DEPT_ACCESSORS), [filtered, sort]);
 
   const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sorted, { defaultPageSize: 50, storageKey: "adminDepartments.pageSize" });
+  const tableContainerRef = useRef(null);
+  const { widths, makeResizer, resetWidths } = useColumnWidths("adminDepartments.v7", { name: 360, faculty: 300, usage: 180, actions: 58 }, tableContainerRef);
 
 
   return <>
@@ -131,7 +134,7 @@ export function DepartmentsContent() {
       </span>
     </div>
 
-    <div className="table-scroll">
+    <div ref={tableContainerRef} className="table-scroll">
       {loading
         ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
         : filtered.length === 0
@@ -139,11 +142,20 @@ export function DepartmentsContent() {
               {items.length === 0 ? "Подразделений пока нет." : "Ничего не нашлось."}
             </div>
           : <table style={{ ...dataTable, tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: widths.name }} />
+              <col style={{ width: widths.faculty }} />
+              <col style={{ width: widths.usage }} />
+              <col style={{ width: widths.actions }} />
+            </colgroup>
             <thead><tr style={{ background: T.surface }}>
-              <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Название</SortTh>
-              <SortTh sortKey="faculty" sort={sort} onSort={toggleSort} style={{ width: 300 }}>Факультет</SortTh>
-              <SortTh sortKey="usage" sort={sort} onSort={toggleSort} style={{ width: 160 }}>Использование</SortTh>
-              <th style={{ ...hdr, textAlign: "center", width: 80 }} />
+              <SortTh sortKey="name" sort={sort} onSort={toggleSort} onResize={makeResizer("name", "faculty")}>Название</SortTh>
+              <SortTh sortKey="faculty" sort={sort} onSort={toggleSort} onResize={makeResizer("faculty", "usage")}>Факультет</SortTh>
+              <SortTh sortKey="usage" sort={sort} onSort={toggleSort} onResize={makeResizer("usage", "actions")}>Использование</SortTh>
+              <th style={{ ...hdr, textAlign: "center" }}>
+                <button type="button" onClick={resetWidths} title="Восстановить ширину колонок по умолчанию"
+                  style={{ border: "none", background: "none", color: T.text, cursor: "pointer", padding: 2, display: "inline-flex" }}><ResetIcon /></button>
+              </th>
             </tr></thead>
             <tbody>
               {pageItems.map(d => (
@@ -151,17 +163,17 @@ export function DepartmentsContent() {
                     onDoubleClick={() => setEditing({ ...d })}
                     style={{ background: T.surface, cursor: "pointer" }}
                     title="Двойной клик — редактировать">
-                  <td style={{ ...tcell, fontWeight: 600 }}>{d.name}</td>
-                  <td style={{ ...tcell, color: d.faculty ? T.text : T.textMuted, fontStyle: d.faculty ? "normal" : "italic" }}>{d.faculty || "—"}</td>
-                  <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
+                  <td style={{ ...tcell, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.name}>{d.name}</td>
+                  <td style={{ ...tcell, color: d.faculty ? T.text : T.textMuted, fontStyle: d.faculty ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.faculty || ""}>{d.faculty || "—"}</td>
+                  <td style={{ ...tcell, fontSize: 11, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     <UsageInfo users={d.users_count} bupDisciplines={d.bup_disciplines_count} />
                   </td>
-                  <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }} onDoubleClick={e => e.stopPropagation()}>
+                  <td style={{ ...tcell, textAlign: "right", padding: "8px 4px", whiteSpace: "nowrap", overflow: "hidden" }} onDoubleClick={e => e.stopPropagation()}>
                     <div style={{ display: "inline-flex", gap: 4 }}>
                       <button onClick={(e) => { e.stopPropagation(); setEditing({ ...d }); }} title="Редактировать"
-                        style={{ ...iconBtn, cursor: "pointer", color: T.textMuted }}><PencilIcon /></button>
+                        style={{ ...iconBtnEdit, cursor: "pointer" }}><PencilIcon /></button>
                       <button onClick={(e) => { e.stopPropagation(); setPendingDelete(d); }} title="Удалить"
-                        style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
+                        style={{ ...iconBtnDelete, cursor: "pointer" }}><TrashIcon /></button>
                     </div>
                   </td>
                 </tr>

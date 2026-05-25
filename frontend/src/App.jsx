@@ -395,7 +395,7 @@ export default function App() {
       />
     </div>
 
-    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} user={user} />}
+    {activeTab === "my" && <RpdListPage rpds={rpds} onOpen={(r, opts) => openRpdFn(r, false, opts)} onEdit={(r, opts) => openRpdFn(r, true, opts)} onCreate={() => setShowCreate(true)} onExportPdf={handleExportPdf} onDeleted={loadRpds} user={user} />}
     {activeTab === "adminUsers" && <AdminUsersPage user={user} users={adminUsers} roles={adminRoles} departments={adminDepartments} reload={loadAdminData} />}
     {activeTab === "adminSources" && <AdminDictionariesPage />}
     {activeTab === "adminLlm" && <AdminLlmPage user={user} />}

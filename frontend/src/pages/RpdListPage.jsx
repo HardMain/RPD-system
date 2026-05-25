@@ -1,23 +1,37 @@
-import { useEffect, useMemo, useState } from "react";
-import { T, F, hdr, tcell, iconBtn, pageContainer, pageToolbar, pageScroll, dataTable, toolbarSearch } from "../styles/index.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { T, F, hdr, tcell, iconBtnView, iconBtnEdit, iconBtnDownload, iconBtnDelete, pageContainer, pageToolbar, pageScroll, dataTable, toolbarSearch } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { FilterChip } from "../components/FilterChip.jsx";
-import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon } from "../components/icons.jsx";
+import { PlusIcon, DownloadIcon, EyeIcon, PencilIcon, TrashIcon, ResetIcon } from "../components/icons.jsx";
 import { STATUSES, StatusBadge } from "../components/StatusBadge.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
-import { userCan } from "../api/client.js";
+import { userCan, deleteRpd } from "../api/client.js";
+import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
+import { useColumnWidths, ResizeHandle } from "../hooks/useColumnWidths.jsx";
 
 const COLS = [
-  { key: "direction_code", label: "Направление", align: "left", sortable: true, accessor: r => r.direction_code || "" },
+  { key: "direction_code", label: "Направление", align: "center", sortable: true, accessor: r => r.direction_code || "" },
   { key: "discipline_name", label: "Дисциплина", align: "left", sortable: true, accessor: r => r.discipline_name || "" },
   { key: "academic_year", label: "Год", align: "center", sortable: true, accessor: r => r.academic_year || "" },
   { key: "total_hours", label: "Часы", align: "center", sortable: true, accessor: r => r.total_hours ?? 0 },
   { key: "semester", label: "Семестр", align: "center", sortable: true, accessor: r => r.semester || "" },
+  { key: "status", label: "Статус", align: "center", sortable: true, accessor: r => r.status || "" },
   { key: "developer", label: "Разработчик", align: "left", sortable: true, accessor: r => (r.developer_names && r.developer_names[0]) || "" },
   { key: "comment", label: "Комментарий", align: "left", sortable: true, accessor: r => r.comment || "" },
-  { key: "status", label: "Статус", align: "left", sortable: true, accessor: r => r.status || "" },
-  { key: "actions", label: "", align: "center", sortable: false },
+  { key: "actions", label: "", align: "right", sortable: false },
 ];
+
+const DEFAULT_WIDTHS = {
+  direction_code: 130,
+  discipline_name: 260,
+  academic_year: 80,
+  total_hours: 70,
+  semester: 90,
+  status: 160,
+  developer: 180,
+  comment: 240,
+  actions: 95,
+};
 
 const FILTER_STATE_KEY = "rpdListPage.filter.v1";
 
@@ -30,9 +44,15 @@ function loadFilterState() {
   } catch { return null; }
 }
 
-export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user }) {
+export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, onDeleted, user }) {
   const canCreate = userCan(user, "rpd.create");
   const canReview = userCan(user, "rpd.approve");
+  const canDeleteAny = userCan(user, "rpd.delete_any");
+  const [pendingDelete, setPendingDelete] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const tableContainerRef = useRef(null);
+  const { widths, makeResizer, resetWidths } = useColumnWidths("rpdList.v8", DEFAULT_WIDTHS, tableContainerRef);
   const myReviewIds = useMemo(() => {
     if (!canReview || !user) return null;
     const set = new Set();
@@ -154,21 +174,37 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
       </span>
     </div>
     <div style={pageScroll}>
-      <div className="table-scroll">
-      <table style={dataTable}>
+      <div ref={tableContainerRef} className="table-scroll">
+      <table style={{ ...dataTable, tableLayout: "fixed" }}>
+        <colgroup>
+          {COLS.map(c => <col key={c.key} style={{ width: widths[c.key] }} />)}
+        </colgroup>
         <thead>
           <tr style={{ background: T.surface }}>
-            {COLS.map((c) => {
+            {COLS.map((c, i) => {
               const isActive = sort.key === c.key;
               const arrow = isActive ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
-              const baseStyle = { ...hdr, textAlign: c.align, userSelect: "none" };
-              if (!c.sortable) return <th key={c.key} style={baseStyle}>{c.label}</th>;
-              return <th
-                key={c.key}
-                onClick={() => toggleSort(c.key)}
-                style={{ ...baseStyle, cursor: "pointer", color: isActive ? T.accent : undefined }}
-                title="Кликните для сортировки"
-              >{c.label}{arrow}</th>;
+              const nextCol = COLS[i + 1];
+              const isActions = c.key === "actions";
+              const headerAlign = "center";
+              const baseStyle = { ...hdr, padding: 0, textAlign: headerAlign, position: "relative" };
+              const innerStyle = { padding: "10px 12px", paddingRight: nextCol ? 18 : 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: headerAlign };
+              const handle = nextCol ? <ResizeHandle onMouseDown={makeResizer(c.key, nextCol.key)} /> : null;
+              return <th key={c.key} style={baseStyle}>
+                <div style={innerStyle}>
+                  {isActions
+                    ? <button type="button" onClick={resetWidths} title="Восстановить ширину колонок по умолчанию"
+                        style={{ border: "none", background: "none", color: T.text, cursor: "pointer", padding: 2, display: "inline-flex" }}><ResetIcon /></button>
+                    : c.sortable
+                    ? <span
+                        onClick={() => toggleSort(c.key)}
+                        style={{ cursor: "pointer", userSelect: "none", color: isActive ? T.accent : undefined }}
+                        title="Кликните для сортировки"
+                      >{c.label}{arrow}</span>
+                    : <>{c.label}{arrow}</>}
+                </div>
+                {handle}
+              </th>;
             })}
           </tr>
         </thead>
@@ -180,6 +216,8 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
           )}
           {pageItems.map(r => {
             const canEdit = r.status === "Черновик" || r.status === "На доработке";
+            const isMyReview = myReviewIds && myReviewIds.has(r.id_rpd);
+            const rowBg = isMyReview ? T.accentLight : T.surface;
             const openByDblClick = (e) => {
               if (e.ctrlKey) onOpen(r);
               else if (canEdit) onEdit(r);
@@ -194,26 +232,38 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
               onDoubleClick={openByDblClick}
               onMouseDown={(e) => { if (e.button === 1) e.preventDefault(); }}
               onAuxClick={(e) => { if (e.button === 1) { e.preventDefault(); openInBackground(e); } }}
-              style={{ background: T.surface, cursor: "pointer" }}
-              title="Двойной клик — редактор · Ctrl+двойной клик — просмотр · Колесико — фоновая вкладка (редактор) · Ctrl+колесико — фоновая (просмотр)"
+              style={{ background: rowBg, cursor: "pointer", boxShadow: isMyReview ? "inset 3px 0 0 " + T.accent : undefined }}
+              title={isMyReview
+                ? "Ждёт вашего согласования. Двойной клик — открыть."
+                : "Двойной клик — редактор · Ctrl+двойной клик — просмотр · Колесико — фоновая вкладка (редактор) · Ctrl+колесико — фоновая (просмотр)"}
             >
-              <td style={{ ...tcell, color: r.direction_code ? T.text : T.textMuted }}>{r.direction_code || "—"}</td>
-              <td style={{ ...tcell, fontWeight: 600 }}>{r.discipline_name}</td>
-              <td style={{ ...tcell, textAlign: "center", color: r.academic_year ? T.text : T.textMuted }}>{r.academic_year || "—"}</td>
-              <td style={{ ...tcell, textAlign: "center", color: r.total_hours ? T.text : T.textMuted }}>{r.total_hours || "—"}</td>
-              <td style={{ ...tcell, textAlign: "center", color: r.semester ? T.text : T.textMuted }}>{r.semester || "—"}</td>
-              <td style={{ ...tcell, color: (r.developer_names && r.developer_names.length) ? T.text : T.textMuted }}>
+              <td style={{ ...tcell, textAlign: "center", color: r.direction_code ? T.text : T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.direction_code || "—"}</td>
+              <td style={{ ...tcell, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.discipline_name}>{r.discipline_name}</td>
+              <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: r.academic_year ? T.text : T.textMuted }}>{r.academic_year || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: r.total_hours ? T.text : T.textMuted }}>{r.total_hours || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: r.semester ? T.text : T.textMuted }}>{r.semester || "—"}</td>
+              <td style={{ ...tcell, textAlign: "center", overflow: "hidden", whiteSpace: "nowrap" }}><StatusBadge status={r.status} /></td>
+              <td style={{ ...tcell, color: (r.developer_names && r.developer_names.length) ? T.text : T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  title={(r.developer_names && r.developer_names.length) ? r.developer_names.join(", ") : ""}>
                 {(r.developer_names && r.developer_names.length) ? r.developer_names.join(", ") : "—"}
               </td>
-              <td style={{ ...tcell, color: r.comment ? T.text : T.textMuted, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment || ""}>
+              <td style={{ ...tcell, color: r.comment ? T.text : T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.comment || ""}>
                 {r.comment || "—"}
               </td>
-              <td style={tcell}><StatusBadge status={r.status} /></td>
-              <td style={{ ...tcell, textAlign: "center", width: 1, whiteSpace: "nowrap", padding: "10px 8px" }}>
+              <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap", padding: "10px 8px", overflow: "hidden" }}>
                 <div style={{ display: "inline-flex", gap: 4 }}>
-                  <button onClick={e => { e.stopPropagation(); onOpen(r); }} title="Просмотр" style={{ ...iconBtn, cursor: "pointer" }}><EyeIcon /></button>
-                  <button onClick={canEdit ? (e => { e.stopPropagation(); onEdit(r); }) : undefined} disabled={!canEdit} title={canEdit ? "Редактировать" : "Нельзя редактировать в текущем статусе"} style={{ ...iconBtn, cursor: canEdit ? "pointer" : "not-allowed", opacity: canEdit ? 1 : 0.35 }}><PencilIcon /></button>
-                  <button onClick={e => { e.stopPropagation(); onExportPdf(r.id_rpd); }} title="Скачать PDF" style={{ ...iconBtn, cursor: "pointer" }}><DownloadIcon /></button>
+                  <button onClick={e => { e.stopPropagation(); onOpen(r); }} title="Просмотр" style={{ ...iconBtnView, cursor: "pointer" }}><EyeIcon /></button>
+                  <button onClick={canEdit ? (e => { e.stopPropagation(); onEdit(r); }) : undefined} disabled={!canEdit} title={canEdit ? "Редактировать" : "Нельзя редактировать в текущем статусе"} style={{ ...iconBtnEdit, cursor: canEdit ? "pointer" : "not-allowed", opacity: canEdit ? 1 : 0.35 }}><PencilIcon /></button>
+                  <button onClick={e => { e.stopPropagation(); onExportPdf(r.id_rpd); }} title="Скачать PDF" style={{ ...iconBtnDownload, cursor: "pointer" }}><DownloadIcon /></button>
+                  {canDeleteAny && (() => {
+                    const canDelete = r.status !== "Согласовано";
+                    return <button
+                      onClick={canDelete ? (e => { e.stopPropagation(); setPendingDelete(r); }) : undefined}
+                      disabled={!canDelete}
+                      title={canDelete ? "Удалить РПД" : "Согласованную РПД удалить нельзя"}
+                      style={{ ...iconBtnDelete, cursor: canDelete ? "pointer" : "not-allowed", opacity: canDelete ? 1 : 0.35 }}
+                    ><TrashIcon /></button>;
+                  })()}
                 </div>
               </td>
             </tr>;
@@ -224,5 +274,24 @@ export function RpdListPage({ rpds, onOpen, onEdit, onCreate, onExportPdf, user 
       <Pagination page={page} totalPages={totalPages} total={total} pageSize={pageSize}
         onPageChange={setPage} onPageSizeChange={setPageSize} />
     </div>
+    {pendingDelete && <ConfirmDeleteModal
+      title={`Удалить РПД «${pendingDelete.discipline_name}»?`}
+      message={`Статус: «${pendingDelete.status}». РПД будет полностью стёрта вместе со всем содержимым. Действие необратимо.`}
+      onClose={() => { if (!deleting) setPendingDelete(null); }}
+      onConfirm={async () => {
+        const r = pendingDelete;
+        setDeleting(true);
+        try {
+          await deleteRpd(r.id_rpd);
+          setPendingDelete(null);
+          if (onDeleted) await onDeleted();
+        } catch (e) {
+          setDeleteError(e?.response?.data?.detail || "Не удалось удалить РПД");
+        } finally {
+          setDeleting(false);
+        }
+      }}
+    />}
+    {deleteError && <AlertModal title="Ошибка" message={deleteError} onClose={() => setDeleteError(null)} />}
   </div>;
 }

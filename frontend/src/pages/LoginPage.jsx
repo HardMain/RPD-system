@@ -29,20 +29,10 @@ export function LoginPage({ onLogin }) {
     finally { setLd(false); }
   };
 
-  return <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg, overflow: "hidden" }}>
-    <div style={{
-      position: "absolute", inset: 0,
-      backgroundImage: "url(/login-bg.png)",
-      backgroundRepeat: "no-repeat",
-      backgroundPosition: "center",
-      backgroundSize: "min(78vw, 760px)",
-      opacity: 0.07,
-      pointerEvents: "none",
-    }} />
-
-    <form onSubmit={go} style={{ position: "relative", background: T.surface, padding: 40, borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,.12)", border: "1px solid " + T.borderLight, width: 400, maxWidth: "90vw" }}>
+  return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: T.bg }}>
+    <form onSubmit={go} style={{ background: T.surface, padding: 40, borderRadius: 12, boxShadow: "0 8px 30px rgba(0,0,0,.12)", border: "1px solid " + T.borderLight, width: 400, maxWidth: "90vw" }}>
       <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <img src="/login-bg.png" alt="ПНИПУ" style={{ height: 64, marginBottom: 14 }} />
+        <img src="/login-logo.png" alt="Пермский Политех" style={{ height: 48, marginBottom: 14 }} />
         <div style={{ fontSize: 18, fontWeight: 700, color: T.text }}>Информационная система</div>
         <div style={{ fontSize: 13, color: T.textMuted, marginTop: 4 }}>формирования рабочих программ дисциплин</div>
       </div>

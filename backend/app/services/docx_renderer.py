@@ -6,10 +6,15 @@ import shutil
 import subprocess
 import tempfile
 import zipfile
+from io import BytesIO
 from pathlib import Path
 
-from docxtpl import DocxTemplate
+from docx.shared import Mm
+from docxtpl import DocxTemplate, InlineImage
 from lxml import etree
+
+SIGNATURE_PLACEHOLDER = ">___________ <"
+SIGNATURE_REPLACEMENT = ">{{signature}}<"
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W = f"{{{W_NS}}}"
@@ -33,6 +38,7 @@ def _repair_docx_tags(src_docx: Path, dst_docx: Path) -> None:
                 or item.filename.startswith("word/footer")
             ):
                 xml = data.decode("utf-8")
+                xml = xml.replace(SIGNATURE_PLACEHOLDER, SIGNATURE_REPLACEMENT)
                 xml = _JINJA_TAG_RE.sub(_clean_jinja_tag, xml)
                 data = xml.encode("utf-8")
             zout.writestr(item, data)
@@ -182,6 +188,7 @@ def fill_docx_template(
     template_path: Path,
     context: dict,
     output_docx_path: Path,
+    signature_bytes: bytes | None = None,
 ) -> Path:
     template_path = Path(template_path)
     output_docx_path = Path(output_docx_path)
@@ -198,7 +205,12 @@ def fill_docx_template(
         _repair_docx_tags(template_path, repaired_path)
 
         doc = DocxTemplate(str(repaired_path))
-        doc.render(context)
+        ctx = dict(context)
+        if signature_bytes:
+            ctx["signature"] = InlineImage(doc, BytesIO(signature_bytes), width=Mm(35))
+        else:
+            ctx["signature"] = "___________"
+        doc.render(ctx)
         doc.save(str(output_docx_path))
 
         _fix_document_after_render(output_docx_path)
@@ -276,11 +288,12 @@ def render_rpd_pdf(
     context: dict,
     output_pdf_path: Path,
     keep_docx: bool = False,
+    signature_bytes: bytes | None = None,
 ) -> Path:
     output_pdf_path = Path(output_pdf_path)
     docx_path = output_pdf_path.with_suffix(".docx")
 
-    fill_docx_template(template_path, context, docx_path)
+    fill_docx_template(template_path, context, docx_path, signature_bytes=signature_bytes)
     try:
         convert_docx_to_pdf(docx_path, output_pdf_path)
     finally:
@@ -289,8 +302,8 @@ def render_rpd_pdf(
 
     return output_pdf_path
 
-def render_rpd_pdf_bytes(template_path: Path, context: dict) -> bytes:
+def render_rpd_pdf_bytes(template_path: Path, context: dict, signature_bytes: bytes | None = None) -> bytes:
     with tempfile.TemporaryDirectory() as td:
         out = Path(td) / "rpd.pdf"
-        render_rpd_pdf(Path(template_path), context, out, keep_docx=False)
+        render_rpd_pdf(Path(template_path), context, out, keep_docx=False, signature_bytes=signature_bytes)
         return out.read_bytes()

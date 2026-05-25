@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../../../api/client.js";
-import { T, F } from "../../../styles/index.js";
+import { T, F, iconBtnDelete } from "../../../styles/index.js";
 import { Btn } from "../../../components/Btn.jsx";
 import { TrashIcon } from "../../../components/icons.jsx";
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
@@ -25,7 +25,7 @@ export function DeveloperEditor({ rpdId, developers, canEdit, reload }) {
           {d.full_name}
           {d.title && <span style={{ color: T.textMuted, marginLeft: 8, fontSize: 12 }}>· {d.title}</span>}
         </span>
-        {canEdit && <button onClick={() => handleDelete(d)} title="Убрать" style={{ border: "none", background: "none", cursor: "pointer", padding: 4 }}><TrashIcon /></button>}
+        {canEdit && <button onClick={() => handleDelete(d)} title="Убрать" style={{ ...iconBtnDelete, cursor: "pointer" }}><TrashIcon /></button>}
       </div>
     ))}
     {canEdit && developers.length < max && (

@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F, hdr, tcell, iconBtn, adminAddField, adminAddBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel } from "../styles/index.js";
+import { T, F, hdr, tcell, iconBtnEdit, iconBtnDelete, adminAddField, adminAddBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { FilterChip } from "../components/FilterChip.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { Dropdown } from "../components/Dropdown.jsx";
-import { TrashIcon, PlusIcon, PencilIcon, UploadIcon } from "../components/icons.jsx";
+import { TrashIcon, PlusIcon, PencilIcon, UploadIcon, ResetIcon } from "../components/icons.jsx";
 import { Pagination, usePagination } from "../components/Pagination.jsx";
 import { useSort, SortTh } from "../components/sortable.jsx";
 import { useStickyState } from "../hooks/useStickyState.js";
+import { useColumnWidths, ResizeHandle } from "../hooks/useColumnWidths.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 import {
   KIND_GROUPS, KINDS, adaptDiscipline, PARENT_LABELS, FILTERABLE_KINDS, INDICATOR_KINDS,
@@ -20,6 +21,7 @@ import { DictEditModal } from "./DictEditModal.jsx";
 import { BupsContent } from "./AdminBupsPage.jsx";
 import { DirectionsContent } from "./AdminDirectionsPage.jsx";
 import { DepartmentsContent } from "./AdminDepartmentsPage.jsx";
+import { FosFilesContent } from "./AdminFosFilesPage.jsx";
 
 export function AdminDictionariesPage() {
   const [kind, setKind] = useStickyState("adminDict.kind.v1", KINDS[0].id);
@@ -51,7 +53,7 @@ export function AdminDictionariesPage() {
   const isLiterature = kind === "literature_title";
   const isIndicatorKind = INDICATOR_KINDS.has(kind);
   const isDiscipline = kind === "discipline";
-  const isCustomKind = kind === "bup" || kind === "direction" || kind === "department";
+  const isCustomKind = kind === "bup" || kind === "direction" || kind === "department" || kind === "fos";
   const isDirectionScoped = kind === "indicator_description";
   const isDisciplineScoped = kind === "literature_title";
   const isSoftware = kind === "software_name";
@@ -219,6 +221,38 @@ export function AdminDictionariesPage() {
   const paginationSource = useGroupedView ? allGroups : sortedRows;
   const { page, setPage, pageSize, setPageSize, total: pgTotal, totalPages: pgTotalPages, pageItems } = usePagination(paginationSource, { defaultPageSize: 50, storageKey: `adminDict.${kind}.pageSize` });
 
+  const dictCols = useMemo(() => {
+    const cols = [];
+    if (useGroupedView) {
+      cols.push({ key: "parent", label: parentMeta.col, defaultWidth: 180, align: "center" });
+      if (isDirectionScoped) cols.push({ key: "direction_code", label: "Направление", defaultWidth: 130 });
+      cols.push({ key: "value", label: "Значение", defaultWidth: 460 });
+      cols.push({ key: "source", label: "Источник", defaultWidth: 180 });
+    } else {
+      if (isLiterature) cols.push({ key: "sourceType", label: "Подраздел", defaultWidth: 200, sortKey: "sourceType" });
+      if (isSoftware) cols.push({ key: "sourceType", label: "Вид ПО", defaultWidth: 240, sortKey: "sourceType" });
+      cols.push({ key: "value", label: isDiscipline ? "Название дисциплины" : "Значение", defaultWidth: 340, sortKey: "value" });
+      if (isLiterature) cols.push({ key: "mode", label: "Тип", defaultWidth: 110, sortKey: "mode" });
+      if (isDatabase) cols.push({ key: "extra", label: "Ссылка на информационный ресурс", defaultWidth: 240 });
+      if (isDisciplineScoped) cols.push({ key: "discipline", label: "Дисциплина", defaultWidth: 170 });
+      cols.push({ key: "source", label: isDiscipline ? "Использование" : "Источник", defaultWidth: 160, sortKey: isDiscipline ? "usage" : "source" });
+    }
+    const sumOther = cols.reduce((s, c) => s + c.defaultWidth, 0);
+    const actionsDefault = Math.max(35, Math.round(70 * sumOther / 1010));
+    cols.push({ key: "actions", label: "", defaultWidth: actionsDefault, align: "right" });
+    return cols;
+  }, [useGroupedView, isDirectionScoped, isLiterature, isSoftware, isDatabase, isDisciplineScoped, isDiscipline, parentMeta]);
+
+  const dictDefaults = useMemo(() => {
+    const d = {};
+    for (const c of dictCols) d[c.key] = c.defaultWidth;
+    return d;
+  }, [dictCols]);
+
+  const dictStorageKey = `adminDict.${kind}.${useGroupedView ? "g" : "u"}.v7`;
+  const tableContainerRef = useRef(null);
+  const { widths: dictWidths, makeResizer: makeDictResizer, resetWidths: resetDictWidths } = useColumnWidths(dictStorageKey, dictDefaults, tableContainerRef);
+
   async function performDelete(item) {
     if (!item) return;
     try {
@@ -348,6 +382,7 @@ export function AdminDictionariesPage() {
       {kind === "bup" && <BupsContent />}
       {kind === "direction" && <DirectionsContent />}
       {kind === "department" && <DepartmentsContent />}
+      {kind === "fos" && <FosFilesContent />}
 
       {!isCustomKind && <>
       <div style={adminAddPanel}>
@@ -542,7 +577,7 @@ export function AdminDictionariesPage() {
         </span>
       </div>
 
-      <div className="table-scroll">
+      <div ref={tableContainerRef} className="table-scroll">
         {loading
           ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
           : filtered.length === 0
@@ -550,23 +585,28 @@ export function AdminDictionariesPage() {
                 {items.length === 0 ? "Записей пока нет — добавьте первую сверху." : "Ничего не нашлось."}
               </div>
             : <table style={{ ...dataTable, tableLayout: "fixed" }}>
+              <colgroup>
+                {dictCols.map(c => <col key={c.key} style={{ width: dictWidths[c.key] }} />)}
+              </colgroup>
               <thead><tr style={{ background: T.surface }}>
-                {useGroupedView ? <>
-                  <th style={{ ...hdr, width: 180 }}>{parentMeta.col}</th>
-                  {isDirectionScoped && <th style={{ ...hdr, width: 110 }}>Направление</th>}
-                  <th style={hdr}>Значение</th>
-                  <th style={{ ...hdr, width: 200 }}>Источник</th>
-                  <th style={{ ...hdr, textAlign: "center", width: 80 }} />
-                </> : <>
-                  {isLiterature && <SortTh sortKey="sourceType" sort={sort} onSort={toggleSort} style={{ width: 240 }}>Подраздел</SortTh>}
-                  {isSoftware && <SortTh sortKey="sourceType" sort={sort} onSort={toggleSort} style={{ width: 280 }}>Вид ПО</SortTh>}
-                  <SortTh sortKey="value" sort={sort} onSort={toggleSort}>{isDiscipline ? "Название дисциплины" : "Значение"}</SortTh>
-                  {isLiterature && <SortTh sortKey="mode" sort={sort} onSort={toggleSort} style={{ width: 130 }}>Тип</SortTh>}
-                  {isDatabase && <th style={{ ...hdr, width: 280 }}>Ссылка на информационный ресурс</th>}
-                  {isDisciplineScoped && <th style={{ ...hdr, width: 200 }}>Дисциплина</th>}
-                  <SortTh sortKey={isDiscipline ? "usage" : "source"} sort={sort} onSort={toggleSort} style={{ width: 200 }}>{isDiscipline ? "Использование" : "Источник"}</SortTh>
-                  <th style={{ ...hdr, textAlign: "center", width: 80 }} />
-                </>}
+                {dictCols.map((c, i) => {
+                  const nextCol = dictCols[i + 1];
+                  const onResize = nextCol ? makeDictResizer(c.key, nextCol.key) : undefined;
+                  const isActions = c.key === "actions";
+                  if (c.sortKey) {
+                    return <SortTh key={c.key} sortKey={c.sortKey} sort={sort} onSort={toggleSort} onResize={onResize}>{c.label}</SortTh>;
+                  }
+                  const headerAlign = "center";
+                  return <th key={c.key} style={{ ...hdr, padding: 0, position: "relative" }}>
+                    <div style={{ padding: "10px 12px", paddingRight: onResize ? 18 : 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: headerAlign }}>
+                      {isActions
+                        ? <button type="button" onClick={resetDictWidths} title="Восстановить ширину колонок по умолчанию"
+                            style={{ border: "none", background: "none", color: T.text, cursor: "pointer", padding: 2, display: "inline-flex" }}><ResetIcon /></button>
+                        : c.label}
+                    </div>
+                    {onResize && <ResizeHandle onMouseDown={onResize} />}
+                  </th>;
+                })}
               </tr></thead>
               <tbody>
                 {useGroupedView
@@ -582,15 +622,15 @@ export function AdminDictionariesPage() {
                         </td>
                       )}
                       {isDirectionScoped && (
-                        <td style={{ ...tcell, fontSize: 11, color: it.direction_code ? T.text : T.textMuted, fontStyle: it.direction_code ? "normal" : "italic", whiteSpace: "nowrap" }}>
+                        <td style={{ ...tcell, fontSize: 11, textAlign: "center", color: it.direction_code ? T.text : T.textMuted, fontStyle: it.direction_code ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           {it.direction_code || "—"}
                         </td>
                       )}
-                      <td style={{ ...tcell, fontWeight: 500 }}>{it.value}</td>
-                      <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
+                      <td style={{ ...tcell, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.value}>{it.value}</td>
+                      <td style={{ ...tcell, fontSize: 11, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {sourceLabel(it.source)}
                       </td>
-                      <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }} onDoubleClick={e => e.stopPropagation()}>
+                      <td style={{ ...tcell, textAlign: "right", padding: "8px 4px", whiteSpace: "nowrap", overflow: "hidden" }} onDoubleClick={e => e.stopPropagation()}>
                         <RowActions onEdit={() => setEditing(it)} onDelete={() => setPendingDelete(it)} />
                       </td>
                     </tr>
@@ -600,22 +640,22 @@ export function AdminDictionariesPage() {
                         onDoubleClick={() => setEditing(it)}
                         style={{ background: T.surface, cursor: "pointer" }}
                         title="Двойной клик — редактировать">
-                      {isLiterature && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic" }}>{it.source_type || "—"}</td>}
-                      {isSoftware && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic" }}>{it.source_type || "— не указан —"}</td>}
-                      <td style={{ ...tcell, fontWeight: 500 }}>{it.value}</td>
-                      {isLiterature && <td style={{ ...tcell, color: it.mode ? T.text : T.textMuted, fontStyle: it.mode ? "normal" : "italic" }}>{it.mode ? MODE_LABELS[it.mode] || it.mode : "—"}</td>}
-                      {isDatabase && <td style={{ ...tcell, fontSize: 12, color: it.extra ? T.text : T.textMuted, fontStyle: it.extra ? "normal" : "italic", wordBreak: "break-all" }}>{it.extra || "— не указана —"}</td>}
+                      {isLiterature && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.source_type || ""}>{it.source_type || "—"}</td>}
+                      {isSoftware && <td style={{ ...tcell, color: it.source_type ? T.text : T.textMuted, fontStyle: it.source_type ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.source_type || ""}>{it.source_type || "— не указан —"}</td>}
+                      <td style={{ ...tcell, fontWeight: 500, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.value}>{it.value}</td>
+                      {isLiterature && <td style={{ ...tcell, color: it.mode ? T.text : T.textMuted, fontStyle: it.mode ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.mode ? MODE_LABELS[it.mode] || it.mode : "—"}</td>}
+                      {isDatabase && <td style={{ ...tcell, fontSize: 12, color: it.extra ? T.text : T.textMuted, fontStyle: it.extra ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={it.extra || ""}>{it.extra || "— не указана —"}</td>}
                       {isDisciplineScoped && (
-                        <td style={{ ...tcell, fontSize: 12, color: it.id_discipline ? T.text : T.textMuted, fontStyle: it.id_discipline ? "normal" : "italic" }}>
+                        <td style={{ ...tcell, fontSize: 12, color: it.id_discipline ? T.text : T.textMuted, fontStyle: it.id_discipline ? "normal" : "italic", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={disciplineNameById.get(it.id_discipline) || ""}>
                           {disciplineNameById.get(it.id_discipline) || "—"}
                         </td>
                       )}
-                      <td style={{ ...tcell, fontSize: 11, color: T.textMuted }}>
+                      <td style={{ ...tcell, fontSize: 11, color: T.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {isDiscipline
                           ? <UsageInfo bups={it.used_in_bups} rpds={it.used_in_rpds} />
                           : sourceLabel(it.source)}
                       </td>
-                      <td style={{ ...tcell, textAlign: "center", padding: "8px 4px", whiteSpace: "nowrap" }} onDoubleClick={e => e.stopPropagation()}>
+                      <td style={{ ...tcell, textAlign: "right", padding: "8px 4px", whiteSpace: "nowrap", overflow: "hidden" }} onDoubleClick={e => e.stopPropagation()}>
                         <RowActions onEdit={() => setEditing(it)} onDelete={() => setPendingDelete(it)} />
                       </td>
                     </tr>
@@ -665,11 +705,11 @@ function UsageInfo({ bups, rpds }) {
 function RowActions({ onEdit, onDelete }) {
   return <div style={{ display: "inline-flex", gap: 4 }}>
     <button onClick={onEdit} title="Редактировать"
-      style={{ ...iconBtn, cursor: "pointer", color: T.textMuted }}>
+      style={{ ...iconBtnEdit, cursor: "pointer" }}>
       <PencilIcon />
     </button>
     <button onClick={onDelete} title="Удалить запись"
-      style={{ ...iconBtn, cursor: "pointer" }}>
+      style={{ ...iconBtnDelete, cursor: "pointer" }}>
       <TrashIcon />
     </button>
   </div>;

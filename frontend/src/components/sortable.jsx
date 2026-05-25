@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { T, hdr } from "../styles/index.js";
+import { ResizeHandle } from "../hooks/useColumnWidths.jsx";
 
 export function useSort(defaultKey, defaultDir = "asc", storageKey) {
   const [sort, setSort] = useState(() => {
@@ -42,14 +43,22 @@ export function useSort(defaultKey, defaultDir = "asc", storageKey) {
   return { sort, toggleSort, sortItems };
 }
 
-export function SortTh({ sortKey, sort, onSort, children, style, align = "left" }) {
-  const base = { ...hdr, textAlign: align, ...style };
-  if (!sortKey || !sort || !onSort) return <th style={base}>{children}</th>;
-  const active = sort.key === sortKey;
+export function SortTh({ sortKey, sort, onSort, children, style, align = "center", onResize, width }) {
+  const base = { ...hdr, textAlign: align, position: "relative", padding: 0, ...(width != null ? { width } : null), ...style };
+  const sortable = sortKey && sort && onSort;
+  const active = sortable && sort.key === sortKey;
   const arrow = active ? (sort.dir === "asc" ? " ▲" : " ▼") : "";
-  return <th
-    onClick={() => onSort(sortKey)}
-    style={{ ...base, cursor: "pointer", userSelect: "none", color: active ? T.accent : undefined }}
-    title="Кликните для сортировки"
-  >{children}{arrow}</th>;
+  const inner = { padding: "10px 12px", paddingRight: onResize ? 18 : 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: align };
+  return <th style={base}>
+    <div style={inner}>
+      {sortable
+        ? <span
+            onClick={() => onSort(sortKey)}
+            style={{ cursor: "pointer", userSelect: "none", color: active ? T.accent : undefined }}
+            title="Кликните для сортировки"
+          >{children}{arrow}</span>
+        : <>{children}{arrow}</>}
+    </div>
+    {onResize && <ResizeHandle onMouseDown={onResize} />}
+  </th>;
 }

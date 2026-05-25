@@ -52,15 +52,18 @@ _LOWER_START_RE = re.compile(r"^[a-zа-яё]")
 _PAGENUM_RE = re.compile(r"^\d{1,3}$")
 
 
+_SENTENCE_END_CHARS = (".", "!", "?", ":")
+
+
 def _trim_body_lines(body_lines: list[str]) -> list[str]:
     out = list(body_lines)
     trimmed = 0
-    while out and trimmed < 6:
+    while out and trimmed < 2:
         s = out[0].strip()
         if not s:
             out = out[1:]
             continue
-        if len(s) < 130 and _LOWER_START_RE.match(s):
+        if len(s) < 40 and _LOWER_START_RE.match(s) and not s.endswith(_SENTENCE_END_CHARS):
             out = out[1:]
             trimmed += 1
             continue

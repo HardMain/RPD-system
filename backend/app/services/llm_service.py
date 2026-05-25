@@ -185,14 +185,28 @@ async def extract_text_from_file(file_path: str, max_chars: int | None = WHOLE_D
             return _cap(text)
 
         elif ext == ".pdf":
-            import subprocess
-            result = subprocess.run(
-                ["pdftotext", "-layout", file_path, "-"],
-                capture_output=True, text=True, timeout=60,
-            )
-            if result.returncode == 0:
-                return _cap(result.stdout)
-            return ""
+            text = ""
+            try:
+                import fitz
+                with fitz.open(file_path) as doc:
+                    parts = []
+                    for page in doc:
+                        parts.append(page.get_text("text", sort=True))
+                    text = "\n".join(parts).strip()
+            except Exception:
+                text = ""
+            if not text:
+                import subprocess
+                try:
+                    result = subprocess.run(
+                        ["pdftotext", "-layout", file_path, "-"],
+                        capture_output=True, text=True, timeout=60,
+                    )
+                    if result.returncode == 0:
+                        text = result.stdout
+                except Exception:
+                    text = ""
+            return _cap(text or "")
         else:
             return ""
     except Exception:

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, F, hdr, tcell, iconBtn, dataTable, sectionLabel, formErrorBox } from "../styles/index.js";
+import { T, F, hdr, tcell, iconBtnDelete, dataTable, sectionLabel, formErrorBox } from "../styles/index.js";
+import { useColumnWidths, ResizeHandle } from "../hooks/useColumnWidths.jsx";
 import { Btn } from "../components/Btn.jsx";
 import { Modal } from "../components/Modal.jsx";
 import { Input } from "../components/Input.jsx";
@@ -14,7 +15,7 @@ const BUP_ACCESSORS = {
   direction: b => b.direction_code || b.direction_name || "",
   faculty: b => b.faculty || "",
 };
-import { TrashIcon, UploadIcon } from "../components/icons.jsx";
+import { TrashIcon, UploadIcon, ResetIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
 export function BupsContent() {
@@ -56,6 +57,8 @@ export function BupsContent() {
   const sorted = useMemo(() => sortItems(filtered, BUP_ACCESSORS), [filtered, sort]);
 
   const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sorted, { defaultPageSize: 50, storageKey: "adminBups.pageSize" });
+  const tableContainerRef = useRef(null);
+  const { widths, makeResizer, resetWidths } = useColumnWidths("adminBups.v7", { year: 80, name: 360, direction: 280, faculty: 220, actions: 40 }, tableContainerRef);
 
   return <>
     <div style={{ background: T.surface, border: "1px solid " + T.borderLight, borderRadius: 6, padding: 12, marginBottom: 14 }}>
@@ -86,32 +89,46 @@ export function BupsContent() {
       </span>
     </div>
 
-    <div className="table-scroll">
+    <div ref={tableContainerRef} className="table-scroll">
       {loading ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
       : filtered.length === 0 ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>
           {bups.length === 0 ? "БУПов пока нет. Загрузите XLS-файл — система разберёт его и заполнит дисциплины." : "Ничего не нашлось."}
         </div>
       : <table style={{ ...dataTable, tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: widths.year }} />
+            <col style={{ width: widths.name }} />
+            <col style={{ width: widths.direction }} />
+            <col style={{ width: widths.faculty }} />
+            <col style={{ width: widths.actions }} />
+          </colgroup>
           <thead><tr style={{ background: T.surface }}>
-            <SortTh sortKey="year" sort={sort} onSort={toggleSort} align="center" style={{ width: 80 }}>Год</SortTh>
-            <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Наименование</SortTh>
-            <SortTh sortKey="direction" sort={sort} onSort={toggleSort} style={{ width: 280 }}>Направление</SortTh>
-            <SortTh sortKey="faculty" sort={sort} onSort={toggleSort} style={{ width: 220 }}>Факультет</SortTh>
-            <th style={{ ...hdr, width: 56 }} />
+            <SortTh sortKey="year" sort={sort} onSort={toggleSort} align="center" onResize={makeResizer("year", "name")}>Год</SortTh>
+            <SortTh sortKey="name" sort={sort} onSort={toggleSort} onResize={makeResizer("name", "direction")}>Наименование</SortTh>
+            <SortTh sortKey="direction" sort={sort} onSort={toggleSort} onResize={makeResizer("direction", "faculty")}>Направление</SortTh>
+            <SortTh sortKey="faculty" sort={sort} onSort={toggleSort} onResize={makeResizer("faculty", "actions")}>Факультет</SortTh>
+            <th style={{ ...hdr, textAlign: "center" }}>
+              <button type="button" onClick={resetWidths} title="Восстановить ширину колонок по умолчанию"
+                style={{ border: "none", background: "none", color: T.text, cursor: "pointer", padding: 2, display: "inline-flex" }}><ResetIcon /></button>
+            </th>
           </tr></thead>
           <tbody>
-            {pageItems.map(b => <tr key={b.id_bup}
+            {pageItems.map(b => {
+              const cellEllipsis = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+              const direction = b.direction_code ? `${b.direction_code} ${b.direction_name}` : (b.direction_name || "—");
+              return <tr key={b.id_bup}
                 onDoubleClick={() => setOpenBup(b.id_bup)}
                 style={{ background: T.surface, cursor: "pointer" }}
                 title="Двойной клик — открыть детали">
-              <td style={{ ...tcell, textAlign: "center" }}>{b.year ?? "—"}</td>
-              <td style={{ ...tcell, fontWeight: 600 }}>{b.name}</td>
-              <td style={tcell}>{b.direction_code ? `${b.direction_code} ${b.direction_name}` : (b.direction_name || "—")}</td>
-              <td style={tcell}>{b.faculty || "—"}</td>
-              <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }} onDoubleClick={e => e.stopPropagation()}>
-                <button onClick={(e) => { e.stopPropagation(); handleDelete(b); }} title="Удалить БУП" style={{ ...iconBtn, cursor: "pointer" }}><TrashIcon /></button>
-              </td>
-            </tr>)}
+                <td style={{ ...tcell, textAlign: "center", ...cellEllipsis }}>{b.year ?? "—"}</td>
+                <td style={{ ...tcell, fontWeight: 600, ...cellEllipsis }} title={b.name}>{b.name}</td>
+                <td style={{ ...tcell, ...cellEllipsis }} title={direction}>{direction}</td>
+                <td style={{ ...tcell, ...cellEllipsis }} title={b.faculty || ""}>{b.faculty || "—"}</td>
+                <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap", padding: "10px 8px", overflow: "hidden" }} onDoubleClick={e => e.stopPropagation()}>
+                  <button onClick={(e) => { e.stopPropagation(); handleDelete(b); }} title="Удалить БУП" style={{ ...iconBtnDelete, cursor: "pointer" }}><TrashIcon /></button>
+                </td>
+              </tr>;
+            })}
           </tbody>
         </table>}
     </div>

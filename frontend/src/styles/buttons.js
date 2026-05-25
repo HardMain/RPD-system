@@ -40,3 +40,15 @@ export const iconBtnDisabled = (active) => ({
   cursor: active ? "pointer" : "not-allowed",
   opacity: active ? 1 : 0.35,
 });
+
+const tintedIconBtn = (color, bg) => ({
+  ...iconBtn,
+  color,
+  background: bg,
+  border: "1px solid " + color,
+});
+
+export const iconBtnView = tintedIconBtn(T.blue, T.blueLight);
+export const iconBtnEdit = tintedIconBtn(T.orange, T.orangeLight);
+export const iconBtnDownload = tintedIconBtn(T.accent, T.accentLight);
+export const iconBtnDelete = tintedIconBtn(T.red, T.redSoft);

@@ -8,7 +8,7 @@ from app.routers import (
     auth, rpd, llm, notifications, competencies, upload, export,
     admin, bups, admin_bups, reference, files, admin_directions, fos,
     suggestions, admin_dictionary, admin_disciplines, admin_documents,
-    admin_llm_prompts, admin_system,
+    admin_llm_prompts, admin_system, admin_fos,
 )
 from app.seed import seed_data
 
@@ -62,6 +62,7 @@ app.include_router(admin_disciplines.router)
 app.include_router(admin_documents.router)
 app.include_router(admin_llm_prompts.router)
 app.include_router(admin_system.router)
+app.include_router(admin_fos.router)
 app.include_router(files.router)
 app.include_router(fos.router)
 

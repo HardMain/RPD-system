@@ -1275,6 +1275,7 @@ async def _seed_demo_data():
             year=2024,
             faculty="Электротехнический факультет",
             profile="Разработка программно-информационных систем",
+            form_of_study="очная",
         )
         db.add(bup1)
         await db.flush()
@@ -1353,9 +1354,9 @@ async def _seed_demo_data():
         ])
         await db.flush()
 
-        rpd1 = Rpd(id_discipline=d_inf.id_discipline, id_author=teacher.id_user, academic_year="2025/2026", status="Черновик")
+        rpd1 = Rpd(id_discipline=d_inf.id_discipline, id_author=umu_chief.id_user, academic_year="2025/2026", status="Черновик")
         rpd2 = Rpd(
-            id_discipline=d_kg.id_discipline, id_author=teacher.id_user,
+            id_discipline=d_kg.id_discipline, id_author=umu_chief.id_user,
             academic_year="2025/2026", status="На доработке",
             goals_text="Целью изучения дисциплины «Компьютерная графика» является формирование у обучающихся знаний и навыков в области методов и алгоритмов компьютерной графики, обработки изображений и визуализации данных.",
             tasks_text="Задачи дисциплины:\n- изучение математических основ компьютерной графики;\n- освоение алгоритмов растеризации и визуализации;\n- приобретение навыков работы с графическими библиотеками (OpenGL, WebGL);\n- разработка интерактивных графических приложений.",
@@ -1365,7 +1366,7 @@ async def _seed_demo_data():
             methodical_recommendations="Рекомендуется начинать с изучения 2D-примитивов, затем переходить к 3D-трансформациям. Лабораторные работы выполняются последовательно с нарастанием сложности.",
         )
         rpd3 = Rpd(
-            id_discipline=d_phys.id_discipline, id_author=teacher.id_user,
+            id_discipline=d_phys.id_discipline, id_author=umu_chief.id_user,
             academic_year="2025/2026", status="На согласовании",
             goals_text="Целью изучения дисциплины «Физика» является формирование у обучающихся фундаментальных знаний в области физических законов и явлений.",
             tasks_text="Задачи дисциплины:\n- изучение основных законов механики, термодинамики, электричества;\n- формирование навыков решения физических задач;\n- развитие физического мышления.",
@@ -1375,7 +1376,7 @@ async def _seed_demo_data():
             methodical_recommendations="Каждая лабораторная работа требует предварительной подготовки теоретической части.",
         )
         rpd4 = Rpd(
-            id_discipline=d_inf.id_discipline, id_author=teacher.id_user,
+            id_discipline=d_inf.id_discipline, id_author=umu_chief.id_user,
             academic_year="2024/2025", status="Согласовано",
             goals_text=(
                 "Целью изучения дисциплины является приобретение систематических знаний в области "
@@ -1434,7 +1435,24 @@ async def _seed_demo_data():
             (rpd1, bd_inf), (rpd2, bd_kg), (rpd3, bd_phys), (rpd4, bd_inf),
         ]
         for r, bd in rpd_bd_pairs:
-            db.add(RpdBupDiscipline(id_rpd=r.id_rpd, id_bup_discipline=bd.id_bup_discipline))
+            db.add(RpdBupDiscipline(
+                id_rpd=r.id_rpd, id_bup_discipline=bd.id_bup_discipline,
+                bup_name=bup1.name, bup_year=bup1.year, bup_profile=bup1.profile,
+                direction_code=dir1.code, direction_name=dir1.name, direction_profile=dir1.profile,
+                code=bd.code, semester=bd.semester, control_form=bd.control_form,
+                total_hours=bd.total_hours, exam_hours=bd.exam_hours,
+                lecture_hours=bd.lecture_hours, lab_hours=bd.lab_hours,
+                practice_hours=bd.practice_hours, ksr_hours=bd.ksr_hours,
+                self_study_hours=bd.self_study_hours, zet=bd.zet,
+                semesters_data=bd.semesters_data,
+                discipline_name=(
+                    d_inf.name if bd is bd_inf else
+                    d_kg.name if bd is bd_kg else
+                    d_phys.name if bd is bd_phys else None
+                ),
+                form_of_study=bup1.form_of_study,
+                degree_level=dir1.degree_level,
+            ))
         await db.flush()
 
         single_rpd_routes = [
@@ -1477,7 +1495,7 @@ async def _seed_demo_data():
             (1, "Термодинамика", "Начала термодинамики, тепловые процессы.", 3, 1, 2, 6),
             (1, "Электростатика", "Закон Кулона, электрическое поле.", 3, 2, 1, 6),
             (2, "Постоянный ток", "Закон Ома, законы Кирхгофа.", 4, 2, 2, 8),
-            (2, "Электромагнетизм", "Магнитное поле, электромагнитная индукция.", 5, 3, 3, 10),
+            (2, "Электромагнетизм", "Магнитное поле, электромагнитная индукция.", 5, 2, 2, 10),
             (2, "Оптика", "Геометрическая и волновая оптика, интерференция.", 5, 3, 3, 10),
             (2, "Квантовая физика", "Фотоэффект, атом Бора, волны де Бройля.", 4, 2, 2, 8),
         ]
@@ -1647,8 +1665,11 @@ async def _seed_demo_data():
         ])
 
         db.add_all([
-            RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Лекционная аудитория", equipment="Проектор, экран, компьютер преподавателя"),
-            RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Физическая лаборатория", equipment="Лабораторные стенды, измерительные приборы"),
+            RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Лекция", equipment="Мультимедийный проектор", quantity=1),
+            RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Лекция", equipment="Персональный компьютер", quantity=1),
+            RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Лабораторная работа", equipment="Лабораторный стенд", quantity=8),
+            RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Лабораторная работа", equipment="Измерительный прибор", quantity=8),
+            RpdMaterialTech(id_rpd=rpd3.id_rpd, room_type="Практическое занятие", equipment="Ноутбук", quantity=1),
         ])
 
         db.add_all([
@@ -1660,6 +1681,7 @@ async def _seed_demo_data():
                                assessment_tool="Лабораторная работа"),
         ])
 
+        db.add(RpdDeveloper(id_rpd=rpd1.id_rpd, id_user=teacher.id_user))
         db.add(RpdDeveloper(id_rpd=rpd2.id_rpd, id_user=teacher.id_user))
         db.add(RpdDeveloper(id_rpd=rpd3.id_rpd, id_user=teacher.id_user))
         db.add(RpdDeveloper(id_rpd=rpd4.id_rpd, id_user=teacher.id_user))
@@ -1723,7 +1745,9 @@ async def seed_test_samples():
 
         teacher_res = await db.execute(select(User).where(User.login == "ivanov"))
         teacher = teacher_res.scalar_one_or_none()
-        if teacher is None:
+        author_res = await db.execute(select(User).where(User.login == "solovieva"))
+        author = author_res.scalar_one_or_none()
+        if teacher is None or author is None:
             return
 
         bup_records: list[Bup] = []
@@ -1772,7 +1796,7 @@ async def seed_test_samples():
             if single:
                 rpd = Rpd(
                     id_discipline=single.id_discipline,
-                    id_author=teacher.id_user,
+                    id_author=author.id_user,
                     academic_year="2025/2026",
                     status="Черновик",
                     comment=f"[ТЕСТ] Один семестр · БУП «{bup.name}» · дисциплина «{single.discipline.name}»",
@@ -1787,7 +1811,7 @@ async def seed_test_samples():
             if multi:
                 rpd = Rpd(
                     id_discipline=multi.id_discipline,
-                    id_author=teacher.id_user,
+                    id_author=author.id_user,
                     academic_year="2025/2026",
                     status="Черновик",
                     comment=f"[ТЕСТ] Несколько семестров · БУП «{bup.name}» · дисциплина «{multi.discipline.name}»",
@@ -1810,7 +1834,7 @@ async def seed_test_samples():
             bup_names = ", ".join(f"«{bd.bup.name}»" for bd in cross_bd_list)
             rpd = Rpd(
                 id_discipline=cross_bd_list[0].id_discipline,
-                id_author=teacher.id_user,
+                id_author=author.id_user,
                 academic_year="2025/2026",
                 status="Черновик",
                 comment=f"[ТЕСТ] Привязка к нескольким БУП-дисциплинам · дисциплина «{disc_name}» · {bup_names}",
@@ -1827,7 +1851,7 @@ async def seed_test_samples():
         manual_disc_one = await _get_or_create_discipline_by_name(db, "Тестовая ручная дисциплина (1 семестр)")
         rpd_manual_one = Rpd(
             id_discipline=manual_disc_one.id_discipline,
-            id_author=teacher.id_user,
+            id_author=author.id_user,
             academic_year="2025/2026",
             status="Черновик",
             comment="[ТЕСТ] Ручная РПД (без БУПа) · один семестр",
@@ -1856,7 +1880,7 @@ async def seed_test_samples():
         manual_disc_multi = await _get_or_create_discipline_by_name(db, "Тестовая ручная дисциплина (несколько семестров)")
         rpd_manual_multi = Rpd(
             id_discipline=manual_disc_multi.id_discipline,
-            id_author=teacher.id_user,
+            id_author=author.id_user,
             academic_year="2025/2026",
             status="Черновик",
             comment="[ТЕСТ] Ручная РПД (без БУПа) · несколько семестров",

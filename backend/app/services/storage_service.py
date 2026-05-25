@@ -12,7 +12,7 @@ from urllib.parse import quote
 from app.core.config import settings
 
 KNOWN_KINDS = {
-    "bup_xls", "fgos", "fos_main", "fos_other", "context_doc", "other",
+    "bup_xls", "fgos", "fos_main", "fos_other", "context_doc", "signature", "other",
 }
 
 def _local_root() -> str:

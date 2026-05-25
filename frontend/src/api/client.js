@@ -280,6 +280,22 @@ export const adminSetLlmModel = (model) => api.patch('/admin/system/llm-model', 
 
 export const adminGetApprover = () => api.get('/admin/system/approver');
 export const adminSetApprover = (position, name) => api.patch('/admin/system/approver', { position, name });
+export const adminListFosFiles = () => api.get('/admin/fos-files/');
+export const adminUploadFosFile = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/admin/fos-files/', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const adminUpdateFosFile = (id, payload) => api.patch(`/admin/fos-files/${id}`, payload);
+export const adminDeleteFosFile = (id) => api.delete(`/admin/fos-files/${id}`);
+
+export const adminGetApproverSignature = () => api.get('/admin/system/approver-signature');
+export const adminUploadApproverSignature = (file) => {
+  const form = new FormData();
+  form.append('file', file);
+  return api.post('/admin/system/approver-signature', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+};
+export const adminDeleteApproverSignature = () => api.delete('/admin/system/approver-signature');
 
 export const adminGetSystemPrompt = () => api.get('/admin/system/system-prompt');
 export const adminSetSystemPrompt = (prompt) => api.patch('/admin/system/system-prompt', { prompt });

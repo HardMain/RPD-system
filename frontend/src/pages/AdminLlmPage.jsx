@@ -1,11 +1,24 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as api from "../api/client.js";
 import { T, F, hdr, tcell, dataTable, adminToolbar, adminAddLabel, pageContainer, pageToolbar, pageScroll } from "../styles/index.js";
 import { Btn } from "../components/Btn.jsx";
 import { Spinner } from "../components/Spinner.jsx";
 import { formatDateTimeRu } from "../utils/format.js";
 import { useStickyState } from "../hooks/useStickyState.js";
+import { useColumnWidths, ResizeHandle } from "../hooks/useColumnWidths.jsx";
+import { ResetIcon } from "../components/icons.jsx";
 import { AlertModal } from "../features/rpd-editor/EditorModals.jsx";
+
+const LOG_COLS = [
+  { key: "when", label: "Когда" },
+  { key: "rpd", label: "РПД" },
+  { key: "section", label: "Раздел" },
+  { key: "sources", label: "Источники контекста" },
+  { key: "model", label: "Модель" },
+  { key: "tokens", label: "Токены" },
+  { key: "time", label: "Время" },
+];
+const LOG_DEFAULT_WIDTHS = { when: 140, rpd: 220, section: 180, sources: 320, model: 200, tokens: 80, time: 100 };
 
 const miniLabel = adminAddLabel;
 
@@ -46,6 +59,8 @@ export function AdminLlmPage({ user }) {
 function LlmLogsContent() {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const tableContainerRef = useRef(null);
+  const { widths, makeResizer, resetWidths } = useColumnWidths("adminLlmLogs.v5", LOG_DEFAULT_WIDTHS, tableContainerRef);
 
   const load = () => {
     setLoading(true);
@@ -67,24 +82,37 @@ function LlmLogsContent() {
       ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
       : logs.length === 0
         ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>Генераций пока не было.</div>
-        : <div className="table-scroll">
-          <table style={dataTable}>
+        : <div ref={tableContainerRef} className="table-scroll">
+          <table style={{ ...dataTable, tableLayout: "fixed" }}>
+            <colgroup>
+              {LOG_COLS.map(c => <col key={c.key} style={{ width: widths[c.key] }} />)}
+            </colgroup>
             <thead><tr style={{ background: T.surface }}>
-              {["Когда", "РПД", "Раздел", "Источники контекста", "Модель", "Токены", "Время"].map(h =>
-                <th key={h} style={hdr}>{h}</th>)}
+              {LOG_COLS.map((c, i) => {
+                const nextCol = LOG_COLS[i + 1];
+                const isLast = !nextCol;
+                return <th key={c.key} style={{ ...hdr, padding: 0, position: "relative" }}>
+                  <div style={{ padding: "10px 12px", paddingRight: nextCol ? 18 : 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 8, justifyContent: "center" }}>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", textAlign: "center" }}>{c.label}</span>
+                    {isLast && <button type="button" onClick={resetWidths} title="Восстановить ширину колонок по умолчанию"
+                      style={{ border: "none", background: "none", color: T.text, cursor: "pointer", padding: 2, display: "inline-flex" }}><ResetIcon /></button>}
+                  </div>
+                  {nextCol && <ResizeHandle onMouseDown={makeResizer(c.key, nextCol.key)} />}
+                </th>;
+              })}
             </tr></thead>
             <tbody>
               {logs.map(l => (
                 <tr key={l.id_log} style={{ background: T.surface }}>
-                  <td style={{ ...tcell, whiteSpace: "nowrap" }}>{l.created_at ? formatDateTimeRu(l.created_at) : "—"}</td>
-                  <td style={tcell}>{l.rpd_label}</td>
-                  <td style={tcell}>{l.section_label}</td>
+                  <td style={{ ...tcell, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.created_at ? formatDateTimeRu(l.created_at) : "—"}</td>
+                  <td style={{ ...tcell, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.rpd_label}>{l.rpd_label}</td>
+                  <td style={{ ...tcell, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={l.section_label}>{l.section_label}</td>
                   <td style={{ ...tcell, color: l.context_sources.length ? T.text : T.textMuted }}>
                     {l.context_sources.length
                       ? l.context_sources.map((s, i) => <div key={i}>{s}</div>)
                       : "без материалов (модель сама)"}
                   </td>
-                  <td style={{ ...tcell, whiteSpace: "nowrap", color: l.model_name === "fallback" ? T.orange : T.text }}>{l.model_name}</td>
+                  <td style={{ ...tcell, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: l.model_name === "fallback" ? T.orange : T.text }} title={l.model_name}>{l.model_name}</td>
                   <td style={{ ...tcell, textAlign: "center" }}>{l.tokens_used ?? "—"}</td>
                   <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap" }}>{l.generation_time_ms != null ? `${l.generation_time_ms} мс` : "—"}</td>
                 </tr>

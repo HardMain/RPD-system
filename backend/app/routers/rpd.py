@@ -782,9 +782,12 @@ async def delete_rpd(rpd_id: int, db: AsyncSession = Depends(get_db), user: User
     rpd = result.scalar_one_or_none()
     if not rpd:
         raise HTTPException(status_code=404, detail="РПД не найдена")
-    if rpd.id_author != user.id_user and not user_can(user, "rpd.delete_any"):
+    is_super_deleter = user_can(user, "rpd.delete_any")
+    if rpd.id_author != user.id_user and not is_super_deleter:
         raise HTTPException(status_code=403, detail="Нет прав на удаление")
-    if rpd.status not in ("Черновик",):
+    if rpd.status == "Согласовано":
+        raise HTTPException(status_code=400, detail="Согласованную РПД удалить нельзя")
+    if not is_super_deleter and rpd.status != "Черновик":
         raise HTTPException(status_code=400, detail="Удалить можно только черновик")
     await db.delete(rpd)
     await db.commit()
@@ -1674,7 +1677,7 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
             selectinload(Rpd.approval_route).selectinload(RpdApprovalRoute.reviewer),
             selectinload(Rpd.discipline),
             selectinload(Rpd.author),
-            selectinload(Rpd.developers),
+            selectinload(Rpd.developers).selectinload(RpdDeveloper.user),
             selectinload(Rpd.learning_outcomes),
             selectinload(Rpd.sections),
             selectinload(Rpd.topics),
@@ -1728,9 +1731,12 @@ async def send_for_approval(rpd_id: int, db: AsyncSession = Depends(get_db), use
         message=f"РПД {label} отправлена на согласование",
     ))
     if first.id_reviewer != user.id_user:
+        dev_names = [d.user.full_name for d in (rpd.developers or []) if d.user]
+        dev_label = ", ".join(dev_names) if dev_names else "не указаны"
+        dev_word = "Разработчики" if len(dev_names) != 1 else "Разработчик"
         db.add(Notification(
             id_user=first.id_reviewer, id_rpd=rpd_id,
-            message=f"РПД {label} поступила вам на согласование (этап 1 из {len(route)}). Автор: {rpd.author.full_name}",
+            message=f"РПД {label} поступила вам на согласование (этап 1 из {len(route)}). {dev_word}: {dev_label}",
         ))
     await db.commit()
     return {"detail": "РПД отправлена на согласование"}

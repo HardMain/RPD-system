@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from typing import Any
+
+_PERM_TZ = timezone(timedelta(hours=5))
 
 def split_paragraphs(text: Any) -> list[str]:
     if not text:
@@ -69,7 +71,13 @@ def _parse_control_form(raw: str) -> dict[int, set[str]]:
                 out.setdefault(int(tok), set()).add(label)
     return out
 
-def build_context(rpd, bd=None, link=None, approver=None) -> dict:
+_MONTH_GENITIVE = [
+    "", "января", "февраля", "марта", "апреля", "мая", "июня",
+    "июля", "августа", "сентября", "октября", "ноября", "декабря",
+]
+
+
+def build_context(rpd, bd=None, link=None, approver=None, approval_date=None) -> dict:
     d = rpd.discipline
     if link is None:
         link = next((l for l in (rpd.bup_links or [])), None)
@@ -400,9 +408,22 @@ def build_context(rpd, bd=None, link=None, approver=None) -> dict:
     if not material_tech:
         material_tech = [{"lesson_type": "", "equipment": "", "quantity": ""}]
 
+    if approval_date is not None:
+        local = approval_date.astimezone(_PERM_TZ) if approval_date.tzinfo else approval_date.replace(tzinfo=timezone.utc).astimezone(_PERM_TZ)
+        day_text = f"{local.day:02d}"
+        month_text = _MONTH_GENITIVE[local.month]
+        year_text = f"{local.year % 100:02d}"
+    else:
+        day_text = ""
+        month_text = ""
+        year_text = ""
+
     context: dict[str, Any] = {
         "rector_position": (approver or {}).get("position") or "Проректор по образовательной деятельности",
         "rector_name": (approver or {}).get("name") or "И.Ю.Черникова",
+        "day": day_text,
+        "month": month_text,
+        "year": year_text,
         "discipline_name": d.name or "",
         "study_form": study_form,
         "level_higher_education": _pick(link.degree_level if link else None, direction.degree_level if direction else None) or "бакалавриат",

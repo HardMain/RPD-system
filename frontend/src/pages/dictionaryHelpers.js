@@ -13,6 +13,7 @@ export const KIND_GROUPS = [
       { id: "discipline", label: "Дисциплины", valueLabel: "Название" },
       { id: "bup", label: "БУПы" },
       { id: "direction", label: "Направления" },
+      { id: "fos", label: "Файлы ФОС" },
     ],
   },
   {

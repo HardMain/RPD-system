@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { T } from "../styles/index.js";
+import { iconBtnDelete } from "../styles/index.js";
 import { TrashIcon } from "./icons.jsx";
 
-export function RowTrashOverlay({ tbodyRef, onDelete, title = "Удалить", right = -30 }) {
+export function RowTrashOverlay({ tbodyRef, onDelete, title = "Удалить", right = -34 }) {
   const [rows, setRows] = useState([]);
   const overlayRef = useRef(null);
 
@@ -53,16 +53,12 @@ export function RowTrashOverlay({ tbodyRef, onDelete, title = "Удалить", 
         onClick={() => onDelete(row.id)}
         title={title}
         style={{
+          ...iconBtnDelete,
           position: "absolute",
           right,
           top: row.top,
           transform: "translateY(-50%)",
-          border: "none",
-          background: "none",
           cursor: "pointer",
-          padding: 4,
-          color: T.textMuted,
-          display: "inline-flex",
           pointerEvents: "auto",
         }}
       ><TrashIcon /></button>

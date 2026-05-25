@@ -9,6 +9,7 @@ LLM_MODEL_KEY = "llm_model"
 
 APPROVER_POSITION_KEY = "approver_position"
 APPROVER_NAME_KEY = "approver_name"
+APPROVER_SIGNATURE_FILE_ID_KEY = "approver_signature_file_id"
 DEFAULT_APPROVER_POSITION = "Проректор по образовательной деятельности"
 DEFAULT_APPROVER_NAME = "И.Ю.Черникова"
 
@@ -100,3 +101,13 @@ async def get_approver() -> dict[str, str]:
         "position": (position or "").strip() or DEFAULT_APPROVER_POSITION,
         "name": (name or "").strip() or DEFAULT_APPROVER_NAME,
     }
+
+
+async def get_approver_signature_file_id() -> int | None:
+    raw = await get_setting(APPROVER_SIGNATURE_FILE_ID_KEY, None)
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None

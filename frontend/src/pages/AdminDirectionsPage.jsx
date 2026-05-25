@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as api from "../api/client.js";
-import { T, hdr, tcell, iconBtn, formErrorBox, adminAddField, adminAddLabel, adminAddBtn, linkBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
+import { T, hdr, tcell, iconBtnEdit, iconBtnDelete, formErrorBox, adminAddField, adminAddLabel, adminAddBtn, linkBtn, dataTable, adminAddPanel, adminToolbar, adminSearch, sectionLabel, modalTitleHeader, modalFooterWide } from "../styles/index.js";
+import { useColumnWidths, ResizeHandle } from "../hooks/useColumnWidths.jsx";
 import { Btn } from "../components/Btn.jsx";
 import { FilterChip } from "../components/FilterChip.jsx";
 import { Modal } from "../components/Modal.jsx";
@@ -14,7 +15,7 @@ const DIR_ACCESSORS = {
   programs: d => (d.programs || []).map(p => p.profile).join(", "),
   fgos: d => d.fgos_file_name || "",
 };
-import { TrashIcon, UploadIcon, PencilIcon, PlusIcon } from "../components/icons.jsx";
+import { TrashIcon, UploadIcon, PencilIcon, PlusIcon, ResetIcon } from "../components/icons.jsx";
 import { ConfirmDeleteModal, AlertModal } from "../features/rpd-editor/EditorModals.jsx";
 
 export function DirectionsContent() {
@@ -110,6 +111,8 @@ export function DirectionsContent() {
   const sorted = useMemo(() => sortItems(filtered, DIR_ACCESSORS), [filtered, sort]);
 
   const { page, setPage, pageSize, setPageSize, total, totalPages, pageItems } = usePagination(sorted, { defaultPageSize: 50, storageKey: "adminDirections.pageSize" });
+  const tableContainerRef = useRef(null);
+  const { widths, makeResizer, resetWidths } = useColumnWidths("adminDirections.v7", { code: 130, name: 320, programs: 300, fgos: 220, actions: 67 }, tableContainerRef);
 
   return <>
     <div style={adminAddPanel}>
@@ -163,18 +166,28 @@ export function DirectionsContent() {
       </span>
     </div>
 
-    <div className="table-scroll">
+    <div ref={tableContainerRef} className="table-scroll">
       {loading
         ? <div style={{ padding: 40, display: "flex", justifyContent: "center" }}><Spinner /></div>
         : filtered.length === 0
           ? <div style={{ padding: 40, textAlign: "center", color: T.textMuted, fontSize: 13, fontStyle: "italic" }}>{items.length === 0 ? "Направлений нет — добавьте первое сверху или импортируйте БУП." : "Ничего не нашлось."}</div>
           : <table style={{ ...dataTable, tableLayout: "fixed" }}>
+            <colgroup>
+              <col style={{ width: widths.code }} />
+              <col style={{ width: widths.name }} />
+              <col style={{ width: widths.programs }} />
+              <col style={{ width: widths.fgos }} />
+              <col style={{ width: widths.actions }} />
+            </colgroup>
             <thead><tr style={{ background: T.surface }}>
-              <SortTh sortKey="code" sort={sort} onSort={toggleSort} style={{ width: 130 }}>Код</SortTh>
-              <SortTh sortKey="name" sort={sort} onSort={toggleSort}>Наименование</SortTh>
-              <SortTh sortKey="programs" sort={sort} onSort={toggleSort} style={{ width: 300 }}>Профили</SortTh>
-              <SortTh sortKey="fgos" sort={sort} onSort={toggleSort} style={{ width: 220 }}>Файл ФГОС</SortTh>
-              <th style={{ ...hdr, textAlign: "center", width: 80 }} />
+              <SortTh sortKey="code" sort={sort} onSort={toggleSort} align="center" onResize={makeResizer("code", "name")}>Код</SortTh>
+              <SortTh sortKey="name" sort={sort} onSort={toggleSort} onResize={makeResizer("name", "programs")}>Наименование</SortTh>
+              <SortTh sortKey="programs" sort={sort} onSort={toggleSort} onResize={makeResizer("programs", "fgos")}>Профили</SortTh>
+              <SortTh sortKey="fgos" sort={sort} onSort={toggleSort} onResize={makeResizer("fgos", "actions")}>Файл ФГОС</SortTh>
+              <th style={{ ...hdr, textAlign: "center" }}>
+                <button type="button" onClick={resetWidths} title="Восстановить ширину колонок по умолчанию"
+                  style={{ border: "none", background: "none", color: T.text, cursor: "pointer", padding: 2, display: "inline-flex" }}><ResetIcon /></button>
+              </th>
             </tr></thead>
             <tbody>
               {pageItems.map(d => {
@@ -183,26 +196,26 @@ export function DirectionsContent() {
                     onDoubleClick={() => setEditing(d)}
                     style={{ background: T.surface, cursor: "pointer" }}
                     title="Двойной клик — редактировать">
-                  <td style={{ ...tcell, fontWeight: 600 }}>{d.code}</td>
-                  <td style={tcell}>{d.name}</td>
-                  <td style={tcell}>
+                  <td style={{ ...tcell, fontWeight: 600, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.code}>{d.code}</td>
+                  <td style={{ ...tcell, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.name}>{d.name}</td>
+                  <td style={{ ...tcell, overflow: "hidden" }}>
                     {(d.programs && d.programs.length)
                       ? <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                           {d.programs.map(p => (
-                            <span key={p.id_program} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: T.bg, color: T.text, border: "1px solid " + T.borderLight }}>{p.profile}</span>
+                            <span key={p.id_program} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 10, background: T.bg, color: T.text, border: "1px solid " + T.borderLight, whiteSpace: "nowrap" }}>{p.profile}</span>
                           ))}
                         </div>
                       : <span style={{ color: T.textMuted, fontStyle: "italic" }}>нет профилей</span>}
                   </td>
-                  <td style={tcell}>
+                  <td style={{ ...tcell, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {d.fgos_file_id
                       ? <button onClick={e => { e.stopPropagation(); api.openFile(d.fgos_file_id).catch(() => setErrorMsg("Не удалось открыть файл.")); }} style={linkBtn}>{d.fgos_file_name}</button>
                       : <span style={{ color: T.textMuted, fontStyle: "italic" }}>не загружен</span>}
                   </td>
-                  <td style={{ ...tcell, textAlign: "center", whiteSpace: "nowrap", width: 1, padding: "10px 8px" }} onDoubleClick={e => e.stopPropagation()}>
+                  <td style={{ ...tcell, textAlign: "right", whiteSpace: "nowrap", padding: "10px 8px", overflow: "hidden" }} onDoubleClick={e => e.stopPropagation()}>
                     <div style={{ display: "inline-flex", gap: 4 }}>
-                      <button onClick={(e) => { e.stopPropagation(); setEditing(d); }} title="Редактировать" style={{ ...iconBtn, cursor: "pointer", color: T.textMuted }} disabled={busy}><PencilIcon /></button>
-                      <button onClick={(e) => { e.stopPropagation(); setPendingDir(d); }} title="Удалить направление" style={{ ...iconBtn, cursor: "pointer" }} disabled={busy}><TrashIcon /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditing(d); }} title="Редактировать" style={{ ...iconBtnEdit, cursor: "pointer" }} disabled={busy}><PencilIcon /></button>
+                      <button onClick={(e) => { e.stopPropagation(); setPendingDir(d); }} title="Удалить направление" style={{ ...iconBtnDelete, cursor: "pointer" }} disabled={busy}><TrashIcon /></button>
                     </div>
                   </td>
                 </tr>;
