@@ -74,7 +74,7 @@ function LlmLogsContent() {
   return <div>
     <div style={adminToolbar}>
       <div style={{ fontSize: 12, color: T.textMuted }}>
-        Отладочная информация: что подавалось в LLM как контекст при генерации разделов (последние 200).
+        Отладочная информация: что подавалось в языковую модель как контекст при генерации разделов (последние 200).
       </div>
       <Btn small onClick={load} disabled={loading} style={{ marginLeft: "auto" }}>Обновить</Btn>
     </div>

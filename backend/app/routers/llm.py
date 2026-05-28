@@ -16,7 +16,7 @@ from app.models import (
     AssessmentTool,
 )
 from app.schemas import LlmGenerateRequest, LlmGenerateResponse
-from app.services.llm_service import generate_section, extract_text_from_file, CONTEXT_CHAR_LIMIT
+from app.services.llm_service import generate_section, extract_text_from_file, CONTEXT_CHAR_LIMIT, DOC_CONTEXT_LIMIT
 from app.services.approved_context import approved_rpd_example
 from app.services.dictionary_context import dictionary_catalog
 from app.services.structured_generation import (
@@ -251,7 +251,7 @@ async def generate(
         extra_context += ("\n\n" if extra_context.strip() else "") + catalog_block
         context_sources.append(catalog_src)
 
-    sections_res = await db.execute(
+    section_rows_res = await db.execute(
         select(UploadedDocumentSection, UploadedDocument)
         .join(UploadedDocument, UploadedDocument.id_document == UploadedDocumentSection.id_document)
         .where(UploadedDocumentSection.section_key == data.section)
@@ -259,31 +259,50 @@ async def generate(
         .order_by(UploadedDocumentSection.created_at.desc())
         .limit(5)
     )
-    section_rows = sections_res.all()
+    section_rows = section_rows_res.all()
 
-    if section_rows:
-        examples = []
-        for chunk, doc in section_rows:
-            examples.append(
-                f"=== ИСТОЧНИК — документ преподавателя «{doc.filename}», распознанный раздел ===\n"
-                + chunk.content
-            )
-            context_sources.append(f"Документ: {doc.filename} (раздел)")
-        extra_context += ("\n\n" if extra_context.strip() else "") + "\n\n".join(examples)
-    else:
-        docs_to_use = list(rpd.uploaded_documents or [])
-        if docs_to_use:
-            doc_texts = []
-            for doc in docs_to_use[:5]:
-                text = await extract_text_from_file(doc.file_path)
-                if text:
-                    doc_texts.append(
-                        f"=== ИСТОЧНИК — документ преподавателя «{doc.filename}», без разметки разделов ===\n"
-                        + text
-                    )
-                    context_sources.append(f"Документ: {doc.filename} (целиком)")
-            if doc_texts:
-                extra_context += ("\n\n" if extra_context.strip() else "") + "\n\n".join(doc_texts)
+    parsed_ids_res = await db.execute(
+        select(UploadedDocumentSection.id_document)
+        .join(UploadedDocument, UploadedDocument.id_document == UploadedDocumentSection.id_document)
+        .where(UploadedDocument.id_rpd == rpd_id)
+        .distinct()
+    )
+    parsed_doc_ids = {row[0] for row in parsed_ids_res.all()}
+
+    doc_budget = DOC_CONTEXT_LIMIT
+    doc_parts: list[str] = []
+
+    for chunk, doc in section_rows:
+        if doc_budget <= 0:
+            break
+        content = (chunk.content or "")[:doc_budget]
+        if not content:
+            continue
+        doc_parts.append(
+            f"=== ИСТОЧНИК — документ преподавателя «{doc.filename}», распознанный раздел ===\n"
+            + content
+        )
+        context_sources.append(f"Документ: {doc.filename} (раздел, {len(content)} симв.)")
+        doc_budget -= len(content)
+
+    for doc in rpd.uploaded_documents or []:
+        if doc_budget <= 0:
+            break
+        if doc.id_document in parsed_doc_ids:
+            continue
+        text = await extract_text_from_file(doc.file_path)
+        if not text:
+            continue
+        snippet = text[:doc_budget]
+        doc_parts.append(
+            f"=== ИСТОЧНИК — документ преподавателя «{doc.filename}», без разметки разделов ===\n"
+            + snippet
+        )
+        context_sources.append(f"Документ: {doc.filename} (целиком, {len(snippet)} симв.)")
+        doc_budget -= len(snippet)
+
+    if doc_parts:
+        extra_context += ("\n\n" if extra_context.strip() else "") + "\n\n".join(doc_parts)
 
     approved = await approved_rpd_example(db, rpd, data.section)
     if approved:

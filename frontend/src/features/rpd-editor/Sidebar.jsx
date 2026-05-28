@@ -156,7 +156,7 @@ export function Sidebar({
           cursor: "pointer",
           whiteSpace: "nowrap",
         }}
-      ><UploadIcon /> Документы для LLM{docsCount > 0 ? ` (${docsCount})` : ""}</button>}
+      ><UploadIcon /> Документы для контекста{docsCount > 0 ? ` (${docsCount})` : ""}</button>}
       {genBatch ? (
         <button
           onClick={onCancelGen}
@@ -177,7 +177,7 @@ export function Sidebar({
         <button
           onClick={onAutoFillAll}
           disabled={genBusy}
-          title={genBusy ? "Идёт генерация раздела — дождитесь или отмените её" : "Последовательно сгенерировать содержание всех поддерживаемых разделов через LLM"}
+          title={genBusy ? "Идёт генерация раздела — дождитесь или отмените её" : "Последовательно сгенерировать содержание всех поддерживаемых разделов языковой моделью"}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
             width: "100%", padding: "7px 12px",

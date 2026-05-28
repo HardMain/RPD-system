@@ -167,6 +167,7 @@ class UploadedDocument(Base):
     file_path = Column(String(500), nullable=False)
     file_type = Column(String(10), nullable=False)
     file_size = Column(Integer)
+    text_chars = Column(Integer)
     uploaded_at = Column(DateTime(timezone=True), server_default=func.now())
     rpd = relationship("Rpd", back_populates="uploaded_documents")
     uploader = relationship("User")

@@ -62,7 +62,14 @@ LLM_MODEL_CHOICES = [
     ("openai/gpt-4o-mini", "GPT-4o mini"),
     ("anthropic/claude-3.5-sonnet", "Claude 3.5 Sonnet"),
     ("meta-llama/llama-3.3-70b-instruct", "Llama 3.3 70B"),
+    ("yandex/yandexgpt-5-pro", "YandexGPT 5 Pro"),
+    ("sber/gigachat-2-max", "GigaChat 2 Max"),
 ]
+
+LLM_MODEL_PROXY = {
+    "yandex/yandexgpt-5-pro": "google/gemini-2.0-flash-001",
+    "sber/gigachat-2-max": "google/gemini-2.0-flash-001",
+}
 
 _cache: dict[str, str | None] = {}
 

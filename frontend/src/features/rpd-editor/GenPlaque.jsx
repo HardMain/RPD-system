@@ -18,7 +18,7 @@ export function GenPlaque({ skey, keys, children }) {
   const { generating, genResult, outcomesGenProgress } = useRpdEditor();
   const ks = keys || (skey ? [skey] : []);
   if (generating && ks.includes(generating)) {
-    let text = "Генерация содержания с помощью LLM…";
+    let text = "Генерация содержания языковой моделью…";
     if (generating === "learning_outcomes" && outcomesGenProgress) {
       const { index, total, label } = outcomesGenProgress;
       text = `Генерация раздела 2 (${index} из ${total}): ${label}…`;
@@ -36,7 +36,7 @@ export function GenPlaque({ skey, keys, children }) {
       return <div style={box(T.textMuted, T.bg)}>✕ Генерация отменена — содержимое не изменено</div>;
     }
     const msg = genResult.reason === "llm"
-      ? "✗ LLM сейчас недоступен — попробуйте позже. Содержимое не изменено"
+      ? "✗ Языковая модель сейчас недоступна — попробуйте позже. Содержимое не изменено"
       : "✗ Модель не вернула применимый результат. Содержимое не изменено";
     return <div style={box(T.red, T.redBg)}>{msg}</div>;
   }

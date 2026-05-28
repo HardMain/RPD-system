@@ -256,6 +256,7 @@ class UploadedDocumentOut(BaseModel):
     filename: str
     file_type: str
     file_size: int | None = None
+    text_chars: int | None = None
     uploaded_at: datetime | None = None
     parse_mode: str = "full"
     parsed_sections: list[ParsedSectionOut] = []

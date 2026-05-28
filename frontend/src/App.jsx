@@ -5,6 +5,7 @@ import "react-pdf/dist/Page/AnnotationLayer.css";
 import PdfJsWorker from "pdfjs-dist/build/pdf.worker.min.mjs?worker";
 
 import * as api from "./api/client.js";
+import { filenameFromContentDisposition } from "./utils/format.js";
 import { T, F, injectThemeStyles, applyTheme } from "./styles/index.js";
 
 injectThemeStyles();
@@ -282,7 +283,9 @@ export default function App() {
     try {
       const r = await api.exportPdf(rpdId, bdId);
       const url = window.URL.createObjectURL(r.data);
-      const a = document.createElement("a"); a.href = url; a.download = `RPD_${rpdId}.pdf`; a.click();
+      const a = document.createElement("a"); a.href = url;
+      a.download = filenameFromContentDisposition(r.headers, `RPD_${rpdId}.pdf`);
+      a.click();
       window.URL.revokeObjectURL(url);
     } catch { setExportError("Не удалось сформировать PDF — попробуйте ещё раз."); }
   }
@@ -354,7 +357,7 @@ export default function App() {
     { id: "my", label: `РПД (${rpds.length})` },
     canManageUsers ? { id: "adminUsers", label: "Пользователи" } : null,
     canManageSources ? { id: "adminSources", label: "Источники" } : null,
-    canManageLlm ? { id: "adminLlm", label: "LLM" } : null,
+    canManageLlm ? { id: "adminLlm", label: "Языковая модель" } : null,
   ].filter(Boolean);
 
   return <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden", fontFamily: F, color: T.text, background: T.bg }}>

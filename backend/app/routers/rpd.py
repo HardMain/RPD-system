@@ -84,6 +84,7 @@ def _build_rpd_detail(r: Rpd) -> RpdDetailOut:
             filename=doc.filename,
             file_type=doc.file_type,
             file_size=doc.file_size,
+            text_chars=doc.text_chars,
             uploaded_at=doc.uploaded_at,
             parse_mode="sections" if parsed else "full",
             parsed_sections=parsed,

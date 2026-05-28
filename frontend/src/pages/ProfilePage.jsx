@@ -14,7 +14,7 @@ const BASE_SECTIONS = [
   { id: "system", label: "Система", icon: <InfoIcon size={15} /> },
 ];
 const ORG_SECTION = { id: "organization", label: "Организация", icon: <BuildingIcon size={15} /> };
-const LLM_SECTION = { id: "llm", label: "LLM", icon: <SparkleIcon /> };
+const LLM_SECTION = { id: "llm", label: "Языковая модель", icon: <SparkleIcon /> };
 
 export function ProfilePage({ user, section = "profile", onUserUpdated, onBack }) {
   const isAdmin = api.userCan(user, "*");
@@ -256,10 +256,10 @@ function SystemSection({ user }) {
   const cards = [
     { title: "Статус", rows: [
       ["Сервер", h ? "online" : "…", h ? T.green : T.orange],
-      ["LLM", h ? (llmOnline ? "подключена" : "demo-режим") : "…", h ? (llmOnline ? T.green : T.orange) : T.orange],
+      ["Языковая модель", h ? (llmOnline ? "подключена" : "demo-режим") : "…", h ? (llmOnline ? T.green : T.orange) : T.orange],
       ["Версия", h?.version || "1.0.0"],
     ] },
-    { title: "О системе", rows: [["Организация", "ПНИПУ"], ["Модель LLM", h?.llm?.model || "настраивается в .env"]] },
+    { title: "О системе", rows: [["Организация", "ПНИПУ"], ["Языковая модель", h?.llm?.model || "настраивается в .env"]] },
   ];
   return <div>
     <Heading>Системная информация</Heading>
@@ -944,7 +944,7 @@ function SignaturePositionEditor() {
 
 function LlmSection() {
   return <div>
-    <Heading>Настройки LLM</Heading>
+    <Heading>Настройки языковой модели</Heading>
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <LlmModelSelector />
       <SystemPromptEditor />
@@ -1001,7 +1001,7 @@ function SystemPromptEditor() {
   return <div style={{ background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 16 }}>
     <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>Системный промпт</div>
     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
-      Базовая инструкция модели для всех разделов РПД. Сохраняется автоматически при потере фокуса. Per-section промпты из админ-вкладки «LLM → Промпты по разделам» имеют приоритет.
+      Базовая инструкция модели для всех разделов РПД. Сохраняется автоматически при потере фокуса. Промпты отдельных разделов из админ-вкладки «Языковая модель → Промпты по разделам» имеют приоритет.
     </div>
     {loaded ? <>
       <textarea value={prompt} onChange={e => setPrompt(e.target.value)} onBlur={commit} disabled={busy !== null}
@@ -1109,7 +1109,7 @@ function LlmModelSelector({ onChanged }) {
     setSaving(false);
   }
   return <div style={{ background: T.bg, border: "1px solid " + T.borderLight, borderRadius: 8, padding: 16 }}>
-    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Настройки LLM</div>
+    <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 12 }}>Настройки языковой модели</div>
     <div style={{ fontSize: 12, color: T.textMuted, marginBottom: 10 }}>
       Выбранная модель применяется при следующей генерации. Доступ к настройке — только у администратора.
     </div>

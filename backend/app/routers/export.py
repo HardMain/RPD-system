@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -159,14 +160,87 @@ async def _render(rpd: Rpd, link: RpdBupDiscipline | None, db: AsyncSession) -> 
             raise HTTPException(status_code=500, detail=f"Ошибка склейки ФОС: {exc}")
     return rpd_pdf
 
+_DEGREE_ABBR = {
+    "бакалавриат": "б",
+    "магистратура": "м",
+    "специалитет": "с",
+    "аспирантура": "а",
+}
+
+_ABBR_STOPWORDS = {"и", "в", "на", "по", "с", "у", "от", "для", "о", "об", "к", "до"}
+
+_FORBIDDEN_FN_CHARS = re.compile(r'[\\/:*?"<>|]+')
+
+
+def _abbreviate(text: str | None) -> str:
+    if not text:
+        return ""
+    cleaned = text.strip().strip('"«»')
+    words = [w for w in re.split(r"[\s\-/]+", cleaned) if w]
+    significant = [w for w in words if w.lower() not in _ABBR_STOPWORDS]
+    if not significant:
+        return ""
+    if len(significant) == 1:
+        w = significant[0]
+        return w if len(w) <= 8 else w[:8]
+    return "".join(w[0].upper() for w in significant if w and w[0].isalpha())
+
+
+def _abbreviate_faculty(name: str | None) -> str:
+    if not name:
+        return ""
+    cleaned = name.strip().strip('"«»')
+    words = [w for w in re.split(r"[\s\-/]+", cleaned) if w]
+    significant = [
+        w for w in words
+        if w.lower() not in _ABBR_STOPWORDS and w.lower() != "факультет"
+    ]
+    if not significant:
+        return ""
+    if len(significant) == 1 and significant[0].isupper():
+        return significant[0]
+    first = significant[0]
+    stem = first[:3]
+    stem = stem[:1].upper() + stem[1:].lower()
+    return stem + "Ф"
+
+
+def _degree_short(level: str | None) -> str:
+    if not level:
+        return ""
+    return _DEGREE_ABBR.get(level.strip().lower(), "")
+
+
+def _sanitize_part(s: str) -> str:
+    s = _FORBIDDEN_FN_CHARS.sub("", s).strip()
+    s = re.sub(r"\s+", "_", s)
+    return s
+
+
 def _filename(rpd: Rpd, link: RpdBupDiscipline | None) -> str:
     d = rpd.discipline
-    bd = link.bup_discipline if link else None
-    code = (link.code if link and link.code else (bd.code if bd else None)) or "no_code"
-    return (
-        f"RPD_{code}_{d.name}_{rpd.academic_year}.pdf"
-        .replace("/", "_").replace(" ", "_")
-    )
+    parts: list[str] = []
+    if d and d.name:
+        parts.append(d.name)
+    if link and link.bup_year:
+        parts.append(str(link.bup_year))
+        bd = link.bup_discipline
+        faculty = bd.bup.faculty if (bd and bd.bup and bd.bup.faculty) else None
+        faculty_abbr = _abbreviate_faculty(faculty)
+        if faculty_abbr:
+            parts.append(faculty_abbr)
+        profile_abbr = _abbreviate(link.bup_profile or link.direction_profile)
+        if profile_abbr:
+            parts.append(profile_abbr)
+        degree = _degree_short(link.degree_level)
+        if degree:
+            parts.append(degree)
+    elif rpd.academic_year:
+        parts.append(rpd.academic_year.replace("/", "-"))
+    sanitized = [p for p in (_sanitize_part(p) for p in parts) if p]
+    if not sanitized:
+        return f"RPD_{rpd.id_rpd}.pdf"
+    return "_".join(sanitized) + ".pdf"
 
 @router.get("/{rpd_id}/pdf")
 async def export_pdf(

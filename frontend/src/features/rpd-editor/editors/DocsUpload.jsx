@@ -6,7 +6,7 @@ import { TrashIcon, ChevronDownIcon, ChevronUpIcon } from "../../../components/i
 import { ConfirmDeleteModal } from "../EditorModals.jsx";
 import { useRpdEditor } from "../RpdEditorContext.jsx";
 
-const CONTEXT_LIMIT = 12000;
+const DOC_LIMIT = 30000;
 
 const SEC_ORDER = [
   "goals", "objects", "requirements", "learning_outcomes", "content",
@@ -112,6 +112,19 @@ export function DocsUpload() {
       perSection[s.section_key] = (perSection[s.section_key] || 0) + s.chars;
     }
   }
+  const parsedVals = Object.values(perSection);
+  const maxParsed = parsedVals.length ? Math.min(DOC_LIMIT, Math.max(...parsedVals)) : 0;
+  const fullDocUsage = (() => {
+    const out = {};
+    let remaining = Math.max(0, DOC_LIMIT - maxParsed);
+    for (const d of fullDocs) {
+      const chars = d.text_chars || 0;
+      const used = Math.min(chars, remaining);
+      remaining -= used;
+      out[d.id_document] = { minUsed: used, truncatable: chars > 0 && used < chars };
+    }
+    return out;
+  })();
   const anySectionFilled = Object.keys(perSection).length > 0;
   const budgetRows = [...new Set([...SEC_ORDER, ...Object.keys(perSection)])]
     .map(key => [key, perSection[key] || 0])
@@ -120,12 +133,12 @@ export function DocsUpload() {
   return <div>
     {docs.length > 0 && <div style={{ border: "1px solid " + T.borderLight, borderRadius: 6, padding: "10px 14px", marginBottom: 12, background: T.bg }}>
       <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>
-        Бюджет контекста: лимит {fmt(CONTEXT_LIMIT)} симв. на генерацию одного раздела
+        Бюджет на генерацию одного раздела: документы до {fmt(DOC_LIMIT)} символов
       </div>
       {anySectionFilled ? <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
         {budgetRows.map(([key, chars]) => {
-          const pct = Math.min(100, Math.round((chars / CONTEXT_LIMIT) * 100));
-          const over = chars >= CONTEXT_LIMIT;
+          const pct = Math.min(100, Math.round((chars / DOC_LIMIT) * 100));
+          const over = chars >= DOC_LIMIT;
           const empty = chars === 0;
           const color = over ? T.red : pct >= 70 ? T.orange : T.green;
           return <div key={key} style={{ display: "flex", alignItems: "center", gap: 8, opacity: empty ? 0.55 : 1 }}>
@@ -133,15 +146,12 @@ export function DocsUpload() {
             <span style={{ flex: 1, height: 6, background: T.borderLight, borderRadius: 3, overflow: "hidden" }}>
               <span style={{ display: "block", width: pct + "%", height: "100%", background: color }} />
             </span>
-            <span style={{ fontSize: 11, width: 110, textAlign: "right", color: over ? T.red : T.textMuted, fontVariantNumeric: "tabular-nums" }}>{fmt(chars)} / {fmt(CONTEXT_LIMIT)}</span>
+            <span style={{ fontSize: 11, width: 110, textAlign: "right", color: over ? T.red : T.textMuted, fontVariantNumeric: "tabular-nums" }}>{fmt(chars)} / {fmt(DOC_LIMIT)}</span>
           </div>;
         })}
       </div> : <div style={{ fontSize: 11, color: T.textMuted }}>Ни один документ не разбит по разделам.</div>}
-      {fullDocs.length > 0 && <div style={{ fontSize: 11, color: T.textMuted, marginTop: 8 }}>
-        Без разбора (читаются целиком до 8000 симв., если по разделу нет разбора): {fullDocs.length}
-      </div>}
       <div style={{ fontSize: 11, color: T.textMuted, marginTop: 6 }}>
-        Контекст собирается под конкретный раздел; одинаковые разделы из разных документов суммируются.
+        На каждый раздел: сначала распознанный кусок раздела, затем файлы без разбора добивают остаток — вместе не более {fmt(DOC_LIMIT)} симв.; одинаковые разделы из разных документов суммируются.
       </div>
     </div>}
 
@@ -162,7 +172,7 @@ export function DocsUpload() {
                 background: sectioned ? T.greenLight : T.orangeLight,
                 color: sectioned ? T.green : T.orange,
               }}>
-                {sectioned ? `Разобран по разделам: ${d.parsed_sections.length} · ${fmt(d.parsed_chars)} симв.` : "Будет прочитан целиком (до 8000 симв.)"}
+                {sectioned ? `Разобран по разделам: ${d.parsed_sections.length} · ${fmt(d.parsed_chars)} симв.` : `Будет прочитан целиком${d.text_chars ? `: ${fmt(d.text_chars)} симв.` : ""}${fullDocUsage[d.id_document]?.truncatable ? ` (в контекст войдёт не менее ${fmt(fullDocUsage[d.id_document].minUsed)} симв.)` : ""}`}
               </span>
               {sectioned && <button onClick={() => toggleExpand(d.id_document)} style={{
                 border: "none", background: "none", cursor: "pointer", color: T.accent,

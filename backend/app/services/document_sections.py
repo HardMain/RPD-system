@@ -130,10 +130,15 @@ def extract_sections_heuristic(text: str) -> dict[str, str]:
 
 async def extract_and_save_sections(db: AsyncSession, document_id: int, file_path: str) -> int:
     text = await extract_text_from_file(file_path, max_chars=None)
+    doc = await db.get(UploadedDocument, document_id)
+    if doc is not None:
+        doc.text_chars = len(text or "")
     if not text:
+        await db.commit()
         return 0
     sections = extract_sections_heuristic(text)
     if not sections:
+        await db.commit()
         return 0
     await db.execute(
         delete(UploadedDocumentSection).where(UploadedDocumentSection.id_document == document_id)

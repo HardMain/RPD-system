@@ -10,3 +10,16 @@ export function pluralRu(n, one, few, many) {
   if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
   return many;
 }
+
+export function filenameFromContentDisposition(headers, fallback) {
+  const raw = headers && (headers["content-disposition"] || headers["Content-Disposition"]);
+  if (raw) {
+    const star = /filename\*\s*=\s*([^']*)''([^;]+)/i.exec(raw);
+    if (star) {
+      try { return decodeURIComponent(star[2].trim().replace(/^"|"$/g, "")); } catch {}
+    }
+    const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(raw);
+    if (plain) return plain[1].trim();
+  }
+  return fallback;
+}

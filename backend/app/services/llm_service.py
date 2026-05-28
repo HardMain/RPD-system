@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 from openai import AsyncOpenAI
 from app.core.config import settings
-from app.services.app_settings import get_llm_model, get_system_prompt
+from app.services.app_settings import get_llm_model, get_system_prompt, LLM_MODEL_PROXY
 
 LLM_DEBUG = os.getenv("LLM_DEBUG", "").lower() in ("1", "true", "yes", "on")
 
@@ -14,8 +14,8 @@ client = AsyncOpenAI(api_key=settings.LLM_API_KEY, base_url=settings.LLM_BASE_UR
 
 _llm_semaphore = asyncio.Semaphore(max(1, settings.LLM_MAX_CONCURRENCY))
 
-CONTEXT_CHAR_LIMIT = 12000
-WHOLE_DOC_CHAR_LIMIT = 8000
+CONTEXT_CHAR_LIMIT = 50000
+DOC_CONTEXT_LIMIT = 30000
 
 DEFAULT_TEMPERATURE = 0.7
 FACTUAL_TEMPERATURE = 0.2
@@ -164,7 +164,7 @@ FALLBACK = {
     "methodical_recommendations": "Обучающимся рекомендуется регулярно посещать занятия, выполнять задания в установленные сроки, использовать рекомендованную литературу для подготовки.",
 }
 
-async def extract_text_from_file(file_path: str, max_chars: int | None = WHOLE_DOC_CHAR_LIMIT) -> str:
+async def extract_text_from_file(file_path: str, max_chars: int | None = None) -> str:
     import os
     if not os.path.exists(file_path):
         return ""
@@ -272,9 +272,10 @@ async def generate_section(
             raise Exception("Demo mode — using fallback")
 
         current_model = await get_llm_model()
+        api_model = LLM_MODEL_PROXY.get(current_model, current_model)
         async with _llm_semaphore:
             response = await client.chat.completions.create(
-                model=current_model,
+                model=api_model,
                 messages=[
                     {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt},
@@ -285,7 +286,7 @@ async def generate_section(
         raw_text = response.choices[0].message.content
         text = _clean_llm_output(raw_text)
         tokens = response.usage.total_tokens if response.usage else 0
-        model = getattr(response, "model", None) or current_model
+        model = current_model if current_model in LLM_MODEL_PROXY else (getattr(response, "model", None) or current_model)
         if LLM_DEBUG:
             bar = "=" * 100
             print(f"\n{bar}\n[LLM DEBUG] RESPONSE for section={section!r} model={model} tokens={tokens}", file=sys.stderr, flush=True)

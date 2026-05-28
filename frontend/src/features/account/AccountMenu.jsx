@@ -52,7 +52,7 @@ export function AccountMenu({ user, onOpenProfile, onLogout }) {
         <MenuItem icon={<ThemeIcon size={16} />} label="Внешний вид" onClick={() => go("appearance")} />
         {canManageOrg && <MenuItem icon={<BuildingIcon size={16} />} label="Организация" onClick={() => go("organization")} />}
         <MenuItem icon={<InfoIcon size={16} />} label="Системная информация" onClick={() => go("system")} />
-        {isAdmin && <MenuItem icon={<SparkleIcon />} label="Настройки LLM" onClick={() => go("llm")} />}
+        {isAdmin && <MenuItem icon={<SparkleIcon />} label="Языковая модель" onClick={() => go("llm")} />}
       </div>
       <div style={{ padding: 6, borderTop: "1px solid " + T.borderLight }}>
         <MenuItem icon={<LogoutIcon size={16} />} label="Выйти" danger onClick={() => { setOpen(false); onLogout(); }} />
